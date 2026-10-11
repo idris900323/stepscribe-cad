@@ -92,7 +92,7 @@ def _analyse_bodies(
 
     from OCP.BRepTools import BRepTools
 
-    workers = worker_count(len(bodies))
+    workers = worker_count(len(bodies), max(faces.values(), default=0))
     if len(bodies) < PARALLEL_MIN_PARTS or sum(faces.values()) < PARALLEL_MIN_FACES:
         workers = 1
     results: dict[int, Part] = {}
@@ -221,6 +221,35 @@ def analyze_full(
         except Exception as exc:  # noqa: BLE001 - the measured report must survive
             report.warnings.append(f"understanding layer failed: {type(exc).__name__}: {exc}")
     return analysis
+
+
+def restore_analysis(
+    path: str | Path, options: AnalyzeOptions, report_json: str | Path
+) -> Analysis:
+    """An :class:`Analysis` for the interview, from a saved ``report.json`` and the STEP file.
+
+    Reads the STEP file again (fast) and takes every measured result from the report, so the
+    expensive part analysis and the assembly analysis are not repeated; only the understanding
+    pipeline is built again, when the session asks for it.
+    """
+    report = Report.model_validate_json(Path(report_json).read_bytes())
+    model = read_step(path)
+    by_name: dict[str, list[Part]] = {}
+    for part in report.parts:
+        by_name.setdefault(part.name, []).append(part)
+    parts: list[AnalyzedPart] = []
+    proto_parts: dict[str, list[AnalyzedPart]] = {}
+    for key in sorted(model.protos):
+        for name, shape in split_bodies(model.protos[key].name, model.protos[key].shape):
+            if not by_name.get(name):
+                raise ValueError("the saved report does not match the STEP file")
+            ap = AnalyzedPart(by_name[name].pop(0), PartGeom(name, shape))
+            parts.append(ap)
+            proto_parts.setdefault(key, []).append(ap)
+    parts.sort(key=lambda ap: ap.part.id)
+    return Analysis(
+        report, model, parts, {k: [ap.part.id for ap in v] for k, v in proto_parts.items()}
+    )
 
 
 def analyze(path: str | Path, options: AnalyzeOptions | None = None) -> Report:

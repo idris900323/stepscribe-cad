@@ -151,6 +151,8 @@ def test_outputs_mention_cutouts(step_files, tmp_path) -> None:  # type: ignore[
     from stepscribe.mcp import tools
 
     path = str(step_files["plate_stepped_cutout"])
+    tools.export_pack(path)  # the report tools read the cache; this is the one analysis
+    tools.export_pack(str(step_files["plate_4xM3"]))
     text = tools.get_part(path, "PRT001")
     assert "## Cutouts, recesses and notches" in text and "C001" in text
     assert "Pockets" not in text and "Slots" not in text  # one feature, one record

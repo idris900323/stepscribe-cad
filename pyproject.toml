@@ -28,7 +28,7 @@ dependencies = [
 Repository = "https://github.com/idris900323/stepscribe-cad"
 
 [project.optional-dependencies]
-dev = ["build", "build123d", "pytest", "pytest-cov", "ruff", "mypy", "types-PyYAML"]
+dev = ["build", "build123d", "psutil", "pytest", "pytest-cov", "ruff", "mypy", "types-PyYAML"]
 mcp = ["mcp>=2"]
 llm = ["httpx"]
 

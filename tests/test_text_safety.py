@@ -216,6 +216,7 @@ def test_the_raw_name_never_reaches_any_ai_facing_file(hostile_export: ExportRes
 
 def test_mcp_results_never_carry_the_raw_name(hostile_step: Path) -> None:
     tools.clear_cache()
+    tools.export_pack(str(hostile_step))  # report tools read the cache
     p = str(hostile_step)
     raws = [v for v in [*HOSTILE.values(), HOSTILE_ASSEMBLY] if clean_name(v) != v]
     results = [tools.get_overview(p), tools.get_relations(p), tools.find_parts(p, "plate")]
@@ -239,6 +240,7 @@ def test_every_exported_file_contains_only_clean_names(hostile_export: ExportRes
 
 def test_mcp_results_contain_only_clean_names(hostile_step: Path) -> None:
     tools.clear_cache()
+    tools.export_pack(str(hostile_step))  # report tools read the cache
     p = str(hostile_step)
     outputs = {
         "overview": tools.get_overview(p),
@@ -277,6 +279,7 @@ def test_the_reader_is_told_that_names_are_labels(
     readme = [p for p in folder.rglob("00_READ_ME_FIRST.md")]
     assert readme and DATA_NOTICE in readme[0].read_text(encoding="utf-8")
     tools.clear_cache()
+    tools.export_pack(str(hostile_step))  # report tools read the cache
     assert DATA_NOTICE in tools.get_overview(str(hostile_step))
 
 

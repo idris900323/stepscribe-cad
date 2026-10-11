@@ -148,6 +148,9 @@ def build_server() -> "MCPServer":
 
 def main() -> None:
     """Run the server over stdio."""
+    from stepscribe import procutil
+
+    procutil.install_cleanup()
     build_server().run()
 
 

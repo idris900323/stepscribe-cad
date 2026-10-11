@@ -244,10 +244,13 @@ $('drop').ondragleave = () => $('drop').classList.remove('over');
 $('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('over'); pick(e.dataTransfer.files[0]); };
 $('file').onchange = e => pick(e.target.files[0]);
 function chip(name, sub) { $('chipName').textContent = name; $('chipSub').textContent = sub; $('chip').style.display = 'flex'; $('pickers').style.display = 'none'; $('picked').textContent = ''; }
-function pick(f) { if (!f) return; chosenFile = f; chosenSample = null; $('path').value = ''; chip(f.name, `${(f.size/1e6).toFixed(1)} MB, loaded in the browser. It is sent to this computer's local server when you press Analyse.`); }
+async function precheck(query) {
+  try { const r = await (await api('/api/precheck?' + query)).json(); $('picked').textContent = r.warning || ''; } catch (e) { $('picked').textContent = ''; }
+}
+function pick(f) { if (!f) return; chosenFile = f; chosenSample = null; $('path').value = ''; chip(f.name, `${(f.size/1e6).toFixed(1)} MB, loaded in the browser. It is sent to this computer's local server when you press Analyse.`); precheck('size_mb=' + (f.size / 1048576)); }
 $('change').onclick = () => { chosenFile = null; chosenSample = null; $('path').value = ''; $('samples').value = ''; $('file').value = ''; $('chip').style.display = 'none'; $('pickers').style.display = ''; };
-$('path').onchange = () => { const v = $('path').value.trim(); if (v) { chosenFile = null; chosenSample = null; chip(v.split(/[\/]/).pop(), 'Read in place from ' + v + ' (nothing is copied).'); } };
-$('samples').onchange = () => { const v = $('samples').value; if (v !== '') { $('path').value = ''; chosenFile = null; chosenSample = Number(v); chip($('samples').selectedOptions[0].dataset.name, 'Sample file, read in place on this computer.'); } };
+$('path').onchange = () => { const v = $('path').value.trim(); if (v) { chosenFile = null; chosenSample = null; chip(v.split(/[\/]/).pop(), 'Read in place from ' + v + ' (nothing is copied).'); precheck('path=' + encodeURIComponent(v)); } };
+$('samples').onchange = () => { const v = $('samples').value; if (v !== '') { $('path').value = ''; chosenFile = null; chosenSample = Number(v); chip($('samples').selectedOptions[0].dataset.name, 'Sample file, read in place on this computer.'); precheck('sample=' + v); } };
 api('/api/samples').then(r => r.json()).then(list => {
   if (!list.length) return;
   $('samples').innerHTML = '<option value="">choose…</option>' + list.map(s => `<option value="${esc(s.index)}" data-name="${esc(s.name)}">${esc(s.name)} (${s.mb} MB)</option>`).join('');

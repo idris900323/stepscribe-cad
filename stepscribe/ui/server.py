@@ -9,10 +9,10 @@ heavy file can never freeze the page.
 from __future__ import annotations
 
 import hmac
-import io
 import json
 import math
 import multiprocessing as mp
+import os
 import secrets
 import shutil
 import tempfile
@@ -27,11 +27,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from stepscribe import __version__, config
+from stepscribe import __version__, cache, config, limits, procutil
 from stepscribe.headless import require_interactive
 from stepscribe.io.discovery import find_step_files
 from stepscribe.procutil import kill_tree
-from stepscribe.ui.worker import run_job, summarise_pack
+from stepscribe.runner import RUNNER, WAIT_MESSAGE
+from stepscribe.ui.worker import restore_session, run_job, summarise_pack
 
 INDEX = Path(__file__).with_name("index.html")
 FAVICON = (
@@ -83,6 +84,8 @@ class JobState:
     pack: str | None = None
     result: dict[str, Any] | None = None
     process: Any = None
+    job: dict[str, Any] = field(default_factory=dict)  # what the worker was asked to do
+    cancelled: bool = False
     cmd_q: Any = None  # commands to the interview session in the worker
     reply_q: Any = None
     call_lock: Any = field(default_factory=threading.Lock)
@@ -91,92 +94,206 @@ class JobState:
 class App:
     """Shared server state: work directory and jobs."""
 
-    def __init__(self, workdir: Path, sample_dir: Path | None) -> None:
+    def __init__(
+        self,
+        workdir: Path,
+        sample_dir: Path | None,
+        *,
+        session_idle_s: float = 15 * 60.0,
+        keep_jobs: int = 5,
+    ) -> None:
         self.workdir = workdir
         self.sample_dir = sample_dir
         self.jobs: dict[str, JobState] = {}
         self.lock = threading.Lock()
         self.token = secrets.token_urlsafe(32)
         self.max_upload_bytes = 500 * 1024 * 1024
+        self.session_idle_s = session_idle_s
+        self.keep_jobs = keep_jobs
 
     def samples(self) -> list[Path]:
         """Sample files in a stable order; the page refers to them by index, never by path."""
         return find_step_files(self.sample_dir) if self.sample_dir else []
 
+    # ------------------------------------------------------------- starting
     def start(self, path: Path, display_name: str, params: dict[str, Any]) -> JobState:
         job_id = uuid.uuid4().hex[:10]
         out = self.workdir / job_id / "out"
         out.mkdir(parents=True, exist_ok=True)
         state = JobState(job_id, display_name)
+        state.job = {
+            **params,
+            "path": str(path),
+            "out": str(out),
+            "session_idle_s": self.session_idle_s,
+        }
+        with self.lock:
+            self.jobs[job_id] = state
+        self.prune()
+        threading.Thread(target=self._run, args=(state,), daemon=True).start()
+        return state
+
+    def _run(self, state: JobState) -> None:
+        """Make room (end the previous session), wait for a free slot, run, report."""
+        self._end_other_sessions(state)
         ctx = mp.get_context("spawn")
         queue = ctx.Queue()
         state.cmd_q, state.reply_q = ctx.Queue(), ctx.Queue()
-        job = {**params, "path": str(path), "out": str(out)}
-        # not a daemon: the analysis starts its own worker processes for the parts
-        proc = ctx.Process(
-            target=run_job, args=(job, queue, state.cmd_q, state.reply_q), daemon=False
-        )
-        state.process = proc
-        with self.lock:
-            self.jobs[job_id] = state
-        proc.start()
-        threading.Thread(target=self._drain, args=(state, queue, proc), daemon=True).start()
-        return state
+
+        def waiting() -> None:
+            state.stage, state.message = "waiting", WAIT_MESSAGE
+
+        if not RUNNER.acquire(should_stop=lambda: state.cancelled, on_wait=waiting):
+            state.error, state.done = "cancelled", True
+            return
+        try:
+            # not a daemon: the analysis starts its own worker processes for the parts
+            proc = ctx.Process(
+                target=procutil.run_in_group,
+                args=(run_job, state.job, queue, state.cmd_q, state.reply_q),
+                daemon=False,
+            )
+            proc.start()
+            state.process = proc
+            procutil.register(proc)
+        except Exception as exc:  # noqa: BLE001 - the page shows it
+            RUNNER.release()
+            state.error, state.done = f"{type(exc).__name__}: {exc}", True
+            return
+        self._drain(state, queue, proc)
 
     def _drain(self, state: JobState, queue: Any, proc: Any) -> None:
-        while not state.done:
-            try:
-                msg = queue.get(timeout=0.5)
-            except Exception:  # noqa: BLE001 - queue.Empty
-                if not proc.is_alive() and queue.empty():
-                    state.error = state.error or "the analysis process stopped unexpectedly"
+        released = False
+        try:
+            while not state.done:
+                try:
+                    msg = queue.get(timeout=0.5)
+                except Exception:  # noqa: BLE001 - queue.Empty
+                    if not proc.is_alive() and queue.empty():
+                        state.error = state.error or "the analysis process stopped unexpectedly"
+                        state.done = True
+                    state.elapsed_s = time.time() - state.started
+                    continue
+                kind = msg["type"]
+                if kind == "progress":
+                    state.stage, state.message = msg["stage"], msg["message"]
+                    state.fraction, state.eta_s = msg["fraction"], msg["eta_s"]
+                    state.elapsed_s = msg["elapsed_s"]
+                elif kind == "done":
+                    state.pack = msg["pack"]
+                    state.result = summarise_pack(Path(msg["pack"]))
+                    state.fraction, state.eta_s, state.stage = 1.0, 0.0, "done"
+                    state.message = f"finished in {msg['seconds']} s"
                     state.done = True
-                state.elapsed_s = time.time() - state.started
-                continue
-            kind = msg["type"]
-            if kind == "progress":
-                state.stage, state.message = msg["stage"], msg["message"]
-                state.fraction, state.eta_s = msg["fraction"], msg["eta_s"]
-                state.elapsed_s = msg["elapsed_s"]
-            elif kind == "done":
-                state.pack = msg["pack"]
-                state.result = summarise_pack(Path(msg["pack"]))
-                state.fraction, state.eta_s, state.stage = 1.0, 0.0, "done"
-                state.message = f"finished in {msg['seconds']} s"
-                state.done = True
-            elif kind == "error":
-                state.error = msg["message"]
-                state.done = True
+                elif kind == "error":
+                    state.error = msg["message"]
+                    state.done = True
+        finally:
+            if not released:
+                RUNNER.release()  # the interview session that may follow is light
         proc.join(timeout=2)
+
+    # ------------------------------------------------------------- sessions
+    def _end_session(self, state: JobState) -> None:
+        proc = state.process
+        if proc is None or not proc.is_alive():
+            return
+        if state.cmd_q is not None:
+            state.cmd_q.put({"cmd": "quit"})
+            proc.join(timeout=3)
+        if proc.is_alive():
+            kill_tree(proc)
+        procutil.unregister(proc)
+
+    def _end_other_sessions(self, keep: JobState) -> None:
+        """Only the newest finished job keeps a live interview process."""
+        for other in list(self.jobs.values()):
+            if other is not keep and other.done and not other.error:
+                self._end_session(other)
+
+    def _restore_session(self, state: JobState) -> None:
+        """Start a fresh interview process for a finished job from its saved pack (no re-analysis)."""
+        self._end_other_sessions(state)
+        ctx = mp.get_context("spawn")
+        state.cmd_q, state.reply_q = ctx.Queue(), ctx.Queue()
+        proc = ctx.Process(
+            target=procutil.run_in_group,
+            args=(restore_session, {**state.job, "pack": state.pack}, state.cmd_q, state.reply_q),
+            daemon=False,
+        )
+        proc.start()
+        state.process = proc
+        procutil.register(proc)
 
     def call(self, job_id: str, payload: dict[str, Any], timeout: float = 120.0) -> dict[str, Any]:
         """Send one command to a job's interview session and wait for its reply."""
         s = self.jobs.get(job_id)
-        if s is None or not s.done or s.error or s.cmd_q is None:
+        if s is None or not s.done or s.error or s.cmd_q is None or not s.pack:
             return {"error": "the analysis is not finished"}
-        if s.process is None or not s.process.is_alive():
-            return {"error": "the interview session has ended; run the analysis again"}
         with s.call_lock:
+            if s.process is None or not s.process.is_alive():
+                try:
+                    self._restore_session(s)
+                except Exception as exc:  # noqa: BLE001
+                    return {"error": f"could not restart the session: {type(exc).__name__}"}
+                timeout = max(timeout, 300.0)
             s.cmd_q.put(payload)
             try:
                 return dict(s.reply_q.get(timeout=timeout))
             except Exception:  # noqa: BLE001 - queue.Empty
                 return {"error": "the session did not answer in time"}
 
+    # ----------------------------------------------------------- housekeeping
+    def prune(self) -> None:
+        """Keep the newest finished jobs; end the rest and delete their work folders."""
+        with self.lock:
+            finished = sorted((s for s in self.jobs.values() if s.done), key=lambda s: s.started)
+            old = finished[: max(0, len(finished) - self.keep_jobs)]
+            for s in old:
+                del self.jobs[s.id]
+        for s in old:
+            self._end_session(s)
+            shutil.rmtree(self.workdir / s.id, ignore_errors=True)
+
     def shutdown(self) -> None:
-        for s in self.jobs.values():
-            if s.cmd_q is not None:
+        for s in list(self.jobs.values()):
+            s.cancelled = True
+            if s.cmd_q is not None and s.process is not None and s.process.is_alive():
                 s.cmd_q.put({"cmd": "quit"})
+        for s in list(self.jobs.values()):
             if s.process is not None and s.process.is_alive():
                 s.process.join(timeout=3)
                 if s.process.is_alive():
                     kill_tree(s.process)
+                procutil.unregister(s.process)
 
     def cancel(self, job_id: str) -> None:
         state = self.jobs.get(job_id)
-        if state and state.process is not None and state.process.is_alive():
+        if state is None:
+            return
+        state.cancelled = True
+        if state.process is not None and state.process.is_alive():
             kill_tree(state.process)
             state.error, state.done = "cancelled", True
+        elif state.process is None and not state.done:
+            state.error, state.done = "cancelled", True
+
+    def pack_zip(self, state: JobState) -> Path | None:
+        """The pack as a zip file in the work folder: written once, rebuilt only if the pack changed."""
+        if not state.pack:
+            return None
+        root = Path(state.pack)
+        target = self.workdir / state.id / "pack.zip"
+        files = [f for f in sorted(root.rglob("*")) if f.is_file()]
+        newest = max((f.stat().st_mtime_ns for f in files), default=0)
+        if target.is_file() and target.stat().st_mtime_ns >= newest:
+            return target
+        tmp = target.with_suffix(".tmp")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                zf.write(f, f"{root.name}/{f.relative_to(root).as_posix()}")
+        os.replace(tmp, target)
+        return target
 
 
 def _json(handler: BaseHTTPRequestHandler, payload: Any, status: int = 200) -> None:
@@ -325,6 +442,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                         for i, f in enumerate(files)
                     ],
                 )
+            elif url.path == "/api/precheck":
+                self._precheck(q)
             elif url.path == "/api/status":
                 self._status(q.get("id", [""])[0])
             elif url.path == "/api/zip":
@@ -349,6 +468,35 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 self._file(unquote(url.path[len("/files/") :]))
             else:
                 self.send_error(404)
+
+        def _precheck(self, q: dict[str, list[str]]) -> None:
+            """Size, estimated time and a warning for a file the user is about to analyse."""
+            if "size_mb" in q:
+                try:
+                    size = float(q["size_mb"][0]) * 1024**2
+                except ValueError:
+                    raise BadRequest("size_mb must be a number") from None
+                if not math.isfinite(size) or size < 0:
+                    raise BadRequest("size_mb must be a positive number")
+            elif "sample" in q:
+                files = app.samples()
+                try:
+                    idx = int(q["sample"][0])
+                except ValueError:
+                    raise BadRequest("unknown sample") from None
+                if not 0 <= idx < len(files):
+                    raise BadRequest("unknown sample")
+                size = float(files[idx].stat().st_size)
+            else:
+                size = float(_step_path(q.get("path", [""])[0]).stat().st_size)
+            _json(
+                self,
+                {
+                    "size_mb": round(size / 1024**2, 1),
+                    "eta_s": round(limits.eta_seconds(size)),
+                    "warning": limits.large_file_warning(size),
+                },
+            )
 
         def _status(self, job_id: str) -> None:
             s = app.jobs.get(job_id)
@@ -391,19 +539,20 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             if s is None or not s.pack:
                 self.send_error(404)
                 return
-            buf = io.BytesIO()
-            root = Path(s.pack)
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                for f in sorted(root.rglob("*")):
-                    if f.is_file():
-                        zf.write(f, f"{root.name}/{f.relative_to(root).as_posix()}")
-            data = buf.getvalue()
+            target = app.pack_zip(s)
+            if target is None:
+                self.send_error(404)
+                return
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
-            self.send_header("Content-Disposition", f'attachment; filename="{root.name}.zip"')
-            self.send_header("Content-Length", str(len(data)))
+            self.send_header(
+                "Content-Disposition", f'attachment; filename="{Path(s.pack).name}.zip"'
+            )
+            self.send_header("Content-Length", str(target.stat().st_size))
             self.end_headers()
-            self.wfile.write(data)
+            with target.open("rb") as fh:
+                while chunk := fh.read(1 << 16):
+                    self.wfile.write(chunk)
 
         def _file(self, rel: str) -> None:
             job_id, _, sub = rel.partition("/")
@@ -554,11 +703,17 @@ def serve(
     sample_dir: Path | None = None,
     preload: Path | None = None,
     max_upload_mb: int = 500,
+    max_jobs: int = 1,
+    session_idle_min: float = 15.0,
+    cache_max_gb: float = cache.DEFAULT_MAX_GB,
 ) -> None:
     """Run the UI until interrupted."""
     require_interactive("start the local server")
+    RUNNER.set_max_jobs(max_jobs)
+    cache.set_max_gb(cache_max_gb)
+    procutil.install_cleanup()
     workdir = Path(tempfile.mkdtemp(prefix="stepscribe_ui_"))
-    app = App(workdir, sample_dir)
+    app = App(workdir, sample_dir, session_idle_s=session_idle_min * 60.0)
     app.max_upload_bytes = max_upload_mb * 1024 * 1024
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app))
     url = f"http://127.0.0.1:{server.server_address[1]}/"

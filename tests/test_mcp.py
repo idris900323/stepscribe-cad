@@ -12,11 +12,19 @@ from stepscribe.mcp import tools
 
 
 @pytest.fixture(autouse=True)
-def fresh_cache() -> None:
+def fresh_cache(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STEPSCRIBE_CACHE", str(tmp_path_factory.mktemp("mcp_cache")))
     tools.clear_cache()
 
 
+def analysed(*paths: Path) -> None:
+    """Report tools read the cache, so analyse (once) the way a client does: export_pack."""
+    for p in paths:
+        tools.export_pack(str(p))
+
+
 def test_overview_and_part(step_files) -> None:  # type: ignore[no-untyped-def]
+    analysed(step_files["two_plates_assembly"])
     text = tools.get_overview(str(step_files["two_plates_assembly"]))
     assert (
         "has 2 parts (1 different)" in text
@@ -29,6 +37,7 @@ def test_overview_and_part(step_files) -> None:  # type: ignore[no-untyped-def]
 
 
 def test_list_holes_filters_by_diameter(step_files) -> None:  # type: ignore[no-untyped-def]
+    analysed(step_files["nema17_plate"])
     path = str(step_files["nema17_plate"])
     assert tools.list_holes(path).count("| H0") == 5
     only_big = tools.list_holes(path, min_d=10.0)
@@ -37,6 +46,7 @@ def test_list_holes_filters_by_diameter(step_files) -> None:  # type: ignore[no-
 
 
 def test_relations_and_shopping_list(step_files) -> None:  # type: ignore[no-untyped-def]
+    analysed(step_files["two_plates_assembly"], step_files["plate_4xM3"])
     path = str(step_files["two_plates_assembly"])
     assert "bolted to" in tools.get_relations(path)
     assert "rests on" in tools.get_relations(path, part="Plate")
@@ -58,6 +68,7 @@ def test_measure_distance_between_instances(tmp_path: Path) -> None:
 
 
 def test_find_parts_by_tag_and_class(step_files) -> None:  # type: ignore[no-untyped-def]
+    analysed(step_files["nema17_plate"], step_files["tube"])
     assert "PRT001" in tools.find_parts(str(step_files["nema17_plate"]), "motor mount")
     assert "PRT001" in tools.find_parts(str(step_files["tube"]), "tube")
     assert "No part matches" in tools.find_parts(str(step_files["tube"]), "gearbox")
@@ -70,6 +81,7 @@ def test_section_and_render_return_png(step_files) -> None:  # type: ignore[no-u
 
 
 def test_diff_reports_changes(step_files) -> None:  # type: ignore[no-untyped-def]
+    analysed(step_files["plate_4xM3"], step_files["tube"], step_files["bolt_circle"])
     same = tools.diff(str(step_files["plate_4xM3"]), str(step_files["plate_4xM3"]))
     assert "No differences" in same
     changed = tools.diff(str(step_files["tube"]), str(step_files["bolt_circle"]))

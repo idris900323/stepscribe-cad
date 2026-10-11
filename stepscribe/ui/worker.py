@@ -11,9 +11,29 @@ from pathlib import Path
 from typing import Any
 
 
+def job_options(job: dict[str, Any]) -> Any:
+    """The AnalyzeOptions a UI job runs with (imports lazily: the page server never loads OCC)."""
+    from stepscribe.analysis import AnalyzeOptions
+
+    return AnalyzeOptions(
+        material=job.get("material") or None,
+        density=job.get("density"),
+        up=job.get("up", "+Z"),
+        front=job.get("front", "-Y"),
+        check_interference=bool(job.get("interference")),
+        no_timestamp=True,
+    )
+
+
+def job_cache_key(path: Path, job: dict[str, Any]) -> str:
+    """The shared cache key (see ``stepscribe.cache``) for a UI job's file and options."""
+    from stepscribe import cache
+
+    return cache.cache_key(path, job_options(job))
+
+
 def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = None) -> None:
     """Analyse ``job['path']`` and write a pack under ``job['out']``; never raises."""
-    from stepscribe.analysis import AnalyzeOptions
     from stepscribe.api import analyze_full
     from stepscribe.pack.design_context import apply_context, load_context
     from stepscribe.pack.writer import write_pack
@@ -33,14 +53,7 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
 
     started = time.time()
     try:
-        opts = AnalyzeOptions(
-            material=job.get("material") or None,
-            density=job.get("density"),
-            up=job.get("up", "+Z"),
-            front=job.get("front", "-Y"),
-            check_interference=bool(job.get("interference")),
-            no_timestamp=True,
-        )
+        opts = job_options(job)
         context_file = job.get("context_file")
         if context_file:
             ctx = load_context(context_file)
@@ -66,7 +79,13 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
             }
         )
         if cmd_q is not None and analysis.report.understanding is not None:
-            session_loop(analysis, folder, cmd_q, reply_q)
+            session_loop(
+                analysis,
+                folder,
+                cmd_q,
+                reply_q,
+                idle_s=float(job.get("session_idle_s") or IDLE_SECONDS),
+            )
     except Exception as exc:  # noqa: BLE001
         queue.put(
             {
@@ -77,7 +96,7 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
         )
 
 
-IDLE_SECONDS = 3600  # an interview process that nobody talks to for an hour ends
+IDLE_SECONDS = 900  # an interview process that nobody talks to for 15 minutes ends
 
 
 def _state(session: Any, change: Any = None) -> dict[str, Any]:
@@ -97,14 +116,45 @@ def _state(session: Any, change: Any = None) -> dict[str, Any]:
     }
 
 
-def session_loop(analysis: Any, folder: Path, cmd_q: Any, reply_q: Any) -> None:
-    """Serve interview commands from the page until told to quit (or idle for an hour)."""
+def restore_session(job: dict[str, Any], cmd_q: Any, reply_q: Any) -> None:
+    """Rebuild the interview session of a finished job from its saved pack (no new analysis)."""
+    from stepscribe.api import restore_analysis
+    from stepscribe.pack.design_context import apply_context, load_context
+
+    try:
+        pack = Path(job["pack"])
+        opts = job_options(job)
+        context_file = pack / "design_context.yaml"
+        if context_file.is_file():
+            apply_context(opts, load_context(context_file))
+        analysis = restore_analysis(job["path"], opts, pack / "data" / "report.json")
+        session_loop(
+            analysis,
+            pack,
+            cmd_q,
+            reply_q,
+            opts=opts,
+            idle_s=float(job.get("session_idle_s") or IDLE_SECONDS),
+        )
+    except Exception as exc:  # noqa: BLE001 - tell the page instead of dying silently
+        reply_q.put({"error": f"could not restart the session: {type(exc).__name__}: {exc}"})
+
+
+def session_loop(
+    analysis: Any,
+    folder: Path,
+    cmd_q: Any,
+    reply_q: Any,
+    opts: Any = None,
+    idle_s: float = IDLE_SECONDS,
+) -> None:
+    """Serve interview commands from the page until told to quit (or idle for *idle_s*)."""
     from stepscribe.pack.writer import write_pack
     from stepscribe.render import render_highlight
     from stepscribe.understanding.session import Session
 
     pipe = analysis.understanding_pipeline
-    session = Session(analysis, pipe.opts)
+    session = Session(analysis, opts if opts is not None else pipe.opts)
     context_file = folder / "design_context.yaml"
     import multiprocessing as mp
 
@@ -115,7 +165,7 @@ def session_loop(analysis: Any, folder: Path, cmd_q: Any, reply_q: Any) -> None:
             cmd = cmd_q.get(timeout=5)
         except Exception:  # noqa: BLE001 - queue.Empty
             idle += 5
-            if idle >= IDLE_SECONDS or (parent is not None and not parent.is_alive()):
+            if idle >= idle_s or (parent is not None and not parent.is_alive()):
                 return  # nobody is using the session, or the server is gone
             continue
         idle = 0.0

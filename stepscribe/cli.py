@@ -14,7 +14,8 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from stepscribe import __version__, config
+from stepscribe import __version__, config, limits
+from stepscribe import cache as cache_mod
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.batch import Job, options_dict, run_jobs, write_index
 from stepscribe.geometry.occ_utils import occt_version
@@ -75,6 +76,10 @@ def _options(
 def _run(
     files: list[Path], jobs_tpl: dict[str, Any], jobs: int, timeout_s: int
 ) -> list[dict[str, Any]]:
+    for f in files:
+        warning = limits.large_file_warning(f.stat().st_size)
+        if warning:
+            typer.echo(f"warning: {f.name}: {warning}", err=True)
     todo = [Job(path=str(f), **jobs_tpl) for f in files]
     results: list[dict[str, Any]] = []
     if len(todo) > 1:
@@ -633,21 +638,68 @@ def ui(
     max_upload_mb: Annotated[
         int, typer.Option(help="Largest STEP file the page may upload, in MB.")
     ] = 500,
+    max_jobs: Annotated[int, typer.Option(help="Analyses that may run at the same time.")] = 1,
+    session_idle_min: Annotated[
+        float, typer.Option(help="Minutes after which an unused interview session ends.")
+    ] = 15.0,
+    cache_max_gb: Annotated[
+        float, typer.Option(help="Size the result cache is trimmed to, in GB.")
+    ] = cache_mod.DEFAULT_MAX_GB,
 ) -> None:
     """Start the local web UI: upload a STEP file, see an ETA, inspect the context pack."""
     from stepscribe.ui.server import serve
 
     default = Path("robot_steps")
     folder = samples or (default if default.is_dir() else None)
-    serve(port, not no_browser, folder, path, max_upload_mb)
+    serve(
+        port,
+        not no_browser,
+        folder,
+        path,
+        max_upload_mb,
+        max_jobs,
+        session_idle_min,
+        cache_max_gb,
+    )
 
 
 @app.command()
-def mcp() -> None:
+def mcp(
+    max_jobs: Annotated[int, typer.Option(help="Analyses that may run at the same time.")] = 1,
+    cache_max_gb: Annotated[
+        float, typer.Option(help="Size the result cache is trimmed to, in GB.")
+    ] = cache_mod.DEFAULT_MAX_GB,
+) -> None:
     """Run the read-only MCP server over stdio (needs: pip install stepscribe[mcp])."""
     from stepscribe.mcp.server import main
+    from stepscribe.runner import RUNNER
 
+    RUNNER.set_max_jobs(max_jobs)
+    cache_mod.set_max_gb(cache_max_gb)
     main()
+
+
+cache_app = typer.Typer(help="Look at or empty the result cache.", no_args_is_help=True)
+app.add_typer(cache_app, name="cache")
+
+
+@cache_app.command("info")
+def cache_info() -> None:
+    """Where the cache is, how many analyses it holds and how big it is."""
+    info = cache_mod.info()
+    typer.echo(f"Cache folder: {info['path']}")
+    typer.echo(
+        f"{info['entries']} entries, {info['bytes'] / 1024**2:.1f} MB "
+        f"(limit {cache_mod.max_bytes() / 1024**3:.1f} GB)"
+    )
+    if info["fallback_reason"]:
+        typer.echo(f"The usual cache folder was not used: it {info['fallback_reason']}.")
+
+
+@cache_app.command("clear")
+def cache_clear() -> None:
+    """Delete every cached analysis."""
+    typer.echo(f"Removed {cache_mod.clear()} entries.")
 
 
 def _llm_pack(path: Path, vision: bool) -> tuple[str, list[Path], Any]:

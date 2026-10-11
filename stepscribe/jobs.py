@@ -9,10 +9,8 @@ Nothing here imports the web UI.
 
 from __future__ import annotations
 
-import hashlib
 import multiprocessing as mp
-import os
-import tempfile
+import threading
 import time
 import traceback
 import uuid
@@ -20,32 +18,25 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from stepscribe import cache, limits, procutil
 from stepscribe.analysis import AnalyzeOptions
-from stepscribe.progress import PRIOR_SECONDS_PER_FACE, Progress
-
-FACES_PER_MB = 600  # measured on the robot corpus: about 600 faces per MB of STEP text
-ASSEMBLY_FACTOR = 6.0  # parts plus contacts, from progress.ASSEMBLY_PRIOR_FRACTION + 1
+from stepscribe.progress import Progress
+from stepscribe.runner import RUNNER, WAIT_MESSAGE
 
 
 def cache_dir() -> Path:
-    """Where exports of MCP jobs live (override with ``STEPSCRIBE_CACHE``)."""
-    root = os.environ.get("STEPSCRIBE_CACHE")
-    return Path(root) if root else Path(tempfile.gettempdir()) / "stepscribe_cache"
+    """Where exports of MCP jobs live: the shared per-user cache (``STEPSCRIBE_CACHE`` overrides)."""
+    return cache.cache_root()
 
 
 def job_out_dir(path: Path, options: AnalyzeOptions) -> Path:
-    """Cache folder for one file and one set of options."""
-    h = hashlib.sha256(path.read_bytes())
-    h.update(repr(sorted(asdict(options).items())).encode())
-    return cache_dir() / h.hexdigest()[:16]
+    """Cache folder for one file and one set of options (the key every front end shares)."""
+    return cache.entry_dir(path, options)
 
 
 def initial_eta_s(path: Path) -> float:
     """A rough first estimate from the file size; the running job replaces it with a measured one."""
-    mb = path.stat().st_size / 1e6
-    return round(
-        mb * FACES_PER_MB * PRIOR_SECONDS_PER_FACE * (ASSEMBLY_FACTOR if mb > 0.5 else 1), 0
-    )
+    return round(limits.eta_seconds(path.stat().st_size), 0)
 
 
 def _worker(spec: dict[str, Any], queue: Any) -> None:
@@ -90,13 +81,22 @@ class JobState:
     summary: dict[str, Any] | None = None
     error: str | None = None
     done: bool = False
+    cancelled: bool = False
 
 
 class JobManager:
     """Starts export jobs in worker processes and reports their progress."""
 
+    KEEP_FINISHED = 20  # finished jobs remembered; the export itself stays in the cache
+
     def __init__(self) -> None:
         self.jobs: dict[str, JobState] = {}
+
+    def prune(self) -> None:
+        """Forget the oldest finished jobs; running jobs are never dropped."""
+        finished = sorted((s for s in self.jobs.values() if s.done), key=lambda s: s.started)
+        for state in finished[: max(0, len(finished) - self.KEEP_FINISHED)]:
+            del self.jobs[state.id]
 
     def start(
         self,
@@ -111,6 +111,7 @@ class JobManager:
         for state in self.jobs.values():
             if state.out_dir == str(out) and not state.done:
                 return state
+        self.prune()
         job_id = uuid.uuid4().hex[:8]
         spec = {
             "path": str(p),
@@ -121,11 +122,40 @@ class JobManager:
             "export": export_params or {},
         }
         queue: Any = mp.get_context("spawn").Queue()
-        proc = mp.get_context("spawn").Process(target=_worker, args=(spec, queue))
-        state = JobState(job_id, str(p), str(out), time.time(), proc, queue)
+        state = JobState(job_id, str(p), str(out), time.time(), None, queue)
         self.jobs[job_id] = state
-        proc.start()
+        threading.Thread(target=self._run, args=(state, spec, queue), daemon=True).start()
         return state
+
+    @staticmethod
+    def _run(state: JobState, spec: dict[str, Any], queue: Any) -> None:
+        """Wait for a free analysis slot, run the worker process, then trim the cache."""
+
+        def waiting() -> None:
+            state.last = {
+                "type": "progress",
+                "stage": "waiting",
+                "message": WAIT_MESSAGE,
+                "fraction": 0.0,
+                "elapsed_s": round(time.time() - state.started, 1),
+                "eta_s": None,
+            }
+
+        if not RUNNER.acquire(should_stop=lambda: state.cancelled, on_wait=waiting):
+            state.error, state.done = "cancelled", True
+            return
+        try:
+            proc = mp.get_context("spawn").Process(
+                target=procutil.run_in_group, args=(_worker, spec, queue)
+            )
+            proc.start()
+            state.process = proc  # only once it runs: poll() treats a dead process as a failure
+            procutil.register(proc)
+            proc.join()
+            procutil.unregister(proc)
+        finally:
+            RUNNER.release()
+        cache.evict(cache.max_bytes(), keep=[Path(state.out_dir)])
 
     def poll(self, job_id: str) -> JobState:
         """Drain progress messages and update the job's state."""

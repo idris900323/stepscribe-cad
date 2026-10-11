@@ -22,17 +22,17 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from stepscribe import __version__, config
+from stepscribe import __version__, cache, config
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.api import Analysis, analyze_full
 from stepscribe.describe.budget import estimate_tokens
 from stepscribe.exporter_text import clean, compose_full, compose_small
-from stepscribe.models.schema import Report, json_schema
+from stepscribe.models.schema import SCHEMA_VERSION, Report, json_schema
 from stepscribe.pack.design_context import apply_context, load_context
 from stepscribe.pack.writer import _safe, write_pack_build
 from stepscribe.progress import Tracker
 
-STAMP = ".stepscribe_export.json"
+STAMP = cache.STAMP
 IMAGE_PRIORITY = ("assembly_iso", "assembly_exploded", "kinematics_iso", "assembly_front")
 MIN_PANEL_SCALE = 0.55  # part-image info panels use a 20 px font; keep at least 11 px
 DEFAULT_SMALL_TOKENS = 12000
@@ -80,10 +80,10 @@ def export_key(
 ) -> str:
     """Digest of everything that changes the export."""
     h = hashlib.sha256()
-    h.update(path.read_bytes())
+    h.update(cache.file_digest(path).encode())
     h.update(json.dumps(asdict(options), sort_keys=True, default=str).encode())
     if context_file:
-        h.update(Path(context_file).read_bytes())
+        h.update(cache.file_digest(context_file).encode())
     h.update(json.dumps(params, sort_keys=True).encode())
     h.update(__version__.encode())
     return h.hexdigest()
@@ -276,7 +276,17 @@ def export(
         warnings=warnings + list(report.warnings),
     )
     (folder / STAMP).write_text(
-        json.dumps({"key": key, "result": result.model_dump()}, indent=1), encoding="utf-8"
+        json.dumps(
+            {
+                "key": key,
+                "file_sha256": cache.file_digest(p),
+                "tool_version": __version__,
+                "schema_version": SCHEMA_VERSION,
+                "result": result.model_dump(),
+            },
+            indent=1,
+        ),
+        encoding="utf-8",
     )
     # the zip is built from the folder, so the stamp is left out of it (see _zip)
     tracker.finish("export written")
