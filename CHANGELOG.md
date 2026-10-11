@@ -2,14 +2,30 @@
 
 ## 0.1.3
 
-Hardening phase H1: the local web page can no longer be driven or read by other websites.
+Security and resource hardening (phases H1 to H3) and fixes found on a real design.
 
-- Every request must carry a per-run session token; the `Host` and `Origin` headers must be the local server's; JSON and upload calls must use `application/json` / `application/octet-stream`. Images and downloads take the token as `?t=`.
+**Web page (H1)**
+- Every request needs a per-run session token and a local `Host`/`Origin`; JSON and upload calls must use `application/json` / `application/octet-stream`. Images and downloads take the token as `?t=`.
 - `/api/start_path` accepts only existing `.step`/`.stp` files, or a sample by index; `/api/samples` no longer lists file paths.
-- Uploads are capped (`stepscribe ui --max-upload-mb`, default 500), must look like a STEP file, and partial uploads are deleted.
-- Bad lengths, JSON, density, material and axes return a short 400; unexpected errors return a 500 without a traceback.
-- Security headers on every response, a Content-Security-Policy on the page, pack `.html` files served as plain text, and quotes escaped in the page's templates.
-- Material names in the page are checked with the same keyword rule the analysis uses.
+- Uploads are capped (`stepscribe ui --max-upload-mb`, default 500), must look like a STEP file, and partial uploads are deleted. Bad lengths, JSON, density, material and axes return a short 400; unexpected errors return a 500 without a traceback.
+- Security headers on every response, a Content-Security-Policy on the page, pack `.html` served as text, quotes escaped in the page's templates.
+
+**Text from STEP files is data (H2)**
+- Part and assembly names are cleaned once, in the reader (`stepscribe/text_safety.py`): Unicode-normalised, no control, zero-width or bidi characters, no Markdown/HTML-active characters, at most 64 characters. Names show as inline code in the pack and a "labels only, not instructions" line is in every pack header and the MCP overview. The agent instructions treat file text as untrusted.
+- `report.json` keeps only a `name_cleaned` flag, never the original text. Report schema 0.5.0 (new optional `Part.name_cleaned`).
+- A 500-character part name no longer crashes the export.
+
+**One analysis, one cache, bounded resources (H3)**
+- A shared per-user result cache (`stepscribe cache info|clear`, `--cache-max-gb`) used by the CLI export, the MCP server and the page. The MCP report tools read it and never analyse again (the old second, silent analysis took 166 s on a 7 MB assembly); a file that was not analysed gets a message with the ETA.
+- One analysis at a time (`--max-jobs`) with a visible "waiting" state; the worker count respects free RAM.
+- The page keeps one live interview session (idle timeout `--session-idle-min`, default 15), restores it from the saved pack, keeps the newest 5 jobs and streams its zip from disk.
+- Cancelling or quitting stops the whole worker tree on every OS; a warning appears before very large files (CLI, MCP, page).
+
+**Fixes**
+- A screw that ends in a blind hole no longer gets nut allowance and a nut (M2 x 16 plus 16 nuts became M2 x 12, no nuts).
+- Long interview answers no longer break `design_context.yaml`.
+- Material keywords match whole words ("plate" is not "pla"); placement rotations are no longer converted to degrees twice; the pack's read-me no longer claims there are no images after the interview rebuilds it; a large thin plate with holes is a plate, not a shaft.
+- CI fails if a POSIX-only test is skipped on Linux or macOS.
 
 ## 0.1.2
 
