@@ -21,7 +21,18 @@ Security and resource hardening (phases H1 to H3) and fixes found on a real desi
 - The page keeps one live interview session (idle timeout `--session-idle-min`, default 15), restores it from the saved pack, keeps the newest 5 jobs and streams its zip from disk.
 - Cancelling or quitting stops the whole worker tree on every OS; a warning appears before very large files (CLI, MCP, page).
 
+**Other security (H4)**
+- Learned role models (the `stepscribe.role_models` entry point) are imported only when named in `STEPSCRIBE_ML` or `ml.enabled` in `design_context.yaml`; the ones that ran are listed in the report and the pack.
+- The LLM adapter refuses to send an API key over plain `http://` to a remote host (override: `STEPSCRIBE_LLM_ALLOW_INSECURE=1`) and its errors never contain the key. `pip-audit` runs in CI.
+
+**Ease of use (H5)**
+- `python -m stepscribe` works (use it when `stepscribe` is "not found"); `stepscribe doctor` checks versions, rendering, cache, memory and CPUs and gives a fix for each problem.
+- Dependencies are pinned to what is tested (`cadquery-ocp>=8.0,<9`, upper bounds for `mcp`, `vtk`, `numpy`, `pydantic`, `typer`); the wrong OpenCASCADE version stops with one line. Python 3.13 is tested in CI.
+- Common errors (file not found, not a STEP file, external references, no OpenGL, out of memory, timeout, missing extra) show one sentence and a suggestion; `--debug` shows the traceback.
+- The README's option defaults are generated from the command line, its links are absolute, and the sdist leaves out media and golden images. The page says when images cannot be drawn on this computer.
+
 **Fixes**
+- A screw into a blind hole stops one thread pitch short of the bottom (M1.6 x 6 became M1.6 x 5 for a 3 mm plate over a 3 mm blind hole).
 - A screw that ends in a blind hole no longer gets nut allowance and a nut (M2 x 16 plus 16 nuts became M2 x 12, no nuts).
 - Long interview answers no longer break `design_context.yaml`.
 - Material keywords match whole words ("plate" is not "pla"); placement rotations are no longer converted to degrees twice; the pack's read-me no longer claims there are no images after the interview rebuilds it; a large thin plate with holes is a plate, not a shaft.

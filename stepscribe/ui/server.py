@@ -110,6 +110,16 @@ class App:
         self.max_upload_bytes = 500 * 1024 * 1024
         self.session_idle_s = session_idle_s
         self.keep_jobs = keep_jobs
+        self.environment_cache: dict[str, Any] | None = None
+
+    def environment(self) -> dict[str, Any]:
+        """Can this computer draw images? Checked once, in a child process, the first time asked."""
+        if self.environment_cache is None:
+            from stepscribe import doctor
+
+            message = doctor.rendering_message()
+            self.environment_cache = {"rendering": message is None, "message": message}
+        return self.environment_cache
 
     def samples(self) -> list[Path]:
         """Sample files in a stable order; the page refers to them by index, never by path."""
@@ -444,6 +454,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 )
             elif url.path == "/api/precheck":
                 self._precheck(q)
+            elif url.path == "/api/environment":
+                _json(self, app.environment())
             elif url.path == "/api/status":
                 self._status(q.get("id", [""])[0])
             elif url.path == "/api/zip":

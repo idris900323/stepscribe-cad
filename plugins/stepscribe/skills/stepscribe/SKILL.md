@@ -17,8 +17,10 @@ tool call. If a number is missing, measure it with a tool or say it is unknown.
 
 ## 1. Check the environment
 
-Run `python scripts/check_env.py` (in this skill's folder). It prints the stepscribe version and whether
-the MCP server dependencies are present. It never installs anything.
+Run `python scripts/check_env.py` (in this skill's folder). It prints the stepscribe version, whether the
+MCP server dependencies are present and, when stepscribe is installed, the result of
+`python -m stepscribe doctor` with a fix for each problem. It never installs anything. If the plain
+`stepscribe` command is not found, use `python -m stepscribe` (on Windows `py -m stepscribe`) instead.
 
 If stepscribe is missing, **ask the user before installing** (`pip install stepscribe`, or
 `pip install "stepscribe[mcp]"` for the MCP server). If installing is not possible here, say so plainly and

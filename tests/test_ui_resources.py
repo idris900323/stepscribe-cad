@@ -235,3 +235,17 @@ def test_shutdown_leaves_no_worker_processes(ui: Ui, step_files: dict[str, Path]
     assert proc is not None and proc.is_alive()
     ui.app.shutdown()
     assert not proc.is_alive()
+
+
+def test_the_page_says_when_images_cannot_be_drawn(ui: Ui, monkeypatch: pytest.MonkeyPatch) -> None:
+    from stepscribe import doctor
+
+    monkeypatch.setattr(doctor, "rendering_ok", lambda: False)
+    ui.app.environment_cache = None
+    env = ui.call("GET", "/api/environment")
+    assert env["rendering"] is False and "without images" in env["message"]
+    monkeypatch.setattr(doctor, "rendering_ok", lambda: True)
+    ui.app.environment_cache = None
+    assert ui.call("GET", "/api/environment") == {"rendering": True, "message": None}
+    page = urllib.request.urlopen(ui.base + "/", timeout=10).read().decode("utf-8")
+    assert "/api/environment" in page

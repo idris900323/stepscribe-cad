@@ -166,6 +166,9 @@ def analyze_full(
     path: str | Path, options: AnalyzeOptions | None = None, tracker: Tracker | None = None
 ) -> Analysis:
     """Analyse one STEP file; unreadable files yield a report with an ``errors`` entry."""
+    from stepscribe import envcheck
+
+    envcheck.check_occt()  # a clear one-liner instead of a crash deep inside OCCT calls
     opts = options or AnalyzeOptions()
     p = Path(path)
     try:

@@ -182,6 +182,7 @@
       <div class="btnwrap"><button class="primary" id="go">Analyse</button></div>
     </div>
     <div class="mute" id="picked"></div>
+    <div class="mute" id="envnote" style="display:none"></div>
   </div>
 
   <div class="card" id="progCard" style="display:none">
@@ -251,6 +252,7 @@ function pick(f) { if (!f) return; chosenFile = f; chosenSample = null; $('path'
 $('change').onclick = () => { chosenFile = null; chosenSample = null; $('path').value = ''; $('samples').value = ''; $('file').value = ''; $('chip').style.display = 'none'; $('pickers').style.display = ''; };
 $('path').onchange = () => { const v = $('path').value.trim(); if (v) { chosenFile = null; chosenSample = null; chip(v.split(/[\/]/).pop(), 'Read in place from ' + v + ' (nothing is copied).'); precheck('path=' + encodeURIComponent(v)); } };
 $('samples').onchange = () => { const v = $('samples').value; if (v !== '') { $('path').value = ''; chosenFile = null; chosenSample = Number(v); chip($('samples').selectedOptions[0].dataset.name, 'Sample file, read in place on this computer.'); precheck('sample=' + v); } };
+api('/api/environment').then(r => r.json()).then(e => { if (e.message) { $('envnote').textContent = e.message; $('envnote').style.display = ''; } }).catch(() => {});
 api('/api/samples').then(r => r.json()).then(list => {
   if (!list.length) return;
   $('samples').innerHTML = '<option value="">choose…</option>' + list.map(s => `<option value="${esc(s.index)}" data-name="${esc(s.name)}">${esc(s.name)} (${s.mb} MB)</option>`).join('');

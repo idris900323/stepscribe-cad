@@ -16,7 +16,7 @@ You need **Python 3.11 or newer**. Check with `python --version`; get it from py
 python -m pip install "stepscribe-cad[mcp]"
 ```
 
-Then check it with `stepscribe --help`. If your shell says the command is not found, close and reopen the terminal (pip puts it in your Python `Scripts` folder).
+Then check it with `python -m stepscribe version` (on Windows `py -m stepscribe version` also works). This form works even when your shell says `stepscribe` is not found, which happens when pip's `Scripts` folder is not on your PATH; you can use `python -m stepscribe` in place of `stepscribe` everywhere below. `python -m stepscribe doctor` checks the rest of your setup and tells you how to fix what is wrong.
 
 **2. Pick how you want to use it:**
 
@@ -30,7 +30,7 @@ Then check it with `stepscribe --help`. If your shell says the command is not fo
 **Things worth knowing**
 
 - Chat apps cannot take a STEP file as an attachment here. In Claude Code you give the **path**: start Claude Code in the folder that holds the file and type `/stepscribe-cad:export my_robot.step`, or paste the full path.
-- The result is **files on your disk**. The plugin saves them next to your STEP file in `my_robot_stepscribe/` plus a `.zip`, and tells you the full path. Open that folder in your file manager and attach the file you need to your chat. `stepscribe export` writes to `./out` unless you pass `-o`.
+- The result is **files on your disk**. The plugin saves them next to your STEP file in `my_robot_stepscribe/` plus a `.zip`, and tells you the full path. Open that folder in your file manager and attach the file you need to your chat. `stepscribe export` writes to the folder you give with `-o` (its default is listed under Quickstart).
 - Big assemblies take minutes. The page and the plugin show progress and an estimate; nothing is cut to go faster.
 - Everything runs on your computer: no AI model, no network, no upload.
 
@@ -46,6 +46,16 @@ stepscribe render robot.step --view exploded -o exploded.png
 stepscribe section robot.step --plane "z=12.5"
 stepscribe init-context                            # template for design intent / materials
 ```
+
+<!-- cli-defaults:start -->
+Defaults (generated from the command line, `python scripts/update_readme_defaults.py`):
+
+- `stepscribe export`: `--out` = `stepscribe_export`, `--small-budget-tokens` = `12000`, `--compact-budget-tokens` = `40000`, `--chat-max-images` = `4`, `--chat-max-mb` = `10.0`, `--up` = `+Z`, `--front` = `-Y`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
+- `stepscribe pack`: `--out` = `out`, `--up` = `+Z`, `--front` = `-Y`, `--budget-tokens` = `40000`, `--motion-budget-s` = `120`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
+- `stepscribe analyze`: `--out` = `out`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
+- `stepscribe ui`: `--port` = `8765`, `--max-upload-mb` = `500`, `--max-jobs` = `1`, `--session-idle-min` = `15.0`, `--cache-max-gb` = `2.0`
+- `stepscribe mcp`: `--max-jobs` = `1`, `--cache-max-gb` = `2.0`
+<!-- cli-defaults:end -->
 
 From a source checkout instead: `python -m pip install -e ".[dev,mcp]"`.
 
@@ -203,11 +213,11 @@ Much of this code was written with AI assistance and then tested against generat
 
 ## Project docs
 
-- [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md), [docs/prelaunch_checklist.md](docs/prelaunch_checklist.md), [docs/plugin_testing.md](docs/plugin_testing.md)
-- [examples/README.md](examples/README.md) (where to get open robot STEP files)
+- [CHANGELOG.md](https://github.com/idris900323/stepscribe-cad/blob/main/CHANGELOG.md), [CONTRIBUTING.md](https://github.com/idris900323/stepscribe-cad/blob/main/CONTRIBUTING.md), [docs/prelaunch_checklist.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/prelaunch_checklist.md), [docs/plugin_testing.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/plugin_testing.md)
+- [examples/README.md](https://github.com/idris900323/stepscribe-cad/blob/main/examples/README.md) (where to get open robot STEP files)
 
 ## License
 
-stepscribe is free and open source under the [GNU AGPL-3.0](LICENSE). You may use, modify and share it under those terms, including the duty to publish source code when you distribute it or offer it as a network service. The analysis output you generate belongs to you. Companies that want to embed it in closed-source products or run a closed hosted service can get a commercial license: see [COMMERCIAL.md](COMMERCIAL.md). To contribute, read [CONTRIBUTING.md](CONTRIBUTING.md) and the [CLA](CLA.md). Third-party dependencies keep their own licenses.
+stepscribe is free and open source under the [GNU AGPL-3.0](https://github.com/idris900323/stepscribe-cad/blob/main/LICENSE). You may use, modify and share it under those terms, including the duty to publish source code when you distribute it or offer it as a network service. The analysis output you generate belongs to you. Companies that want to embed it in closed-source products or run a closed hosted service can get a commercial license: see [COMMERCIAL.md](https://github.com/idris900323/stepscribe-cad/blob/main/COMMERCIAL.md). To contribute, read [CONTRIBUTING.md](https://github.com/idris900323/stepscribe-cad/blob/main/CONTRIBUTING.md) and the [CLA](https://github.com/idris900323/stepscribe-cad/blob/main/CLA.md). Third-party dependencies keep their own licenses.
 
-"stepscribe" and its logo are trademarks of the maintainer; see [TRADEMARKS.md](TRADEMARKS.md).
+"stepscribe" and its logo are trademarks of the maintainer; see [TRADEMARKS.md](https://github.com/idris900323/stepscribe-cad/blob/main/TRADEMARKS.md).

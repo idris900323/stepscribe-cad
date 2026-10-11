@@ -15,18 +15,34 @@ from rich.markup import escape
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from stepscribe import __version__, config, limits
+from stepscribe import __version__, config, envcheck, limits
 from stepscribe import cache as cache_mod
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.batch import Job, options_dict, run_jobs, write_index
+from stepscribe.errors import FriendlyGroup
 from stepscribe.geometry.occ_utils import occt_version
 from stepscribe.io.discovery import find_step_files
 from stepscribe.progress import Progress as Progress_
 from stepscribe.progress import format_eta
 
 app = typer.Typer(
-    add_completion=False, no_args_is_help=True, help="Turn STEP files into an LLM Context Pack."
+    add_completion=False,
+    no_args_is_help=True,
+    cls=FriendlyGroup,
+    help="Turn STEP files into an LLM Context Pack.",
 )
+
+
+@app.callback()
+def _main(
+    ctx: typer.Context,
+    debug: Annotated[
+        bool, typer.Option("--debug", help="Show the full traceback when something fails.")
+    ] = False,
+) -> None:
+    ctx.meta["stepscribe.debug"] = debug
+
+
 console = Console()
 
 
@@ -77,6 +93,7 @@ def _options(
 def _run(
     files: list[Path], jobs_tpl: dict[str, Any], jobs: int, timeout_s: int
 ) -> list[dict[str, Any]]:
+    envcheck.check_occt()  # one clear line if OpenCASCADE is the wrong version
     for f in files:
         warning = limits.large_file_warning(f.stat().st_size)
         if warning:
@@ -355,6 +372,24 @@ def schema(out: Annotated[Path | None, typer.Option("--out", "-o")] = None) -> N
         console.print(f"Wrote {out}")
     else:
         sys.stdout.write(text)
+
+
+@app.command()
+def doctor(
+    json_out: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+) -> None:
+    """Check this computer: versions, rendering, cache, memory; with a fix for each problem."""
+    import dataclasses
+
+    from stepscribe import doctor as doctor_mod
+
+    checks = doctor_mod.run_checks()
+    if json_out:
+        typer.echo(json.dumps([dataclasses.asdict(c) for c in checks], indent=2))
+    else:
+        typer.echo(doctor_mod.format_report(checks))
+    if any(c.level == "fail" for c in checks):
+        raise typer.Exit(1)
 
 
 @app.command()
