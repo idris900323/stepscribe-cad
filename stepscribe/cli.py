@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
@@ -725,31 +726,41 @@ def _llm_config() -> Any:
     try:
         return LLMConfig.from_env()
     except LLMConfigError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(2) from exc
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(2) from None
+
+
+def _chat_or_exit(cfg: Any, prompt: str, images: Any) -> str:
+    from stepscribe.llm.adapter import LLMConfigError, LLMError, chat
+
+    try:
+        return chat(cfg, prompt, images)
+    except (LLMConfigError, LLMError) as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(1) from None
 
 
 @app.command()
 def ask(path: Path_, question: Annotated[str, typer.Argument(help="Your question.")]) -> None:
     """Ask a question about a design: builds the pack and sends it to your configured LLM."""
-    from stepscribe.llm.adapter import build_prompt, chat
+    from stepscribe.llm.adapter import build_prompt
 
     cfg = _llm_config()
     text, images, _report = _llm_pack(path, cfg.vision)
-    console.print(chat(cfg, build_prompt(text, f"Question: {question}"), images))
+    console.print(_chat_or_exit(cfg, build_prompt(text, f"Question: {question}"), images))
 
 
 @app.command("eval")
 def eval_cmd(path: Path_, limit: Annotated[int, typer.Option(help="Max questions.")] = 12) -> None:
     """Score how well your configured LLM answers factual questions about a design."""
-    from stepscribe.llm.adapter import build_prompt, chat
+    from stepscribe.llm.adapter import build_prompt
     from stepscribe.llm.evaluate import SUFFIX, EvalResult, accuracy, build_questions, score
 
     cfg = _llm_config()
     text, images, report = _llm_pack(path, cfg.vision)
     results = []
     for q in build_questions(report, limit):
-        answer = chat(cfg, build_prompt(text, q.text), images)
+        answer = _chat_or_exit(cfg, build_prompt(text, q.text), images)
         results.append(EvalResult(q, answer, score(answer, q)))
     table = Table(title=f"stepscribe eval: {cfg.model}")
     for col in ("question", "expected", "model answer", "ok"):

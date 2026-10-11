@@ -437,7 +437,7 @@ def assign_roles(
             cur = best[inst.part_id].get(role)
             if cur is None or score > cur[0]:
                 best[inst.part_id][role] = (score, s.evidence[role])
-    models = ml_models if ml_models is not None else load_role_models()
+    models = ml_models if ml_models is not None else load_role_models()  # none unless switched on
     ml_weight = float(c.get("ml", {}).get("weight", 0.8))
     for ap in analysis.parts:
         if ap.part.understanding is None:

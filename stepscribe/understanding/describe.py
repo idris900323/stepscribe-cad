@@ -133,6 +133,11 @@ def understanding_markdown(report: Report) -> str:
         else {}
     )
     lines = ["# Understanding: how the design works", ""]
+    learned = report.meta.options.get("ml_models") or []
+    if learned:
+        lines += ["## Learned role models used", ""]
+        lines += [f"- `{m['name']}` ({m['distribution']} {m['version']})" for m in learned]
+        lines += ["", "Their suggestions are labelled `ml:<name>` in the evidence.", ""]
     lines += [
         "Everything here is a rule-based hypothesis (no model, no network). Statements start with "
         '"Likely:" where they are inferences; each carries a confidence from 0 to 1 and evidence that '
