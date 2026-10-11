@@ -124,6 +124,25 @@ def blind_clearance_assembly(out: Path = FIXTURE_DIR) -> Path:
     )
 
 
+def blind_thin_stack_assembly(out: Path = FIXTURE_DIR) -> Path:
+    """3 mm cover over a block with four 3 mm deep blind Ø1.6 holes: a 6 mm stack like an LED mount."""
+    block = Box(40, 40, 10)
+    for x in (-12, 12):
+        for y in (-12, 12):
+            block = block - Pos(x, y, 5 - 1.5) * Cylinder(0.8, 3)
+    cover = Box(40, 40, 3)
+    for x in (-12, 12):
+        for y in (-12, 12):
+            cover = cover - Pos(x, y, 0) * Cylinder(0.8, 5)
+    root = Node(
+        "BlindThin",
+        children=[Node("Block", "Block", Pos(0, 0, -5)), Node("Cover", "Cover", Pos(0, 0, 1.5))],
+    )
+    return write_assembly(
+        out / "blind_thin_stack_assembly.step", {"Block": block, "Cover": cover}, root
+    )
+
+
 def shaft_in_bearing_assembly(out: Path = FIXTURE_DIR) -> Path:
     """Ø8 shaft in a Ø8.06 bore (diametral clearance 0.06)."""
     block = Box(30, 30, 20) - Cylinder(4.03, 22)
@@ -160,6 +179,7 @@ def generate_assemblies(out: Path = FIXTURE_DIR) -> dict[str, Path]:
         two_plates_assembly,
         tapped_assembly,
         blind_clearance_assembly,
+        blind_thin_stack_assembly,
         shaft_in_bearing_assembly,
         nested_assembly,
     )
