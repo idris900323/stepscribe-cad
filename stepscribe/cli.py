@@ -681,6 +681,12 @@ def ui(
     cache_max_gb: Annotated[
         float, typer.Option(help="Size the result cache is trimmed to, in GB.")
     ] = cache_mod.DEFAULT_MAX_GB,
+    idle_exit_min: Annotated[
+        float,
+        typer.Option(
+            help="Stop by itself after this many minutes without an open page (0 = never)."
+        ),
+    ] = 10.0,
 ) -> None:
     """Start the local web UI: upload a STEP file, see an ETA, inspect the context pack."""
     from stepscribe.ui.server import serve
@@ -696,6 +702,38 @@ def ui(
         max_jobs,
         session_idle_min,
         cache_max_gb,
+        idle_exit_min,
+    )
+
+
+@app.command()
+def shortcut(
+    remove: Annotated[bool, typer.Option("--remove", help="Delete the launchers.")] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Replace a file that stepscribe did not create.")
+    ] = False,
+    minimised: Annotated[
+        bool, typer.Option("--minimised", help="Windows: start the console window minimised.")
+    ] = False,
+) -> None:
+    """Put an icon on the desktop that opens the page; closing the page stops everything."""
+    from stepscribe import launcher
+
+    loc = launcher.default_locations()
+    if remove:
+        gone = launcher.remove(loc)
+        for path in gone:
+            typer.echo(f"Removed {path}")
+        if not gone:
+            typer.echo("Nothing to remove.")
+        return
+    for made in launcher.create(loc, force=force, minimised=minimised):
+        if made.skipped:
+            typer.echo(f"Skipped {made.path}: {made.reason}")
+        else:
+            typer.echo(f"Created {made.path}")
+    typer.echo(
+        "Double-click it to open stepscribe. Remove it with: python -m stepscribe shortcut --remove"
     )
 
 

@@ -31,6 +31,10 @@ Security and resource hardening (phases H1 to H3) and fixes found on a real desi
 - Common errors (file not found, not a STEP file, external references, no OpenGL, out of memory, timeout, missing extra) show one sentence and a suggestion; `--debug` shows the traceback.
 - The README's option defaults are generated from the command line, its links are absolute, and the sdist leaves out media and golden images. The page says when images cannot be drawn on this computer.
 
+**Desktop launcher (H6)**
+- `stepscribe shortcut` puts an icon on the desktop (Windows `.lnk`, macOS `.command`, Linux `.desktop`) that runs the Python which installed stepscribe; `--remove` deletes it and nothing that stepscribe did not create is overwritten without `--force`.
+- Starting the page twice opens the running one; a busy port picks a free one. The page has a **Quit stepscribe** button, shuts itself down after 10 minutes without an open page (`--idle-exit-min`, never during an analysis), and closing the console window stops every process.
+
 **Fixes**
 - A screw into a blind hole stops one thread pitch short of the bottom (M1.6 x 6 became M1.6 x 5 for a 3 mm plate over a 3 mm blind hole).
 - A screw that ends in a blind hole no longer gets nut allowance and a nut (M2 x 16 plus 16 nuts became M2 x 12, no nuts).

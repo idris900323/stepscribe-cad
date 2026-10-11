@@ -152,7 +152,7 @@
 <body>
 <header>
   <div class="brand"><h1>stepscribe</h1><p>Turn a STEP file into a plain-language description of the design.</p></div>
-  <p class="where">Version {{VERSION}}. Runs on this computer; your file is not sent anywhere.</p>
+  <p class="where">Version {{VERSION}}. Runs on this computer; your file is not sent anywhere. <button id="quit" type="button">Quit stepscribe</button></p>
 </header>
 <main>
   <div class="card" id="inputCard">
@@ -235,6 +235,9 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 const TOKEN = document.querySelector('meta[name=stepscribe-token]').content;
 const tq = url => url + (url.includes('?') ? '&' : '?') + 't=' + encodeURIComponent(TOKEN);
 const api = (url, opts = {}) => fetch(url, { ...opts, headers: { 'X-Stepscribe-Token': TOKEN, ...(opts.headers || {}) } });
+let pageAlive = true;
+const beat = () => { if (pageAlive) api('/api/heartbeat', JSON_POST()).catch(() => {}); };
+setInterval(beat, 20000);
 const JSON_POST = body => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
 const fmtEta = s => s == null ? 'estimating…' : s < 60 ? `about ${Math.round(s)} s` : `about ${Math.floor(s/60)} min ${String(Math.round(s%60)).padStart(2,'0')} s`;
 const fmtT = s => s < 60 ? `${s.toFixed(0)} s` : `${Math.floor(s/60)} min ${String(Math.round(s%60)).padStart(2,'0')} s`;
@@ -437,6 +440,13 @@ $('askSkip').onclick = () => askSend('skipped');
 $('askBack').onclick = async () => askRender(await askCall('/api/answers/undo?id=' + jobId, {}));
 $('askDone').onclick = () => { $('askCard').style.display = 'none'; };
 $('askBtn').onclick = askStart;
+beat();
+$('quit').onclick = async () => {
+  if (!confirm('Stop stepscribe? Running analyses are cancelled; saved answers stay in the pack files.')) return;
+  pageAlive = false;
+  try { await api('/api/shutdown', JSON_POST()); } catch (e) { /* already gone */ }
+  document.body.innerHTML = '<main><div class="card"><h2>stepscribe has stopped</h2><p>You can close this tab.</p></div></main>';
+};
 const preJob = new URLSearchParams(location.search).get('job');
 if (preJob) { jobId = preJob; $('progCard').style.display = ''; $('go').disabled = true; $('progTitle').textContent = 'Analysing...'; poll(); timer = setInterval(poll, 800); }
 let lbList = [], lbIdx = 0;

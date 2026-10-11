@@ -53,7 +53,7 @@ Defaults (generated from the command line, `python scripts/update_readme_default
 - `stepscribe export`: `--out` = `stepscribe_export`, `--small-budget-tokens` = `12000`, `--compact-budget-tokens` = `40000`, `--chat-max-images` = `4`, `--chat-max-mb` = `10.0`, `--up` = `+Z`, `--front` = `-Y`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
 - `stepscribe pack`: `--out` = `out`, `--up` = `+Z`, `--front` = `-Y`, `--budget-tokens` = `40000`, `--motion-budget-s` = `120`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
 - `stepscribe analyze`: `--out` = `out`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
-- `stepscribe ui`: `--port` = `8765`, `--max-upload-mb` = `500`, `--max-jobs` = `1`, `--session-idle-min` = `15.0`, `--cache-max-gb` = `2.0`
+- `stepscribe ui`: `--port` = `8765`, `--max-upload-mb` = `500`, `--max-jobs` = `1`, `--session-idle-min` = `15.0`, `--cache-max-gb` = `2.0`, `--idle-exit-min` = `10.0`
 - `stepscribe mcp`: `--max-jobs` = `1`, `--cache-max-gb` = `2.0`
 <!-- cli-defaults:end -->
 
@@ -206,6 +206,24 @@ There is no default endpoint and no key is stored on disk (`STEPSCRIBE_LLM_API_K
 - Knowledge tables (screws, motors, bearings, extrusions) are deliberately small and each entry cites its source; unsure values are left out.
 - No hidden-line (HLR) drawings yet.
 - Not yet checked against a CAD system for accuracy; verify important numbers there.
+
+## Desktop shortcut
+
+Open stepscribe like an app: one command puts an icon on your desktop, double-click it and the page opens in your browser.
+
+```bash
+python -m stepscribe shortcut            # create the icon (python -m stepscribe shortcut --remove deletes it)
+```
+
+- **Windows:** a `stepscribe.lnk` on your Desktop, plus `stepscribe.bat` in `%LOCALAPPDATA%\stepscribe`. **macOS:** `stepscribe.command` on the Desktop. **Linux:** `stepscribe.desktop` in `~/.local/share/applications` (and on the Desktop if you have one). No admin rights are needed, and a file that stepscribe did not create is never overwritten unless you pass `--force`.
+- The icon uses the exact Python that installed stepscribe, so it works even when `stepscribe` is not on your PATH. If you uninstall stepscribe, the icon says so and shows the reinstall command instead of flashing closed.
+- Starting it twice just opens the page that is already running.
+
+There are three ways to close it, and each one stops every background process:
+
+1. **Quit stepscribe** in the page header.
+2. **Close the tab and forget:** with no open page for 10 minutes (`--idle-exit-min`) and no analysis running, it shuts itself down.
+3. **Close the window** (or press Ctrl+C) of the console it runs in.
 
 ## Built with help from AI tools
 

@@ -9,18 +9,22 @@ heavy file can never freeze the page.
 from __future__ import annotations
 
 import hmac
+import http.client
 import json
 import math
 import multiprocessing as mp
 import os
 import secrets
 import shutil
+import socket
+import sys
 import tempfile
 import threading
 import time
 import uuid
 import webbrowser
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -47,6 +51,7 @@ MIME = {
     ".json": "application/json",
     ".html": "text/plain; charset=utf-8",
 }
+LOCK_NAME = "ui.lock.json"  # who is serving: pid, port and the token to ask /api/ping
 AXES = ("+X", "-X", "+Y", "-Y", "+Z", "-Z")
 STEP_SUFFIXES = (".step", ".stp")
 STEP_MAGIC = b"ISO-10303-21"
@@ -111,6 +116,9 @@ class App:
         self.session_idle_s = session_idle_s
         self.keep_jobs = keep_jobs
         self.environment_cache: dict[str, Any] | None = None
+        self.last_heartbeat = time.time()  # the page says it is still open every 20 s
+        self.on_quit: Callable[[], None] | None = None
+        self._quitting = False
 
     def environment(self) -> dict[str, Any]:
         """Can this computer draw images? Checked once, in a child process, the first time asked."""
@@ -277,6 +285,17 @@ class App:
                     kill_tree(s.process)
                 procutil.unregister(s.process)
 
+    def quit(self) -> None:
+        """Stop jobs and sessions, delete the work folder, then tell the server to stop (once)."""
+        with self.lock:
+            if self._quitting:
+                return
+            self._quitting = True
+        self.shutdown()
+        shutil.rmtree(self.workdir, ignore_errors=True)
+        if self.on_quit is not None:
+            self.on_quit()
+
     def cancel(self, job_id: str) -> None:
         state = self.jobs.get(job_id)
         if state is None:
@@ -369,9 +388,16 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 if post:
                     self._check_post(url)
             except BadRequest as e:
+                if post and url.path != "/api/upload":
+                    self._drain_small_body()  # else the client may see a reset, not the 403
                 self._fail(e)
                 return None
             return url
+
+        def _drain_small_body(self) -> None:
+            raw = self.headers.get("Content-Length", "")
+            if raw.strip().isdigit() and int(raw) <= MAX_JSON_BYTES:
+                self.rfile.read(int(raw))
 
         def _fail(self, e: BadRequest) -> None:
             if e.status >= 413:
@@ -456,6 +482,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 self._precheck(q)
             elif url.path == "/api/environment":
                 _json(self, app.environment())
+            elif url.path == "/api/ping":
+                _json(self, {"stepscribe": True, "version": __version__, "pid": os.getpid()})
             elif url.path == "/api/status":
                 self._status(q.get("id", [""])[0])
             elif url.path == "/api/zip":
@@ -608,6 +636,12 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             elif url.path == "/api/cancel":
                 app.cancel(q.get("id", ""))
                 _json(self, {"ok": True})
+            elif url.path == "/api/heartbeat":
+                app.last_heartbeat = time.time()
+                _json(self, {"ok": True})
+            elif url.path == "/api/shutdown":
+                _json(self, {"ok": True})
+                threading.Thread(target=app.quit, daemon=True).start()
             elif url.path == "/api/answers":
                 body = self._read_json()
                 res = app.call(
@@ -709,6 +743,76 @@ def _params(src: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class _Server(ThreadingHTTPServer):
+    """No two programs share the port: a busy port fails instead of being taken over."""
+
+    allow_reuse_address = sys.platform != "win32"  # POSIX: fine, and avoids TIME_WAIT delays
+
+    def server_bind(self) -> None:
+        if sys.platform == "win32":  # Windows would otherwise let a second socket share the port
+            exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE")  # noqa: B009 - Windows only
+            self.socket.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+        super().server_bind()
+
+
+class IdleMonitor:
+    """Calls *on_idle* once if no page has sent a heartbeat for *idle_s* and no analysis runs."""
+
+    def __init__(
+        self, app: App, idle_s: float, on_idle: Callable[[], None], poll_s: float = 1.0
+    ) -> None:
+        self.app, self.idle_s, self.on_idle, self.poll_s = app, idle_s, on_idle, poll_s
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self.poll_s):
+            now = time.time()
+            if any(not s.done for s in list(self.app.jobs.values())):
+                self.app.last_heartbeat = now  # the clock starts after the analysis
+                continue
+            if now - self.app.last_heartbeat >= self.idle_s:
+                self.on_idle()
+                return
+
+
+def _lock_file(instance_dir: Path | None) -> Path:
+    return (instance_dir if instance_dir is not None else cache.cache_root()) / LOCK_NAME
+
+
+def find_running(instance_dir: Path | None = None) -> dict[str, Any] | None:
+    """The stepscribe page already running for this user (lock file plus a token-checked ping)."""
+    lock = _lock_file(instance_dir)
+    try:
+        info = json.loads(lock.read_text(encoding="utf-8"))
+        conn = http.client.HTTPConnection("127.0.0.1", int(info["port"]), timeout=3)
+        try:
+            conn.request("GET", "/api/ping", headers={"X-Stepscribe-Token": str(info["token"])})
+            if json.loads(conn.getresponse().read()).get("stepscribe") is True:
+                return info  # type: ignore[no-any-return]
+        finally:
+            conn.close()
+    except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException):
+        pass
+    return None
+
+
+def _write_lock(instance_dir: Path | None, port: int, token: str) -> Path:
+    lock = _lock_file(instance_dir)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    data = json.dumps({"pid": os.getpid(), "port": port, "token": token, "version": __version__})
+    fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(data)
+    return lock
+
+
 def serve(
     port: int = 8765,
     open_browser: bool = True,
@@ -718,21 +822,47 @@ def serve(
     max_jobs: int = 1,
     session_idle_min: float = 15.0,
     cache_max_gb: float = cache.DEFAULT_MAX_GB,
+    idle_exit_min: float = 10.0,
+    instance_dir: Path | None = None,
 ) -> None:
-    """Run the UI until interrupted."""
+    """Run the UI until it is quit, idle, or interrupted. One page per user: a second start
+    just opens the first."""
     require_interactive("start the local server")
+    running = find_running(instance_dir)
+    if running is not None:
+        url = f"http://127.0.0.1:{running['port']}/"
+        print(f"stepscribe is already running at {url}; opening it.")
+        if preload is not None:
+            print(f"Drop {preload.name} onto that page (or its path into the path box).")
+        if open_browser:
+            require_interactive("open a browser")
+            webbrowser.open(url)
+        return
     RUNNER.set_max_jobs(max_jobs)
     cache.set_max_gb(cache_max_gb)
     procutil.install_cleanup()
     workdir = Path(tempfile.mkdtemp(prefix="stepscribe_ui_"))
     app = App(workdir, sample_dir, session_idle_s=session_idle_min * 60.0)
     app.max_upload_bytes = max_upload_mb * 1024 * 1024
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app))
-    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    handler = make_handler(app)
+    try:
+        server: ThreadingHTTPServer = _Server(("127.0.0.1", port), handler)
+    except OSError:
+        server = _Server(("127.0.0.1", 0), handler)
+        print(f"Port {port} is busy; using {server.server_address[1]} instead.")
+    real_port = int(server.server_address[1])
+    url = f"http://127.0.0.1:{real_port}/"
+    app.on_quit = lambda: threading.Thread(target=server.shutdown, daemon=True).start()
+    lock = _write_lock(instance_dir, real_port, app.token)
+    monitor = None
+    if idle_exit_min > 0:
+        monitor = IdleMonitor(app, idle_exit_min * 60.0, app.quit)
+        monitor.start()
+    remove_console_handler = procutil.install_console_handler(app.quit)
     if preload is not None:
         state = app.start(preload, preload.name, _params({}))
         url += f"?job={state.id}"
-    print(f"stepscribe UI on {url}  (Ctrl+C to stop)")
+    print(f"stepscribe UI on {url}  (use Quit in the page, or Ctrl+C, to stop)")
     if open_browser:
         require_interactive("open a browser")
         webbrowser.open(url)
@@ -741,6 +871,14 @@ def serve(
     except KeyboardInterrupt:
         pass
     finally:
+        if monitor is not None:
+            monitor.stop()
+        remove_console_handler()
         server.server_close()
         app.shutdown()
         shutil.rmtree(workdir, ignore_errors=True)
+        try:
+            if json.loads(lock.read_text(encoding="utf-8")).get("token") == app.token:
+                lock.unlink()
+        except (OSError, ValueError):
+            pass

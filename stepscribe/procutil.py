@@ -130,6 +130,44 @@ def install_cleanup() -> None:
             pass
 
 
+CTRL_EVENTS = (0, 1, 2, 5, 6)  # Ctrl+C, Ctrl+Break, console closed, log off, shutdown
+_console_refs: list[Any] = []
+
+
+def make_console_handler(callback: Callable[[], None]) -> Callable[[int], bool]:
+    """A Windows console-control handler: run *callback* for every event that ends the program."""
+
+    def handler(event: int) -> bool:
+        if event in CTRL_EVENTS:
+            callback()
+            return True
+        return False
+
+    return handler
+
+
+def install_console_handler(callback: Callable[[], None]) -> Callable[[], None]:
+    """Run *callback* when the console window is closed (Windows). Returns a function to undo it.
+
+    Closing the window gives the process only a few seconds; the callback must be quick.
+    """
+    if sys.platform != "win32":
+        return lambda: None
+    import ctypes
+
+    handler = make_console_handler(callback)
+    proto = getattr(ctypes, "WINFUNCTYPE")(ctypes.c_int, ctypes.c_uint)  # noqa: B009 - Windows only
+    c_handler = proto(lambda event: 1 if handler(int(event)) else 0)
+    kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 - Windows only
+    kernel32.SetConsoleCtrlHandler(c_handler, True)
+    _console_refs.append(c_handler)  # the C callback must stay alive while it is installed
+
+    def remove() -> None:
+        kernel32.SetConsoleCtrlHandler(c_handler, False)
+
+    return remove
+
+
 def reset_cleanup_for_tests() -> None:
     global _installed
     _installed = False
