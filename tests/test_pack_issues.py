@@ -1,4 +1,4 @@
-"""Problems found by running a real design (full ass.step) through the pack: one test each."""
+"""Problems found by running a real design (a robot chassis assembly) through the pack: one test each."""
 
 from __future__ import annotations
 

@@ -49,5 +49,5 @@ The desktop icon and the `.bat` are gone. Create them again, then uninstall step
 (`python -m pip uninstall stepscribe-cad`) and double-click the icon: the window must say that
 stepscribe is no longer installed, show the reinstall command and wait for a key press.
 
-Write down anything that differs from the above and send it along; mark this checklist done in
-`BUILD_REPORT.md` when it passes.
+If anything differs from the above, please open an issue with what you saw (your Windows version, how
+you closed the page, and what Task Manager showed).
