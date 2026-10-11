@@ -16,3 +16,4 @@ brag-output-*/
 
 # hardening run artifacts (scan output, red/green evidence)
 hardening/
+HARDENING_PROMPT.md
