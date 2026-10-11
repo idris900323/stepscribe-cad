@@ -630,13 +630,16 @@ def ui(
     samples: Annotated[
         Path | None, typer.Option(help="Folder of STEP files offered as samples.")
     ] = None,
+    max_upload_mb: Annotated[
+        int, typer.Option(help="Largest STEP file the page may upload, in MB.")
+    ] = 500,
 ) -> None:
     """Start the local web UI: upload a STEP file, see an ETA, inspect the context pack."""
     from stepscribe.ui.server import serve
 
     default = Path("robot_steps")
     folder = samples or (default if default.is_dir() else None)
-    serve(port, not no_browser, folder, path)
+    serve(port, not no_browser, folder, path, max_upload_mb)
 
 
 @app.command()

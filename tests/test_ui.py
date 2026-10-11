@@ -15,10 +15,17 @@ import pytest
 
 from stepscribe.ui.server import App, make_handler
 
+TOKEN = {"value": ""}
+
+
+def _headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    return {"X-Stepscribe-Token": TOKEN["value"], **(extra or {})}
+
 
 @pytest.fixture
 def server(tmp_path: Path):  # type: ignore[no-untyped-def]
     app = App(tmp_path, tmp_path)
+    TOKEN["value"] = app.token
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
@@ -27,7 +34,8 @@ def server(tmp_path: Path):  # type: ignore[no-untyped-def]
 
 
 def get(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=30) as r:
+    req = urllib.request.Request(url, headers=_headers())
+    with urllib.request.urlopen(req, timeout=30) as r:
         return r.read()
 
 
@@ -48,7 +56,10 @@ def test_page_and_upload_flow(server: str, step_files) -> None:  # type: ignore[
     assert b"stepscribe" in get(server + "/") and b"{{VERSION}}" not in get(server + "/")
     data = step_files["two_plates_assembly"].read_bytes()
     req = urllib.request.Request(
-        server + "/api/upload?name=two_plates.step&material=alu&images=1", data=data, method="POST"
+        server + "/api/upload?name=two_plates.step&material=alu&images=1",
+        data=data,
+        method="POST",
+        headers=_headers({"Content-Type": "application/octet-stream"}),
     )
     job = json.loads(urllib.request.urlopen(req, timeout=30).read())["id"]
     s = wait_done(server, job)
@@ -69,7 +80,10 @@ def test_page_and_upload_flow(server: str, step_files) -> None:  # type: ignore[
 
 def test_bad_path_and_traversal_are_rejected(server: str) -> None:
     req = urllib.request.Request(
-        server + "/api/start_path", data=json.dumps({"path": "nope.step"}).encode(), method="POST"
+        server + "/api/start_path",
+        data=json.dumps({"path": "nope.step"}).encode(),
+        method="POST",
+        headers=_headers({"Content-Type": "application/json"}),
     )
     with pytest.raises(urllib.error.HTTPError) as e:
         urllib.request.urlopen(req, timeout=10)
@@ -80,7 +94,12 @@ def test_bad_path_and_traversal_are_rejected(server: str) -> None:
 
 
 def post(url: str, body: dict | None = None) -> dict:  # type: ignore[type-arg]
-    req = urllib.request.Request(url, data=json.dumps(body or {}).encode(), method="POST")
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body or {}).encode(),
+        method="POST",
+        headers=_headers({"Content-Type": "application/json"}),
+    )
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.loads(r.read())  # type: ignore[no-any-return]
 
@@ -89,7 +108,10 @@ def test_interview_over_http(server: str, step_files) -> None:  # type: ignore[n
     """Ask me questions: next question, answer, change line, highlight image, undo, download."""
     data = step_files["two_link_arm"].read_bytes()
     req = urllib.request.Request(
-        server + "/api/upload?name=arm.step&images=0", data=data, method="POST"
+        server + "/api/upload?name=arm.step&images=0",
+        data=data,
+        method="POST",
+        headers=_headers({"Content-Type": "application/octet-stream"}),
     )
     job = json.loads(urllib.request.urlopen(req, timeout=30).read())["id"]
     s = wait_done(server, job)

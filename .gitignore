@@ -13,3 +13,6 @@ out/
 # launch-video output
 brag-output/
 brag-output-*/
+
+# hardening run artifacts (scan output, red/green evidence)
+hardening/

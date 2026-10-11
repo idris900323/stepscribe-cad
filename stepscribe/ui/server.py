@@ -8,9 +8,12 @@ heavy file can never freeze the page.
 
 from __future__ import annotations
 
+import hmac
 import io
 import json
+import math
 import multiprocessing as mp
+import secrets
 import shutil
 import tempfile
 import threading
@@ -24,7 +27,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from stepscribe import __version__
+from stepscribe import __version__, config
 from stepscribe.headless import require_interactive
 from stepscribe.io.discovery import find_step_files
 from stepscribe.procutil import kill_tree
@@ -41,8 +44,26 @@ MIME = {
     ".png": "image/png",
     ".md": "text/plain; charset=utf-8",
     ".json": "application/json",
-    ".html": "text/html; charset=utf-8",
+    ".html": "text/plain; charset=utf-8",
 }
+AXES = ("+X", "-X", "+Y", "-Y", "+Z", "-Z")
+STEP_SUFFIXES = (".step", ".stp")
+STEP_MAGIC = b"ISO-10303-21"
+CSP = (
+    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+    "script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"
+)
+MAX_JSON_BYTES = 1 << 20
+# image tags and download links cannot send headers, so these accept ?t=<token> as well
+QUERY_TOKEN_PATHS = ("/files/", "/api/render", "/api/zip", "/api/pack/download")
+
+
+class BadRequest(Exception):
+    """A request the server refuses, with the HTTP status to answer."""
+
+    def __init__(self, message: str, status: int = 400) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass
@@ -75,6 +96,12 @@ class App:
         self.sample_dir = sample_dir
         self.jobs: dict[str, JobState] = {}
         self.lock = threading.Lock()
+        self.token = secrets.token_urlsafe(32)
+        self.max_upload_bytes = 500 * 1024 * 1024
+
+    def samples(self) -> list[Path]:
+        """Sample files in a stable order; the page refers to them by index, never by path."""
+        return find_step_files(self.sample_dir) if self.sample_dir else []
 
     def start(self, path: Path, display_name: str, params: dict[str, Any]) -> JobState:
         job_id = uuid.uuid4().hex[:10]
@@ -161,6 +188,10 @@ def _json(handler: BaseHTTPRequestHandler, payload: Any, status: int = 200) -> N
     handler.wfile.write(body)
 
 
+def _content_type(handler: BaseHTTPRequestHandler) -> str:
+    return handler.headers.get("Content-Type", "").split(";")[0].strip().lower()
+
+
 def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
     """Request handler class bound to *app*."""
 
@@ -168,18 +199,113 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
             return
 
+        def end_headers(self) -> None:
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
+        # ------------------------------------------------------------ guards
+        def _origins(self) -> set[str]:
+            addr = self.server.server_address
+            port = addr[1] if isinstance(addr, tuple) else 0
+            return {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+
+        def _check_host(self) -> None:
+            host = self.headers.get("Host", "")
+            if host not in {o.removeprefix("http://") for o in self._origins()}:
+                raise BadRequest("forbidden", 403)
+
+        def _check_token(self, url: Any) -> None:
+            given = self.headers.get("X-Stepscribe-Token", "")
+            if not given and url.path.startswith(QUERY_TOKEN_PATHS):
+                given = parse_qs(url.query).get("t", [""])[0]
+            if not hmac.compare_digest(given.encode(), app.token.encode()):
+                raise BadRequest("forbidden", 403)
+
+        def _check_post(self, url: Any) -> None:
+            origin = self.headers.get("Origin")
+            if origin is not None and origin not in self._origins():
+                raise BadRequest("forbidden", 403)
+            want = "application/octet-stream" if url.path == "/api/upload" else "application/json"
+            if _content_type(self) != want:
+                raise BadRequest(f"Content-Type must be {want}", 415)
+
+        def _guarded(self, post: bool) -> Any | None:
+            """Host, token, origin and content-type checks; the parsed URL, or None if refused."""
+            url = urlparse(self.path)
+            try:
+                self._check_host()
+                public = not post and url.path in ("/", "/favicon.svg", "/favicon.ico")
+                if not public:
+                    self._check_token(url)
+                if post:
+                    self._check_post(url)
+            except BadRequest as e:
+                self._fail(e)
+                return None
+            return url
+
+        def _fail(self, e: BadRequest) -> None:
+            if e.status >= 413:
+                self.close_connection = True  # the unread body must not be parsed as a request
+            _json(self, {"error": str(e)}, e.status)
+
+        def _run(self, handler: Any, post: bool) -> None:
+            url = self._guarded(post)
+            if url is None:
+                return
+            try:
+                handler(url)
+            except BadRequest as e:
+                self._fail(e)
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True
+            except Exception:  # noqa: BLE001 - never leak a traceback to the client
+                self.close_connection = True
+                try:
+                    _json(self, {"error": "internal error"}, 500)
+                except OSError:
+                    pass
+
+        def _read_json(self) -> dict[str, Any]:
+            length = self._content_length()
+            if length > MAX_JSON_BYTES:
+                raise BadRequest("request body too large", 413)
+            try:
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except (ValueError, UnicodeDecodeError):
+                raise BadRequest("the request body is not valid JSON") from None
+            if not isinstance(body, dict):
+                raise BadRequest("the request body must be a JSON object")
+            return body
+
+        def _content_length(self) -> int:
+            raw = self.headers.get("Content-Length")
+            if raw is None or not raw.strip().isdigit():
+                raise BadRequest("a valid Content-Length is required")
+            return int(raw)
+
         # ------------------------------------------------------------ GET
         def do_GET(self) -> None:  # noqa: N802
-            url = urlparse(self.path)
+            self._run(self._get, post=False)
+
+        def do_OPTIONS(self) -> None:  # noqa: N802
+            # no CORS: a preflight is never approved, so cross-site JSON and upload calls fail
+            self._run(lambda _u: self.send_error(405), post=False)
+
+        def _get(self, url: Any) -> None:
             q = parse_qs(url.query)
             if url.path == "/":
                 body = (
                     INDEX.read_text(encoding="utf-8")
                     .replace("{{VERSION}}", __version__)
+                    .replace("{{TOKEN}}", app.token)
                     .encode("utf-8")
                 )
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Security-Policy", CSP)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -191,12 +317,12 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 self.end_headers()
                 self.wfile.write(body)
             elif url.path == "/api/samples":
-                files = find_step_files(app.sample_dir) if app.sample_dir else []
+                files = app.samples()
                 _json(
                     self,
                     [
-                        {"path": str(f), "name": f.name, "mb": round(f.stat().st_size / 1e6, 1)}
-                        for f in files
+                        {"index": i, "name": f.name, "mb": round(f.stat().st_size / 1e6, 1)}
+                        for i, f in enumerate(files)
                     ],
                 )
             elif url.path == "/api/status":
@@ -299,37 +425,30 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
 
         # ------------------------------------------------------------ POST
         def do_POST(self) -> None:  # noqa: N802
-            url = urlparse(self.path)
+            self._run(self._post, post=True)
+
+        def _post(self, url: Any) -> None:
             q = {k: v[0] for k, v in parse_qs(url.query).items()}
-            length = int(self.headers.get("Content-Length", "0"))
             if url.path == "/api/upload":
-                name = Path(unquote(q.get("name", "upload.step"))).name or "upload.step"
-                dest_dir = app.workdir / "uploads" / uuid.uuid4().hex[:8]
-                dest_dir.mkdir(parents=True, exist_ok=True)
-                dest = dest_dir / name
-                remaining = length
-                with dest.open("wb") as fh:
-                    while remaining > 0:
-                        chunk = self.rfile.read(min(1 << 20, remaining))
-                        if not chunk:
-                            break
-                        fh.write(chunk)
-                        remaining -= len(chunk)
-                state = app.start(dest, name, _params(q))
-                _json(self, {"id": state.id})
+                self._upload(q)
             elif url.path == "/api/start_path":
-                body = json.loads(self.rfile.read(length) or b"{}")
-                p = Path(body.get("path", ""))
-                if not p.is_file():
-                    _json(self, {"error": f"file not found: {p}"}, 400)
-                    return
-                state = app.start(p, p.name, _params(body))
+                body = self._read_json()
+                params = _params(body)
+                if "sample" in body:
+                    files = app.samples()
+                    i = body["sample"]
+                    if isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < len(files):
+                        raise BadRequest("unknown sample")
+                    p = files[i]
+                else:
+                    p = _step_path(body.get("path"))
+                state = app.start(p, p.name, params)
                 _json(self, {"id": state.id})
             elif url.path == "/api/cancel":
                 app.cancel(q.get("id", ""))
                 _json(self, {"ok": True})
             elif url.path == "/api/answers":
-                body = json.loads(self.rfile.read(length) or b"{}")
+                body = self._read_json()
                 res = app.call(
                     q.get("id", ""),
                     {
@@ -347,7 +466,56 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             else:
                 self.send_error(404)
 
+        def _upload(self, q: dict[str, str]) -> None:
+            length = self._content_length()
+            if length <= 0:
+                raise BadRequest("the upload is empty")
+            if length > app.max_upload_bytes:
+                raise BadRequest(f"the file is larger than {app.max_upload_bytes >> 20} MB", 413)
+            params = _params(q)
+            name = Path(unquote(q.get("name", ""))).name
+            if not name.lower().endswith(STEP_SUFFIXES):
+                name = (name or "upload") + ".step"
+            dest_dir = app.workdir / "uploads" / uuid.uuid4().hex[:8]
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / name
+            ok = False
+            try:
+                remaining, first = length, True
+                with dest.open("wb") as fh:
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(1 << 20, remaining))
+                        if not chunk:
+                            break
+                        if first and not chunk.lstrip().startswith(STEP_MAGIC):
+                            raise BadRequest("this is not a STEP file", 415)
+                        first = False
+                        fh.write(chunk)
+                        remaining -= len(chunk)
+                if remaining:
+                    raise BadRequest("the upload ended early")
+                ok = True
+            finally:
+                if not ok:
+                    shutil.rmtree(dest_dir, ignore_errors=True)
+            state = app.start(dest, name, params)
+            _json(self, {"id": state.id})
+
     return Handler
+
+
+def _step_path(raw: Any) -> Path:
+    """An existing STEP file; errors name the file, never the directory."""
+    if not isinstance(raw, str) or not raw.strip():
+        raise BadRequest("give the path of a .step or .stp file")
+    try:
+        p = Path(raw.strip()).expanduser().resolve()
+        usable = p.is_file() and p.suffix.lower() in STEP_SUFFIXES
+    except (OSError, ValueError):
+        raise BadRequest("that path cannot be read") from None
+    if not usable:
+        raise BadRequest(f"not an existing .step or .stp file: {Path(raw.strip()).name}")
+    return p
 
 
 def _params(src: dict[str, Any]) -> dict[str, Any]:
@@ -355,12 +523,26 @@ def _params(src: dict[str, Any]) -> dict[str, Any]:
         v = src.get(k)
         return default if v is None else str(v).lower() in ("1", "true", "yes", "on")
 
-    density = src.get("density")
+    density: float | None = None
+    raw = src.get("density")
+    if raw not in (None, ""):
+        try:
+            density = float(raw)
+        except (TypeError, ValueError):
+            raise BadRequest("density must be a number") from None
+        if not math.isfinite(density) or density <= 0:
+            raise BadRequest("density must be a positive number")
+    material = str(src.get("material") or "").strip()
+    if material and not any(k in material.lower() for k in config.MATERIAL_KEYWORDS):
+        raise BadRequest("unknown material; try one of: " + ", ".join(config.MATERIAL_KEYWORDS))
+    up, front = src.get("up") or "+Z", src.get("front") or "-Y"
+    if up not in AXES or front not in AXES:
+        raise BadRequest("up and front must be one of " + ", ".join(AXES))
     return {
-        "material": (src.get("material") or "").strip() or None,
-        "density": float(density) if density not in (None, "") else None,
-        "up": src.get("up") or "+Z",
-        "front": src.get("front") or "-Y",
+        "material": material or None,
+        "density": density,
+        "up": up,
+        "front": front,
         "images": flag("images", True),
         "interference": flag("interference", True),
     }
@@ -371,11 +553,13 @@ def serve(
     open_browser: bool = True,
     sample_dir: Path | None = None,
     preload: Path | None = None,
+    max_upload_mb: int = 500,
 ) -> None:
     """Run the UI until interrupted."""
     require_interactive("start the local server")
     workdir = Path(tempfile.mkdtemp(prefix="stepscribe_ui_"))
     app = App(workdir, sample_dir)
+    app.max_upload_bytes = max_upload_mb * 1024 * 1024
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app))
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     if preload is not None:

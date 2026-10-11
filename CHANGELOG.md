@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3
+
+Hardening phase H1: the local web page can no longer be driven or read by other websites.
+
+- Every request must carry a per-run session token; the `Host` and `Origin` headers must be the local server's; JSON and upload calls must use `application/json` / `application/octet-stream`. Images and downloads take the token as `?t=`.
+- `/api/start_path` accepts only existing `.step`/`.stp` files, or a sample by index; `/api/samples` no longer lists file paths.
+- Uploads are capped (`stepscribe ui --max-upload-mb`, default 500), must look like a STEP file, and partial uploads are deleted.
+- Bad lengths, JSON, density, material and axes return a short 400; unexpected errors return a 500 without a traceback.
+- Security headers on every response, a Content-Security-Policy on the page, pack `.html` files served as plain text, and quotes escaped in the page's templates.
+- Material names in the page are checked with the same keyword rule the analysis uses.
+
 ## 0.1.2
 
 - The project is named **stepscribe-cad** everywhere public: the GitHub repository, the README title, the Claude Code marketplace and plugin (commands are `/stepscribe-cad:export`, `/stepscribe-cad:interview`, `/stepscribe-cad:review`). The command line tool is still `stepscribe` and the Python package is still `stepscribe`.
