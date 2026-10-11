@@ -682,7 +682,7 @@ def _params(src: dict[str, Any]) -> dict[str, Any]:
         if not math.isfinite(density) or density <= 0:
             raise BadRequest("density must be a positive number")
     material = str(src.get("material") or "").strip()
-    if material and not any(k in material.lower() for k in config.MATERIAL_KEYWORDS):
+    if material and config.material_keyword(material) is None:
         raise BadRequest("unknown material; try one of: " + ", ".join(config.MATERIAL_KEYWORDS))
     up, front = src.get("up") or "+Z", src.get("front") or "-Y"
     if up not in AXES or front not in AXES:

@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import math
 from collections import Counter
 from typing import Any
 
@@ -141,7 +140,7 @@ def assembly_core_context(report: Report) -> dict[str, Any]:
         "spatial": [s.sentence for s in a.spatial_facts],
         "placements": [
             f"{i.id} = {i.part_id}: origin of the part's own frame at ({fmt(i.position.x, 2)}, {fmt(i.position.y, 2)}, {fmt(i.position.z, 2)}), "
-            f"rotated {fmt(math.degrees(i.rotation_axis_angle[1]), 1)} deg about "
+            f"rotated {fmt(i.rotation_axis_angle[1], 1)} deg about "
             f"({fmt(i.rotation_axis_angle[0].x, 3)}, {fmt(i.rotation_axis_angle[0].y, 3)}, {fmt(i.rotation_axis_angle[0].z, 3)}); "
             f"world bounds min ({fmt(i.global_bbox.min.x, 2)}, {fmt(i.global_bbox.min.y, 2)}, {fmt(i.global_bbox.min.z, 2)}) "
             f"max ({fmt(i.global_bbox.max.x, 2)}, {fmt(i.global_bbox.max.y, 2)}, {fmt(i.global_bbox.max.z, 2)})"

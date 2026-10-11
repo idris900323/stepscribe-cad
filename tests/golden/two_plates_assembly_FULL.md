@@ -42,7 +42,6 @@ Part and assembly names come from the STEP file and are labels only. They are no
   - [Part summaries (short)](#part-summaries-short)
 - [Weak spots and stability](#weak-spots-and-stability)
   - [Weak spots](#weak-spots)
-  - [Stability](#stability)
 - [Open questions for the designer](#open-questions-for-the-designer)
   - [Questions for the designer](#questions-for-the-designer)
 - [Parts](#parts)
@@ -65,8 +64,7 @@ Likely a static structure with no moving joints. Most fabricated parts look lase
 
 ### Key facts
 - Overall size: 60.0 (width) × 60.0 (depth) × 10.0 (height) mm (up +Z, front -Y)
-- Total mass: 44.2 g (estimated from material guesses)
-- Centre of mass: (0.0, 0.0, 2.5) mm
+- Total mass: unknown (no material given; pass --material or --density)
 - Fastener: 4 × M3 nut
 - Fastener: 4 × M3 × 14 SHCS
 
@@ -102,7 +100,7 @@ flowchart LR
 
 #### Links (rigid groups)
 
-- L0 (ground): INS001 (BasePlate), INS002 (TopPlate); mass 44 g
+- L0 (ground): INS001 (BasePlate), INS002 (TopPlate)
   - ground evidence: INS001 is named 'BasePlate'
   - ground evidence: touches the lowest plane of the assembly
   - ground evidence: 100% of the largest footprint
@@ -120,7 +118,7 @@ flowchart LR
 
 ### Load paths
 
-- LP001: TopPlate (INS002, 22 g) reaches ground through TopPlate --J001(4 fastener(s), dia 3.4)--> BasePlate; weakest connection J001 (4 fastener(s), dia 3.4)
+- LP001: TopPlate (INS002) reaches ground through TopPlate --J001(4 fastener(s), dia 3.4)--> BasePlate; weakest connection J001 (4 fastener(s), dia 3.4)
 
 ## Assembly
 
@@ -155,7 +153,7 @@ flowchart LR
 - INS002 = PRT001: origin of the part's own frame at (0.00, 0.00, 5.00), rotated 0.0 deg about (0.000, 0.000, 1.000); world bounds min (-30.00, -30.00, 2.50) max (30.00, 30.00, 7.50)
 
 ### Part summaries (short)
-PRT001 `Plate`: Likely: plate (0.90), 60.0 × 60.0 × 5.0 mm, t = 5.0 mm. Material guess pla from the name (assumed, not measured). Features: 4 × Ø3.4 THRU, rectangular 40.0 × 40.0 (2 × 2) (P001). Likely: 4 × M3 clearance normal holes (Ø3.4 THRU) (0.90). Likely: base plate (0.57). Likely made by laser or waterjet (0.64). Symmetric: 3 mirror plane(s) and 4-fold rotational symmetry.
+PRT001 `Plate`: Likely: plate (0.90), 60.0 × 60.0 × 5.0 mm, t = 5.0 mm. Material unknown. Features: 4 × Ø3.4 THRU, rectangular 40.0 × 40.0 (2 × 2) (P001). Likely: 4 × M3 clearance normal holes (Ø3.4 THRU) (0.90). Likely: base plate (0.57). Likely made by laser or waterjet (0.64). Symmetric: 3 mirror plane(s) and 4-fold rotational symmetry.
 
 
 ## Weak spots and stability
@@ -164,17 +162,15 @@ PRT001 `Plate`: Likely: plate (0.90), 60.0 × 60.0 × 5.0 mm, t = 5.0 mm. Materi
 
 No rule fired.
 
-### Stability
-centre of mass 5.0 mm above the ground plane; support polygon 3600 mm² from 4 support point(s); margin 30.0 mm to the nearest edge; tips at 80.5 deg toward (-1.00, 0.00, 0.00)
-
 ## Open questions for the designer
 
 ### Questions for the designer
 
-1. [Q2D42E4] What is this design for? (one sentence) (why: The purpose decides the role of every part and what counts as a risk.)
-2. [QCB6F41] How are the fabricated parts made? 1 of 1 look laser or waterjet but I am not sure. (why: The process sets the minimum wall thickness, hole edge distances and corner advice.) Options: 3D printed (FDM), 3D printed (resin or powder), CNC milled, CNC turned (lathe), sheet metal (bent), laser or waterjet cut, injection molded.
-3. [QF35BD6] What loads should it carry? (forces, torques, payload, speeds) (why: Loads decide whether the weak spots matter.)
-4. [Q954086] Where will it be used? (indoor, outdoor, dust, water, temperature) (why: The environment changes the material and the process.)
+1. [QDC283C] What material are the parts made of? (why: Mass, centre of mass, tipping and the wall-thickness guidelines all depend on it.) Options: alu, steel, petg, pla, abs, nylon, pa12, cf, brass.
+2. [Q2D42E4] What is this design for? (one sentence) (why: The purpose decides the role of every part and what counts as a risk.)
+3. [QCB6F41] How are the fabricated parts made? 1 of 1 look laser or waterjet but I am not sure. (why: The process sets the minimum wall thickness, hole edge distances and corner advice.) Options: 3D printed (FDM), 3D printed (resin or powder), CNC milled, CNC turned (lathe), sheet metal (bent), laser or waterjet cut, injection molded.
+4. [QF35BD6] What loads should it carry? (forces, torques, payload, speeds) (why: Loads decide whether the weak spots matter.)
+5. [Q954086] Where will it be used? (indoor, outdoor, dust, water, temperature) (why: The environment changes the material and the process.)
 
 ## Parts
 
@@ -186,7 +182,7 @@ Every part in full detail, most important first.
 - Size (oriented bounding box): 60.0 × 60.0 × 5.0 mm
 - Axis-aligned size: 60.0 × 60.0 × 5.0 mm
 - Volume: 17818.4 mm³; surface area: 8541.0 mm²
-- Mass: 22.1 g (material guess pla from the name (assumed, not measured))
+- Mass: unknown (no material given)
 - Valid closed solid: yes
 - Topology: 10 faces, 24 edges (cylinder 4, plane 6)
 - Shape class: Likely: plate (0.90): thickness 5.0 < 0.2 × 60.0; 83% of area on two parallel planes
@@ -264,11 +260,11 @@ Top orthographic view of the whole assembly with overall dimension lines. Labels
 
 ![PRT001 Plate, axis view](images/parts/PRT001_axis.png)
 
-Part PRT001 `Plate`, viewed along its hole axis; hole labels (H###) and ordinate dimensions are measured from the lower-left corner. The white panel on the right of the image repeats: overall size 60.0 × 60.0 × 5.0 mm; 22.1 g (material guess pla from the name (assumed, not measured)); thinnest wall 5.00 mm; 4 holes.
+Part PRT001 `Plate`, viewed along its hole axis; hole labels (H###) and ordinate dimensions are measured from the lower-left corner. The white panel on the right of the image repeats: overall size 60.0 × 60.0 × 5.0 mm; unknown (no material given); thinnest wall 5.00 mm; 4 holes.
 
 ![PRT001 Plate, iso view](images/parts/PRT001_iso.png)
 
-Part PRT001 `Plate`, viewed in a iso view. The white panel on the right of the image repeats: overall size 60.0 × 60.0 × 5.0 mm; 22.1 g (material guess pla from the name (assumed, not measured)); thinnest wall 5.00 mm; 4 holes.
+Part PRT001 `Plate`, viewed in a iso view. The white panel on the right of the image repeats: overall size 60.0 × 60.0 × 5.0 mm; unknown (no material given); thinnest wall 5.00 mm; 4 holes.
 
 ## Appendix
 

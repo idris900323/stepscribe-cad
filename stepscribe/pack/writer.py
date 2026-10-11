@@ -224,7 +224,9 @@ def write_pack_build(
 
     put(
         "00_READ_ME_FIRST.md",
-        env.get_template("00_READ_ME_FIRST.md.j2").render(up=up, front=front, has_images=images),
+        env.get_template("00_READ_ME_FIRST.md.j2").render(
+            up=up, front=front, has_images=bool(images_written)
+        ),
     )
     put("01_overview.md", sections.level0 + "\n")
     if report.understanding is not None:

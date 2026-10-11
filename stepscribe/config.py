@@ -57,6 +57,26 @@ MATERIAL_KEYWORDS: dict[str, float] = {
     "brass": 8.50,
 }
 
+MATERIAL_ALIASES: dict[str, tuple[str, ...]] = {"alu": ("aluminium", "aluminum")}
+
+
+def material_keyword(text: str) -> str | None:
+    """The material keyword named in *text*, matched as whole words ("plate" is not "pla").
+
+    Words are split on spaces, punctuation, underscores and camelCase; a trailing grade number
+    is allowed ("alu6061").  Returns the key of ``MATERIAL_KEYWORDS`` or None.
+    """
+    import re
+
+    spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
+    words = [w for w in re.split(r"[^a-z0-9]+", spaced.lower()) if w]
+    for key in sorted(MATERIAL_KEYWORDS):
+        names = {key, *MATERIAL_ALIASES.get(key, ())}
+        if any(w in names or w.rstrip("0123456789") in names for w in words):
+            return key
+    return None
+
+
 # --- features ---------------------------------------------------------------
 TANGENT_TOL_DEG = 2.0  # G1 test between neighbouring faces
 SLOT_SPAN_DEG = 180.0
