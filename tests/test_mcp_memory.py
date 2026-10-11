@@ -22,6 +22,40 @@ def ru_maxrss_bytes(value: int, platform: str) -> int:
     return value if platform == "darwin" else value * 1024
 
 
+def vmhwm_bytes(proc_status: str) -> int:
+    """Linux: the peak resident size of this process image, from /proc/self/status (VmHWM).
+
+    ru_maxrss is not usable there: a child started with exec keeps the parent's peak, so it
+    would report the memory of the test runner that started the server.
+    """
+    for line in proc_status.splitlines():
+        if line.startswith("VmHWM:"):
+            return int(line.split()[1]) * 1024
+    raise ValueError("no VmHWM line")
+
+
+def test_vmhwm_is_read_in_kilobytes() -> None:
+    text = (
+        "Name:"
+        + chr(9)
+        + "python"
+        + chr(10)
+        + "VmPeak:"
+        + chr(9)
+        + "900 kB"
+        + chr(10)
+        + "VmHWM:"
+        + chr(9)
+        + "123456 kB"
+        + chr(10)
+        + "VmRSS:"
+        + chr(9)
+        + "100 kB"
+        + chr(10)
+    )
+    assert vmhwm_bytes(text) == 123456 * 1024
+
+
 def test_peak_memory_units_per_platform() -> None:
     assert ru_maxrss_bytes(330_000_000, "darwin") == 330_000_000
     assert ru_maxrss_bytes(330_000, "linux") == 337_920_000
@@ -29,6 +63,7 @@ def test_peak_memory_units_per_platform() -> None:
 
 SESSION = (
     inspect.getsource(ru_maxrss_bytes)
+    + inspect.getsource(vmhwm_bytes)
     + r"""
 import json, sys, time, tempfile, os
 os.environ["STEPSCRIBE_CACHE"] = tempfile.mkdtemp()
@@ -37,6 +72,8 @@ if __name__ == "__main__":
     def peak_mb():
         info = psutil.Process().memory_info()
         peak = getattr(info, "peak_wset", None)
+        if peak is None and sys.platform.startswith("linux"):
+            peak = vmhwm_bytes(open("/proc/self/status").read())
         if peak is None:
             import resource
             peak = ru_maxrss_bytes(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, sys.platform)

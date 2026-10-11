@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import os
 import threading
 import time
 import urllib.error
@@ -199,12 +201,34 @@ def test_a_changed_pack_rebuilds_the_zip(ui: Ui, step_files: dict[str, Path]) ->
     ui.wait_done(job)
     ui.call("GET", f"/api/zip?id={job}")
     pack = Path(ui.app.jobs[job].pack or "")
+    zip_path = ui.app.workdir / job / "pack.zip"
     (pack / "note.md").write_text("new answers", encoding="utf-8")
-    time.sleep(0.05)
+    # coarse file-time resolution (some runners) can make a new file look older than the zip
+    old = zip_path.stat().st_mtime - 3600
+    os.utime(pack / "note.md", (old, old))
     data = ui.call("GET", f"/api/zip?id={job}")
-    with zipfile.ZipFile(ui.app.workdir / job / "pack.zip") as zf:
+    with zipfile.ZipFile(zip_path) as zf:
         assert any(n.endswith("note.md") for n in zf.namelist())
     assert data
+
+
+def test_a_rewritten_file_of_the_same_size_and_time_is_picked_up(
+    ui: Ui, step_files: dict[str, Path]
+) -> None:
+    job = ui.start(step_files["two_plates_assembly"], images=False)
+    ui.wait_done(job)
+    pack = Path(ui.app.jobs[job].pack or "")
+    note = pack / "answers.md"
+    note.write_text("first answer", encoding="utf-8")
+    ui.call("GET", f"/api/zip?id={job}")
+    stamp = note.stat().st_mtime
+    note.write_text("other answer", encoding="utf-8")  # same length
+    os.utime(note, (stamp, stamp))  # and the same time
+    time.sleep(0.01)
+    data = ui.call("GET", f"/api/zip?id={job}")
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        name = next(n for n in zf.namelist() if n.endswith("answers.md"))
+        assert zf.read(name) == b"other answer"
 
 
 def test_precheck_warns_before_the_user_confirms(ui: Ui, step_files: dict[str, Path]) -> None:

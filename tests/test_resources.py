@@ -196,6 +196,31 @@ def _write_group(path: str) -> None:
     Path(path).write_text(f"{os.getpgrp()} {os.getpid()}", encoding="utf-8")
 
 
+def _ignore_sigterm(ready: str) -> None:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    Path(ready).write_text("ready", encoding="utf-8")
+    time.sleep(120)
+
+
+@pytest.mark.parametrize("own_group", [False, True])
+def test_a_process_that_ignores_sigterm_is_still_stopped(tmp_path: Path, own_group: bool) -> None:
+    ready = tmp_path / "ready"
+    ctx = mp.get_context("spawn")
+    if own_group:
+        proc = ctx.Process(target=procutil.run_in_group, args=(_ignore_sigterm, str(ready)))
+    else:
+        proc = ctx.Process(target=_ignore_sigterm, args=(str(ready),))
+    proc.start()
+    end = time.time() + 60
+    while not ready.exists() and time.time() < end:
+        time.sleep(0.1)
+    assert ready.exists()
+    t0 = time.time()
+    procutil.kill_tree(proc)
+    assert not proc.is_alive(), describe_process(proc.pid)
+    assert time.time() - t0 < 12
+
+
 def test_registered_processes_are_killed_on_cleanup() -> None:
     proc = mp.get_context("spawn").Process(target=time.sleep, args=(60,))
     proc.start()

@@ -8,6 +8,7 @@ heavy file can never freeze the page.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import http.client
 import json
@@ -314,14 +315,24 @@ class App:
         root = Path(state.pack)
         target = self.workdir / state.id / "pack.zip"
         files = [f for f in sorted(root.rglob("*")) if f.is_file()]
-        newest = max((f.stat().st_mtime_ns for f in files), default=0)
-        if target.is_file() and target.stat().st_mtime_ns >= newest:
-            return target
+        # what the zip was built from: names, sizes and times. Comparing the zip's own time with
+        # the newest file is not enough: file times can be coarse enough to hide a change.
+        listing = [
+            (f.relative_to(root).as_posix(), f.stat().st_size, f.stat().st_mtime_ns) for f in files
+        ]
+        signature = hashlib.sha256(json.dumps(listing).encode("utf-8")).hexdigest()
+        marker = target.with_suffix(".sig")
+        try:
+            if target.is_file() and marker.read_text(encoding="utf-8") == signature:
+                return target
+        except OSError:
+            pass
         tmp = target.with_suffix(".tmp")
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
             for f in files:
                 zf.write(f, f"{root.name}/{f.relative_to(root).as_posix()}")
         os.replace(tmp, target)
+        marker.write_text(signature, encoding="utf-8")
         return target
 
 

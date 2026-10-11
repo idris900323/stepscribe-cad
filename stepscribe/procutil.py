@@ -69,6 +69,9 @@ def kill_tree(proc: Any) -> None:
         else:
             proc.terminate()
         proc.join(timeout=10)
+        if proc.is_alive():  # last resort: SIGKILL / TerminateProcess cannot be ignored
+            proc.kill()
+            proc.join(timeout=5)
     except (ProcessLookupError, PermissionError):
         pass
     finally:
@@ -83,6 +86,9 @@ def _posix_kill(proc: Any) -> None:
     pgid = _group_of(proc.pid)
     if pgid is None:
         proc.terminate()
+        proc.join(timeout=3)
+        if proc.is_alive():  # something that ignores SIGTERM
+            proc.kill()
         return
     os.killpg(pgid, signal.SIGTERM)
     proc.join(timeout=3)
