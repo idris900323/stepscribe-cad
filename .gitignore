@@ -25,3 +25,4 @@ static_analysis_*/
 *.sarif
 junit*.xml
 *_context_pack.zip
+docs/prelaunch_checklist.md

@@ -231,7 +231,7 @@ Much of this code was written with AI assistance and then tested against generat
 
 ## Project docs
 
-- [CHANGELOG.md](https://github.com/idris900323/stepscribe-cad/blob/main/CHANGELOG.md), [CONTRIBUTING.md](https://github.com/idris900323/stepscribe-cad/blob/main/CONTRIBUTING.md), [docs/prelaunch_checklist.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/prelaunch_checklist.md), [docs/plugin_testing.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/plugin_testing.md)
+- [CHANGELOG.md](https://github.com/idris900323/stepscribe-cad/blob/main/CHANGELOG.md), [CONTRIBUTING.md](https://github.com/idris900323/stepscribe-cad/blob/main/CONTRIBUTING.md), [docs/plugin_testing.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/plugin_testing.md)
 - [examples/README.md](https://github.com/idris900323/stepscribe-cad/blob/main/examples/README.md) (where to get open robot STEP files)
 
 ## License
