@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from proc_diag import describe_process
 
 from stepscribe.runner import RUNNER, WAIT_MESSAGE
 from stepscribe.ui import server as ui_server
@@ -234,7 +235,7 @@ def test_shutdown_leaves_no_worker_processes(ui: Ui, step_files: dict[str, Path]
     proc = ui.app.jobs[job].process
     assert proc is not None and proc.is_alive()
     ui.app.shutdown()
-    assert not proc.is_alive()
+    assert not proc.is_alive(), describe_process(proc.pid)
 
 
 def test_the_page_says_when_images_cannot_be_drawn(ui: Ui, monkeypatch: pytest.MonkeyPatch) -> None:

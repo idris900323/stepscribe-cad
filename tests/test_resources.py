@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 import pytest
+from proc_diag import describe_process
 
 from stepscribe import analysis as analysis_mod
 from stepscribe import limits, procutil
@@ -215,7 +216,7 @@ def test_cleanup_handlers_are_installed_for_sigterm_and_run_kill_all() -> None:
         procutil.register(proc)
         with pytest.raises(SystemExit):
             handler(signal.SIGTERM, None)  # type: ignore[operator]
-        assert not proc.is_alive()
+        assert not proc.is_alive(), describe_process(proc.pid)
     finally:
         signal.signal(signal.SIGTERM, previous)
         procutil.reset_cleanup_for_tests()

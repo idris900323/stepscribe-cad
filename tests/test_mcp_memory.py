@@ -34,21 +34,28 @@ import json, sys, time, tempfile, os
 os.environ["STEPSCRIBE_CACHE"] = tempfile.mkdtemp()
 import psutil
 if __name__ == "__main__":
+    def peak_mb():
+        info = psutil.Process().memory_info()
+        peak = getattr(info, "peak_wset", None)
+        if peak is None:
+            import resource
+            peak = ru_maxrss_bytes(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, sys.platform)
+        return round(peak / 1e6)
+    stages = {}
     from stepscribe.mcp import tools
+    stages["after_imports"] = peak_mb()
     path = sys.argv[1]
     started = json.loads(tools.start_analysis(path))
     while not json.loads(tools.get_job_status(started["job_id"]))["done"]:
         time.sleep(0.5)
+    stages["after_job"] = peak_mb()
     tools.export_pack(started["job_id"])
+    stages["after_export_pack"] = peak_mb()
     tools.get_overview(path); tools.get_part(path, "PRT001"); tools.list_holes(path)
     tools.get_relations(path); tools.find_parts(path, "plate"); tools.get_shopping_list(path)
-    p = psutil.Process()
-    info = p.memory_info()
-    peak = getattr(info, "peak_wset", None)
-    if peak is None:
-        import resource
-        peak = ru_maxrss_bytes(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, sys.platform)
-    print("RESULT", json.dumps({"peak_mb": round(peak / 1e6), "rss_mb": round(info.rss / 1e6)}))
+    stages["after_report_tools"] = peak_mb()
+    info = psutil.Process().memory_info()
+    print("RESULT", json.dumps({"peak_mb": peak_mb(), "rss_mb": round(info.rss / 1e6), "stages": stages}))
 """
 )
 
