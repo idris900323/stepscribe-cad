@@ -260,7 +260,8 @@ def available_ram_bytes(platform: str | None = None) -> int | None:
 
             status = _Status()
             status.dwLength = ctypes.sizeof(_Status)
-            ok = ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+            kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 - Windows only
+            ok = kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
             return int(status.ullAvailPhys) if ok else None
         sysconf = getattr(os, "sysconf")  # noqa: B009 - POSIX only
         return int(sysconf("SC_AVPHYS_PAGES")) * int(sysconf("SC_PAGE_SIZE"))

@@ -47,10 +47,14 @@ def test_cache_max_gb_option_sets_the_limit(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_ui_and_mcp_list_the_resource_options() -> None:
-    ui = runner.invoke(app, ["ui", "--help"]).output
+    ui = runner.invoke(
+        app, ["ui", "--help"], env={"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "200"}
+    ).output
     for flag in ("--max-jobs", "--session-idle-min", "--cache-max-gb", "--max-upload-mb"):
         assert flag in ui, flag
-    mcp = runner.invoke(app, ["mcp", "--help"]).output
+    mcp = runner.invoke(
+        app, ["mcp", "--help"], env={"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "200"}
+    ).output
     assert "--max-jobs" in mcp and "--cache-max-gb" in mcp
 
 

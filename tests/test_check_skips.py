@@ -48,6 +48,12 @@ def test_windows_only_tests_may_be_skipped_everywhere_else(tmp_path: Path, reaso
     assert mod.unexpected_skips(xml, "win32"), "on Windows these must run"
 
 
+def test_a_missing_report_says_pytest_did_not_finish(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    mod = _load()
+    assert mod.main(["check_skips.py", str(tmp_path / "junit.xml")]) == 1
+    assert "did not run to the end" in capsys.readouterr().out
+
+
 def test_a_missing_optional_dependency_is_never_an_allowed_skip(tmp_path: Path) -> None:
     mod = _load()
     xml = _junit(tmp_path, "could not import 'psutil': No module named 'psutil'")

@@ -12,7 +12,8 @@ anywhere they must run means the check silently stopped running.
 from __future__ import annotations
 
 import sys
-import xml.etree.ElementTree as ET  # noqa: S405 - our own pytest output
+import xml.etree.ElementTree as ET
+from pathlib import Path  # noqa: S405 - our own pytest output
 
 EVERYWHERE = ("the claude CLI is not installed",)
 WINDOWS_ONLY = ("POSIX permissions", "needs symlinks", "POSIX process groups")
@@ -40,6 +41,9 @@ def unexpected_skips(junit_xml: str, platform: str) -> list[str]:
 
 def main(argv: list[str]) -> int:
     path = argv[1] if len(argv) > 1 else "junit.xml"
+    if not Path(path).is_file():
+        print(f"{path} was not written: pytest did not run to the end, see the failure above.")
+        return 1
     bad = unexpected_skips(path, sys.platform)
     for line in bad:
         print("unexpected skip:", line)

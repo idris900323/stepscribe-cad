@@ -276,7 +276,11 @@ def test_the_ui_command_lists_the_idle_exit_option() -> None:
 
     from stepscribe.cli import app
 
-    out = CliRunner().invoke(app, ["ui", "--help"]).output
+    out = (
+        CliRunner()
+        .invoke(app, ["ui", "--help"], env={"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "200"})
+        .output
+    )
     assert "--idle-exit-min" in out
 
 
