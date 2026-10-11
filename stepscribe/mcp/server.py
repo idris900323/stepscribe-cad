@@ -6,7 +6,11 @@ Needs the optional extra: ``pip install stepscribe[mcp]``. The analysis tools ar
 """
 
 # No `from __future__ import annotations`: the SDK reads real annotations (Image is a local import).
-from typing import TYPE_CHECKING
+import faulthandler
+import os
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from stepscribe.headless import set_headless
 from stepscribe.mcp import tools
@@ -146,10 +150,37 @@ def build_server() -> "MCPServer":
     return server
 
 
+CRASH_LOG = "mcp_crash.log"
+CRASH_LOG_MAX_BYTES = 1_000_000
+_crash_log_file: Any = None  # stays open for the life of the process: faulthandler writes to it
+
+
+def enable_crash_log() -> Path:
+    """Write the Python stack of a native crash (a driver fault inside VTK, say) to a log file.
+
+    The log is ``mcp_crash.log`` in the cache folder; each start adds a line, and it starts over
+    when it passes 1 MB. A crash inside rendering kills this process, so this is the only trace.
+    """
+    global _crash_log_file
+    from stepscribe import cache
+
+    path = cache.cache_root() / CRASH_LOG
+    mode = "w" if path.is_file() and path.stat().st_size > CRASH_LOG_MAX_BYTES else "a"
+    fh = open(path, mode, encoding="utf-8", buffering=1)  # noqa: SIM115 - kept open on purpose
+    fh.write(
+        f"--- stepscribe MCP server started {time.strftime('%Y-%m-%d %H:%M:%S')} pid {os.getpid()} ---\n"
+    )
+    fh.flush()
+    faulthandler.enable(file=fh, all_threads=True)
+    _crash_log_file = fh
+    return path
+
+
 def main() -> None:
     """Run the server over stdio."""
     from stepscribe import procutil
 
+    enable_crash_log()  # first, so a crash in anything below leaves a trace
     procutil.install_cleanup()
     build_server().run()
 

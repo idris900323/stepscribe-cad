@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import subprocess
 import sys
@@ -15,7 +16,20 @@ pytest.importorskip("psutil")
 # 11 / Python 3.12 with this script: 330 MB (peak working set).  The bound leaves room for other platforms.
 BOUND_MB = 600
 
-SESSION = r"""
+
+def ru_maxrss_bytes(value: int, platform: str) -> int:
+    """macOS reports ru_maxrss in bytes, Linux in kilobytes."""
+    return value if platform == "darwin" else value * 1024
+
+
+def test_peak_memory_units_per_platform() -> None:
+    assert ru_maxrss_bytes(330_000_000, "darwin") == 330_000_000
+    assert ru_maxrss_bytes(330_000, "linux") == 337_920_000
+
+
+SESSION = (
+    inspect.getsource(ru_maxrss_bytes)
+    + r"""
 import json, sys, time, tempfile, os
 os.environ["STEPSCRIBE_CACHE"] = tempfile.mkdtemp()
 import psutil
@@ -33,9 +47,10 @@ if __name__ == "__main__":
     peak = getattr(info, "peak_wset", None)
     if peak is None:
         import resource
-        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+        peak = ru_maxrss_bytes(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, sys.platform)
     print("RESULT", json.dumps({"peak_mb": round(peak / 1e6), "rss_mb": round(info.rss / 1e6)}))
 """
+)
 
 
 def test_scripted_mcp_session_keeps_the_server_process_small(step_files: dict[str, Path]) -> None:

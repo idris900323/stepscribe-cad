@@ -39,6 +39,15 @@ def test_posix_tests_may_only_be_skipped_on_windows(tmp_path: Path, reason: str)
     assert len(mod.unexpected_skips(xml, "darwin")) == 1
 
 
+@pytest.mark.parametrize("reason", ["needs Windows PowerShell", "Windows console API"])
+def test_windows_only_tests_may_be_skipped_everywhere_else(tmp_path: Path, reason: str) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, reason)
+    assert mod.unexpected_skips(xml, "linux") == []
+    assert mod.unexpected_skips(xml, "darwin") == []
+    assert mod.unexpected_skips(xml, "win32"), "on Windows these must run"
+
+
 def test_a_missing_optional_dependency_is_never_an_allowed_skip(tmp_path: Path) -> None:
     mod = _load()
     xml = _junit(tmp_path, "could not import 'psutil': No module named 'psutil'")

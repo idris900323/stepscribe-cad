@@ -5,7 +5,8 @@
     pytest --junitxml=junit.xml && python scripts/check_skips.py junit.xml
 
 The POSIX-only tests (private cache permissions, symlink refusal, process groups) may be skipped
-on Windows only. On Linux and macOS a skip there means the check silently stopped running.
+on Windows only; the Windows-only tests (real shortcut, console handler) everywhere else. A skip
+anywhere they must run means the check silently stopped running.
 """
 
 from __future__ import annotations
@@ -16,10 +17,11 @@ import xml.etree.ElementTree as ET  # noqa: S405 - our own pytest output
 EVERYWHERE = ("the claude CLI is not installed",)
 WINDOWS_ONLY = ("POSIX permissions", "needs symlinks", "POSIX process groups")
 NO_GL = ("off-screen rendering is not available on this machine",)  # bare macOS / Windows VMs
+NOT_WINDOWS = ("needs Windows PowerShell", "Windows console API")  # the Windows-only tests
 
 ALLOWED: dict[str, tuple[str, ...]] = {
-    "linux": EVERYWHERE,  # xvfb provides OpenGL, so rendering tests must run
-    "darwin": EVERYWHERE + NO_GL,
+    "linux": EVERYWHERE + NOT_WINDOWS,  # xvfb provides OpenGL, so rendering tests must run
+    "darwin": EVERYWHERE + NOT_WINDOWS + NO_GL,
     "win32": EVERYWHERE + WINDOWS_ONLY + NO_GL,
 }
 

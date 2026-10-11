@@ -20,6 +20,7 @@ Security and resource hardening (phases H1 to H3) and fixes found on a real desi
 - One analysis at a time (`--max-jobs`) with a visible "waiting" state; the worker count respects free RAM.
 - The page keeps one live interview session (idle timeout `--session-idle-min`, default 15), restores it from the saved pack, keeps the newest 5 jobs and streams its zip from disk.
 - Cancelling or quitting stops the whole worker tree on every OS; a warning appears before very large files (CLI, MCP, page).
+- The MCP server writes the stack of a native crash (for example a graphics driver fault while drawing) to `mcp_crash.log` in the cache folder.
 
 **Other security (H4)**
 - Learned role models (the `stepscribe.role_models` entry point) are imported only when named in `STEPSCRIBE_ML` or `ml.enabled` in `design_context.yaml`; the ones that ran are listed in the report and the pack.
