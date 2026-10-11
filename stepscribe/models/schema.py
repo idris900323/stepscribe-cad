@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SCHEMA_VERSION = "0.4.0"
+SCHEMA_VERSION = "0.5.0"
 
 AxisLabel = Literal["+X", "-X", "+Y", "-Y", "+Z", "-Z"]
 
@@ -530,6 +530,7 @@ class Part(_M):
     images: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     understanding: PartUnderstanding | None = None
+    name_cleaned: bool = False  # the name in the file was changed by cleaning; its text is not kept
 
 
 # ---------- assembly ----------

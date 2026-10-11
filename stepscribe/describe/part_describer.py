@@ -94,7 +94,7 @@ def level1(part: Part, connections: list[str] | None = None, max_words: int = 12
     sc = part.shape_class
     thickness = f", t = {fmt(sc.thickness_mm)} mm" if sc.thickness_mm else ""
     sentences = [
-        f"{part.id} {part.name}: {inference(shape_label(sc), sc.confidence)}, {size_text(part)}{thickness}."
+        f"{part.id} `{part.name}`: {inference(shape_label(sc), sc.confidence)}, {size_text(part)}{thickness}."
     ]
     sentences.append(material_text(part).capitalize() + ".")
     feats = feature_phrases(part)
@@ -120,7 +120,7 @@ def level1(part: Part, connections: list[str] | None = None, max_words: int = 12
 
 def level1_short(part: Part) -> str:
     """One-line form used when the budget is tight."""
-    return f"{part.id} {part.name}: {shape_label(part.shape_class)}, {size_text(part)}, {plural(len(part.holes), 'hole')}."
+    return f"{part.id} `{part.name}`: {shape_label(part.shape_class)}, {size_text(part)}, {plural(len(part.holes), 'hole')}."
 
 
 def hole_row(h: Hole) -> dict[str, str]:

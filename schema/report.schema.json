@@ -2203,6 +2203,11 @@
             }
           ],
           "default": null
+        },
+        "name_cleaned": {
+          "default": false,
+          "title": "Name Cleaned",
+          "type": "boolean"
         }
       },
       "required": [

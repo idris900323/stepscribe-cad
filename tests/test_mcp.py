@@ -23,7 +23,7 @@ def test_overview_and_part(step_files) -> None:  # type: ignore[no-untyped-def]
         and "60.0 (width) × 60.0 (depth) × 10.0 (height) mm" in text
     )
     part = tools.get_part(str(step_files["two_plates_assembly"]), "PRT001")
-    assert "# PRT001 Plate" in part and "TopPlate is bolted to BasePlate" in part
+    assert "# PRT001 `Plate`" in part and "TopPlate is bolted to BasePlate" in part
     with pytest.raises(ValueError, match="not found or ambiguous"):
         tools.get_part(str(step_files["two_plates_assembly"]), "nope")
 

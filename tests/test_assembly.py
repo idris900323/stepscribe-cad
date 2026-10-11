@@ -137,7 +137,7 @@ def test_pack_includes_assembly_sections(step_files, tmp_path: Path) -> None:  #
     )
     asm_md = (folder / "02_assembly.md").read_text(encoding="utf-8")
     assert "TopPlate is bolted to BasePlate with 4 × M3 screws (J001–J004)." in asm_md
-    assert "Plate × 2" in asm_md and "4 × M3 × 14 SHCS" in asm_md
+    assert "`Plate` × 2" in asm_md and "4 × M3 × 14 SHCS" in asm_md
     pack = (folder / "context_pack.md").read_text(encoding="utf-8")
     assert "## Relations" in pack and "TopPlate rests on BasePlate" in pack
     assert "Fastener shopping list" in pack

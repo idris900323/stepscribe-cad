@@ -194,6 +194,7 @@ def analyze_full(
     errors: list[dict[str, object]] = []
     done_parts = _analyse_bodies(bodies, faces, p.name, opts, tracker, errors)
     for key, geom, part in done_parts:
+        part.name_cleaned = model.protos[key].name_cleaned
         ap = AnalyzedPart(part, geom)
         parts.append(ap)
         proto_parts.setdefault(key, []).append(ap)

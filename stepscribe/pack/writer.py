@@ -36,7 +36,7 @@ def _env() -> Environment:
 
 
 def _safe(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("_") or "part"
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("_")[:40].strip("_") or "part"
 
 
 def instance_part_map(report: Report) -> dict[str, str]:

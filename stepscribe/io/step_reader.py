@@ -27,6 +27,8 @@ from OCP.XCAFDoc import (
     XCAFDoc_ShapeTool,
 )
 
+from stepscribe.text_safety import clean_name
+
 
 class StepReadError(Exception):
     """Raised when a STEP file cannot be read at all."""
@@ -40,6 +42,7 @@ class ProtoPart:
     name: str
     shape: TopoDS_Shape
     color_rgb: list[float] | None = None
+    name_cleaned: bool = False  # the file's name was altered by cleaning (the text is dropped)
 
 
 @dataclass
@@ -92,12 +95,17 @@ def detect_original_unit(path: str | Path) -> str:
     return "mm"
 
 
-def _label_name(label: TDF_Label) -> str | None:
+def _raw_label_name(label: TDF_Label) -> str | None:
     attr = TDataStd_Name()
     if label.FindAttribute(TDataStd_Name.GetID_s(), attr):
         text = str(attr.Get().ToExtString()).strip()
         return text or None
     return None
+
+
+def _label_name(label: TDF_Label) -> str | None:
+    """The label's name, cleaned (see ``text_safety``); None when it has none worth keeping."""
+    return clean_name(_raw_label_name(label)) or None
 
 
 def _label_key(label: TDF_Label) -> str:
@@ -130,6 +138,11 @@ def _seq(seq: Sequence_TDF_Label) -> list[TDF_Label]:
 _GENERIC_NAMES = {"", "compound", "none", "solid", "shape", "part", "open cascade step translator"}
 
 
+def _file_label(path: str | Path) -> str:
+    """The file name without its extension, cleaned: it stands in for missing part names."""
+    return clean_name(Path(path).stem) or "model"
+
+
 def _is_generic(name: str | None) -> bool:
     return (
         name is None
@@ -151,15 +164,22 @@ class _Walker:
         key = _label_key(label)
         if key not in self.model.protos:
             self.counter += 1
-            raw = _label_name(label)
-            stem = Path(self.model.path).stem
+            raw_text = _raw_label_name(label)
+            raw = clean_name(raw_text) or None
+            stem = _file_label(self.model.path)
             name = (
                 stem
                 if self.counter == 1 and _is_generic(raw)
                 else (f"{stem}_{self.counter}" if _is_generic(raw) else str(raw))
             )
             shape = XCAFDoc_ShapeTool.GetShape_s(label)
-            self.model.protos[key] = ProtoPart(key, name, shape, _label_color(self.ct, label))
+            self.model.protos[key] = ProtoPart(
+                key,
+                name,
+                shape,
+                _label_color(self.ct, label),
+                bool(raw_text) and raw_text != clean_name(raw_text),
+            )
         return self.model.protos[key]
 
     def walk(
@@ -223,7 +243,7 @@ def read_step(path: str | Path) -> StepModel:
 
     shape_tool = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
     color_tool = XCAFDoc_DocumentTool.ColorTool_s(doc.Main())
-    model = StepModel(str(p), detect_original_unit(p), p.stem)
+    model = StepModel(str(p), detect_original_unit(p), _file_label(p))
     free = Sequence_TDF_Label()
     shape_tool.GetFreeShapes(free)
     walker = _Walker(shape_tool, color_tool, model)
@@ -232,7 +252,7 @@ def read_step(path: str | Path) -> StepModel:
         walker.walk(label, TopLoc_Location(), "", None, None)
     if len(labels) == 1:
         raw = _label_name(labels[0])
-        model.root_name = p.stem if _is_generic(raw) else str(raw)
+        model.root_name = _file_label(p) if _is_generic(raw) else str(raw)
     if not model.instances:
         raise StepReadError(f"no shapes found in {p.name}")
     _drop_empty_prototypes(model, p.name)
