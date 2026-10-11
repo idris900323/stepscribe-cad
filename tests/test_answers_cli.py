@@ -110,3 +110,30 @@ def test_stale_session_does_not_overwrite_a_newer_answer(tmp_path: Path) -> None
     )
     rows = read_answers(ctx)
     assert rows["Q1"]["value"] == "new" and rows["Q2"]["status"] == "skipped"
+
+
+def test_long_and_multiline_answers_survive_a_round_trip(tmp_path: Path) -> None:
+    """The writer must not fold long text onto a second line: the file stays valid YAML."""
+    import yaml
+
+    ctx = tmp_path / "design_context.yaml"
+    long_text = (
+        "not much loads apart from its own weight and the weight of the electronics and battery"
+    )
+    multi = "line one\nline two: has a colon\n  - and a dash # and a hash"
+    wide = "word " * 80
+    save_answers(
+        ctx,
+        {
+            "Q1": {"status": "answered", "value": long_text},
+            "Q2": {"status": "answered", "value": "ok", "note": multi},
+            "Q3": {"status": "answered", "value": wide.strip()},
+        },
+    )
+    save_answers(ctx, {"Q4": {"status": "answered", "value": long_text}}, only=["Q4"])
+    parsed = yaml.safe_load(ctx.read_text(encoding="utf-8"))
+    assert parsed["answers"]["Q1"]["value"] == long_text
+    assert parsed["answers"]["Q2"]["note"] == multi
+    assert parsed["answers"]["Q3"]["value"] == wide.strip()
+    assert parsed["answers"]["Q4"]["value"] == long_text
+    assert read_answers(ctx)["Q1"]["value"] == long_text, "earlier answers are kept, not dropped"
