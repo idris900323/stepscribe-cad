@@ -67,6 +67,16 @@ def test_tapped_joint_has_threaded_end_and_rule_length(analyses) -> None:  # typ
     assert a.fastener_shopping_list == [{"item": "M3 × 12 SHCS", "qty": 4}]
 
 
+def test_screw_into_a_blind_hole_needs_no_nut_and_must_not_bottom_out(analyses) -> None:  # type: ignore[no-untyped-def]
+    """Plate 6 + a 7 mm blind hole = 13 mm: an M2 x 16 would bottom out and a nut has nowhere to go."""
+    _r, a = asm(analyses, "blind_clearance_assembly")
+    assert len(a.fastener_joints) == 4
+    for j in a.fastener_joints:
+        assert j.stack_thickness_mm == pytest.approx(13.0, abs=1e-3)
+        assert j.suggested_fastener == "M2 × 12 SHCS", j.evidence
+    assert a.fastener_shopping_list == [{"item": "M2 × 12 SHCS", "qty": 4}]
+
+
 def test_shaft_in_bearing_cylindrical_fit(analyses) -> None:  # type: ignore[no-untyped-def]
     _r, a = asm(analyses, "shaft_in_bearing_assembly")
     (c,) = a.contacts

@@ -180,9 +180,14 @@ def detect_joints(instances: list[InstanceData]) -> list[FastenerJoint]:
             grip = t_hi - t_lo
             dia = Counter(round(g.hole.diameter_mm, 2) for g in chain)
             common = sorted(dia.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-            threaded = any(g.hole.likely_threaded for g in chain)
+            # A blind hole ends the stack: no nut can reach it and the screw must not bottom out,
+            # whether or not the hole looks tapped.
+            blind = any(not g.hole.is_through for g in chain)
+            threaded = blind or any(g.hole.likely_threaded for g in chain)
             desig, conf = _designation(chain)
             text, why = _suggest(desig, grip, threaded)
+            if blind and not any(g.hole.likely_threaded for g in chain):
+                why += "; the stack ends in a blind hole that is not tap-drill size, so it needs tapping or an insert"
             origin = ref.origin + d * t_lo
             existing = _existing_fastener(instances, origin, d)
             key = (ids[0], *(round(float(c), 2) for c in origin))
