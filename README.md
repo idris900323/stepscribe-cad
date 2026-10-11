@@ -4,7 +4,7 @@ Give any LLM X-ray vision into your CAD model. `stepscribe` reads a STEP file an
 
 **[Download the 1-minute demo with sound](https://github.com/idris900323/stepscribe-cad/raw/main/docs/media/stepscribe-demo.mp4)** (6 MB, MP4). No more screenshots and long explanations to get an AI to understand your model; the web page and the three Claude Code commands; made for beginner designers who want AI support.
 
-![A quick look: the web page, the result and the Claude Code commands](docs/media/stepscribe-preview.gif)
+![A quick look: the web page, the result and the Claude Code commands](https://github.com/idris900323/stepscribe-cad/raw/main/docs/media/stepscribe-preview.gif)
 
 ## Start here
 
