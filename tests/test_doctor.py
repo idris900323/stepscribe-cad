@@ -16,7 +16,7 @@ from stepscribe.cli import app
 def healthy() -> doctor.Probe:
     return doctor.Probe(
         python=lambda: (3, 12, 4),
-        stepscribe=lambda: "0.1.3",
+        stepscribe=lambda: "0.1.4",
         occt=lambda: "8.0.1.0",
         vtk=lambda: "9.6.2",
         mcp=lambda: "2.3.0",

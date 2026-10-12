@@ -88,6 +88,25 @@ def test_a_screw_in_a_blind_hole_stops_one_thread_pitch_short(analyses) -> None:
     assert a.fastener_shopping_list == [{"item": "M1.6 × 5 SHCS", "qty": 4}]
 
 
+def test_a_clearance_hole_over_a_smaller_blind_hole_sets_the_screw_size(analyses) -> None:  # type: ignore[no-untyped-def]
+    """Ø3.2 over a Ø2.6 pilot hole is an M3, not an M2: the clearance hole names the screw."""
+    _r, a = asm(analyses, "pilot_over_blind_assembly")
+    assert len(a.fastener_joints) == 4
+    for j in a.fastener_joints:
+        assert j.suggested_fastener == "M3 × 12 SHCS", j.evidence
+        assert j.has_threaded_end and "pilot" in j.evidence
+    assert a.fastener_shopping_list == [{"item": "M3 × 12 SHCS", "qty": 4}]
+
+
+def test_a_thin_stack_over_a_1_6_blind_hole_is_an_m2_when_the_clearance_hole_says_so(
+    analyses,
+) -> None:  # type: ignore[no-untyped-def]
+    _r, a = asm(analyses, "pilot_thin_assembly")
+    for j in a.fastener_joints:
+        assert j.suggested_fastener == "M2 × 5 SHCS", j.evidence
+    assert a.fastener_shopping_list == [{"item": "M2 × 5 SHCS", "qty": 4}]
+
+
 def test_the_margin_is_only_for_blind_ends() -> None:
     from stepscribe.assembly.joints import _suggest
 
@@ -238,3 +257,30 @@ def test_mutual_rests_on_is_said_once() -> None:
     assert added[0][0] == "adjacent_to"
     assert "opposite faces" in added[0][4]
     assert "30" in added[0][4]
+
+
+def test_a_hole_that_fits_two_sizes_shows_the_other_reading_in_the_part_line(analyses) -> None:  # type: ignore[no-untyped-def]
+    from stepscribe.describe.part_describer import hole_row
+
+    report, a = asm(analyses, "pilot_thin_assembly")
+    blind = next(h for p in report.parts for h in p.holes if not h.is_through)
+    row = hole_row(blind)["standard"]
+    assert "M1.6" in row and "; or M2 tap drill" in row, row
+    # the mating Ø2.3 clearance hole decides the joint; the evidence says what else it could read as
+    evidence = a.fastener_joints[0].evidence
+    assert "pilot (tapping) hole for M2" in evidence and "could also read as M1.6" in evidence
+
+
+def test_joint_lines_follow_the_likely_convention_and_name_the_end(analyses) -> None:  # type: ignore[no-untyped-def]
+    from stepscribe.describe.assembly_describer import assembly_core_context
+
+    rep, _a = asm(analyses, "two_plates_assembly")
+    line = assembly_core_context(rep)["joints"][0]
+    assert "Likely: M3 × 14 SHCS (" in line and "(Likely," not in line, line
+    assert "through 2 parts" in line and "threaded or blind" not in line  # a through stack
+    rep, _a = asm(analyses, "pilot_over_blind_assembly")
+    line = assembly_core_context(rep)["joints"][0]
+    assert "through 2 parts" not in line, line
+    assert (
+        "2 parts, ending in a threaded or blind hole" in line and "Likely: M3 × 12 SHCS (" in line
+    )

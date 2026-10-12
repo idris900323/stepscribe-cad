@@ -10,7 +10,7 @@ from typing import Any
 from stepscribe.describe.budget import rank_parts
 from stepscribe.describe.part_describer import shape_label
 from stepscribe.describe.phrases import fmt, join_and, plural
-from stepscribe.models.schema import BBox, Part, Report
+from stepscribe.models.schema import BBox, FastenerJoint, Part, Report
 
 _AXIS_INDEX = {"X": 0, "Y": 1, "Z": 2}
 
@@ -118,6 +118,22 @@ def level0_context(
     }
 
 
+def _joint_line(j: FastenerJoint) -> str:
+    """'J001: Ø3.4 through 2 parts, grip 10 mm, Likely: M3 × 14 SHCS (0.90)'."""
+    n = len(j.instance_ids)
+    where = (
+        f"across {n} parts, ending in a threaded or blind hole"
+        if j.has_threaded_end
+        else f"through {n} parts"
+    )
+    fastener = (
+        f"Likely: {j.suggested_fastener} ({j.confidence:.2f})"
+        if j.suggested_fastener
+        else "fastener unknown"
+    )
+    return f"{j.id}: Ø{fmt(j.common_diameter_mm)} {where}, grip {fmt(j.stack_thickness_mm)} mm, {fastener}"
+
+
 def assembly_core_context(report: Report) -> dict[str, Any]:
     """Relations, joints and shopping list that always appear in the single-file pack."""
     a = report.assembly
@@ -126,11 +142,7 @@ def assembly_core_context(report: Report) -> dict[str, Any]:
     return {
         "has_assembly": True,
         "relations": [f"{r.id}: {r.sentence}" for r in a.relations],
-        "joints": [
-            f"{j.id}: Ø{fmt(j.common_diameter_mm)} through {len(j.instance_ids)} parts, grip {fmt(j.stack_thickness_mm)} mm, "
-            f"{j.suggested_fastener or 'fastener unknown'} (Likely, {j.confidence:.2f})"
-            for j in a.fastener_joints
-        ],
+        "joints": [_joint_line(j) for j in a.fastener_joints],
         "shopping": [f"{row['qty']} × {row['item']}" for row in a.fastener_shopping_list],
         "subassemblies": [f"{s.name}: {s.summary}" for s in a.subassemblies],
         "bom": [
