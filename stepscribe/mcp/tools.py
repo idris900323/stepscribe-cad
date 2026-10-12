@@ -27,7 +27,7 @@ from stepscribe.api import Analysis, analyze_full
 from stepscribe.assembly import build_instances
 from stepscribe.assembly.relations import labels
 from stepscribe.assembly.tree import InstanceData
-from stepscribe.describe.part_describer import level2_context, shape_label
+from stepscribe.describe.part_describer import level2_context, shape_label, standard_text
 from stepscribe.describe.phrases import fmt, hole_callout
 from stepscribe.geometry.occ_utils import to_np
 from stepscribe.models.schema import Part, Report
@@ -157,13 +157,12 @@ def list_holes(
                 max_d is not None and h.diameter_mm > max_d
             ):
                 continue
-            std = h.standard_matches[0] if h.standard_matches else None
             o = h.axis.origin
             rows.append(
                 f"| {p.id} | {h.id} | {hole_callout(h)} | {h.entry_type} | {h.bottom_type} | "
                 f"({fmt(o.x, 2)}, {fmt(o.y, 2)}, {fmt(o.z, 2)}) | "
                 f"{fmt(h.edge_distance_mm, 2) if h.edge_distance_mm is not None else '-'} | "
-                f"{('Likely: ' + std.designation + ' ' + std.fit.replace('_', ' ')) if std else '-'} |"
+                f"{standard_text(h, confidence=False)} |"
             )
     if not rows:
         return "No holes match."

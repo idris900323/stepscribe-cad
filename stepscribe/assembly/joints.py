@@ -102,24 +102,56 @@ def _round_down_length(x: float) -> int | None:
     return fits[-1] if fits else None
 
 
+def _pilot_holes(members: list[GlobalHole]) -> list[GlobalHole]:
+    """Blind holes narrower than a clearance hole in the same stack: the pilot (tapping) holes.
+
+    A Ø3.2 hole over a Ø2.6 blind hole is an M3 screw into its tapping hole, whatever size the
+    narrow hole would be on its own.
+    """
+    clearance = [
+        g.hole.diameter_mm
+        for g in members
+        if g.hole.is_through and any(m.fit.startswith("clearance") for m in g.hole.standard_matches)
+    ]
+    if not clearance:
+        return []
+    narrowest = min(clearance)
+    return [g for g in members if not g.hole.is_through and g.hole.diameter_mm < narrowest - 1e-6]
+
+
 def _designation(members: list[GlobalHole]) -> tuple[str | None, float]:
     """Screw size consistent with every hole in the stack.
 
     Each hole lists its top standard matches; a designation scores the sum of its best
     confidence in each hole (0 where a hole does not match it), so M3 beats M2.5 when one
     plate has Ø3.4 clearance and the other a Ø2.5 tap drill (which is also M2.5's nominal).
+    A pilot hole under a clearance hole does not vote: the clearance hole names the screw.
     """
-    scores: dict[str, float] = {}
-    for gh in members:
-        best: dict[str, float] = {}
-        for m in gh.hole.standard_matches:
-            best[m.designation] = max(best.get(m.designation, 0.0), m.confidence)
-        for des, c in best.items():
-            scores[des] = scores.get(des, 0.0) + c
+    pilots = _pilot_holes(members)
+    voters = [g for g in members if g not in pilots]
+    if pilots:  # only the clearance fits count
+        scores = _scores(voters, clearance_only=True)
+        if scores:
+            des, total = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))[0]
+            return des, total / len(voters)
+    scores = _scores(members)
     if not scores:
         return None, 0.0
     des, total = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))[0]
     return des, total / len(members)
+
+
+def _scores(members: list[GlobalHole], clearance_only: bool = False) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    for gh in members:
+        best: dict[str, float] = {}
+        for m in gh.hole.standard_matches:
+            if clearance_only and not m.fit.startswith("clearance"):
+                continue
+            best[m.designation] = max(best.get(m.designation, 0.0), m.confidence)
+        for des, c in best.items():
+            scores[des] = scores.get(des, 0.0) + c
+    return scores
 
 
 def _suggest(
@@ -195,7 +227,16 @@ def detect_joints(instances: list[InstanceData]) -> list[FastenerJoint]:
             threaded = blind or any(g.hole.likely_threaded for g in chain)
             desig, conf = _designation(chain)
             text, why = _suggest(desig, grip, threaded, blind)
-            if blind and not any(g.hole.likely_threaded for g in chain):
+            pilots = _pilot_holes(chain)
+            if pilots and desig:
+                dias = ", ".join(sorted({f"Ø{fmt(g.hole.diameter_mm, 2)}" for g in pilots}))
+                why += f"; the {dias} blind hole is the pilot (tapping) hole for {desig}, and the wider hole above it is its clearance hole"
+                other = sorted(
+                    {m.designation for g in pilots for m in g.hole.standard_matches} - {desig}
+                )
+                if other:
+                    why += f" (on its own the pilot hole could also read as {', '.join(other)}; the mating hole decides)"
+            elif blind and not any(g.hole.likely_threaded for g in chain):
                 why += "; the stack ends in a blind hole that is not tap-drill size, so it needs tapping or an insert"
             origin = ref.origin + d * t_lo
             existing = _existing_fastener(instances, origin, d)

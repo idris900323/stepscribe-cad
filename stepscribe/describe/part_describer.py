@@ -123,10 +123,34 @@ def level1_short(part: Part) -> str:
     return f"{part.id} `{part.name}`: {shape_label(part.shape_class)}, {size_text(part)}, {plural(len(part.holes), 'hole')}."
 
 
+ALTERNATIVE_MIN_CONFIDENCE = 0.7
+
+
+def standard_text(h: Hole, confidence: bool = True) -> str:
+    """'Likely: M1.6 nominal (1.00); or M2 tap drill' - the best reading, then other sizes it could be.
+
+    A Ø1.6 hole is M1.6's own size and also M2's tap drill; the hole alone cannot say which, and
+    the mating hole in the joint decides.
+    """
+    if not h.standard_matches:
+        return "-"
+    std = h.standard_matches[0]
+    text = f"Likely: {std.designation} {std.fit.replace('_', ' ')}"
+    if confidence:
+        text += f" ({std.confidence:.2f})"
+    seen = {std.designation}
+    others: list[str] = []
+    for m in h.standard_matches[1:]:
+        if m.designation in seen or m.confidence < ALTERNATIVE_MIN_CONFIDENCE:
+            continue
+        seen.add(m.designation)
+        others.append(f"{m.designation} {m.fit.replace('_', ' ')}")
+    return text + "".join(f"; or {o}" for o in others)
+
+
 def hole_row(h: Hole) -> dict[str, str]:
     """A formatted hole-table row."""
     o, d = h.axis.origin, h.axis.direction
-    std = h.standard_matches[0] if h.standard_matches else None
     return {
         "id": h.id,
         "dia": fmt(h.diameter_mm, 2),
@@ -138,11 +162,7 @@ def hole_row(h: Hole) -> dict[str, str]:
         "position": f"({fmt(o.x, 2)}, {fmt(o.y, 2)}, {fmt(o.z, 2)})",
         "direction": f"({fmt(d.x, 2)}, {fmt(d.y, 2)}, {fmt(d.z, 2)})",
         "edge": fmt(h.edge_distance_mm, 2) if h.edge_distance_mm is not None else "-",
-        "standard": (
-            f"Likely: {std.designation} {std.fit.replace('_', ' ')} ({std.confidence:.2f})"
-            if std
-            else "-"
-        ),
+        "standard": standard_text(h),
         "threaded": "Likely threaded" if h.likely_threaded else "",
     }
 
