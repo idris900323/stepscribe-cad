@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="stepscribe-token" content="{{TOKEN}}">
 <title>stepscribe</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
@@ -151,7 +152,7 @@
 <body>
 <header>
   <div class="brand"><h1>stepscribe</h1><p>Turn a STEP file into a plain-language description of the design.</p></div>
-  <p class="where">Version {{VERSION}}. Runs on this computer; your file is not sent anywhere.</p>
+  <p class="where">Version {{VERSION}}. Runs on this computer; your file is not sent anywhere. <button id="quit" type="button">Quit stepscribe</button></p>
 </header>
 <main>
   <div class="card" id="inputCard">
@@ -181,6 +182,7 @@
       <div class="btnwrap"><button class="primary" id="go">Analyse</button></div>
     </div>
     <div class="mute" id="picked"></div>
+    <div class="mute" id="envnote" style="display:none"></div>
   </div>
 
   <div class="card" id="progCard" style="display:none">
@@ -227,9 +229,16 @@
 </div>
 <script>
 const $ = id => document.getElementById(id);
-let chosenFile = null, jobId = null, timer = null, result = null;
+let chosenFile = null, chosenSample = null, jobId = null, timer = null, result = null;
 const reveal = el => el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
-const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TOKEN = document.querySelector('meta[name=stepscribe-token]').content;
+const tq = url => url + (url.includes('?') ? '&' : '?') + 't=' + encodeURIComponent(TOKEN);
+const api = (url, opts = {}) => fetch(url, { ...opts, headers: { 'X-Stepscribe-Token': TOKEN, ...(opts.headers || {}) } });
+let pageAlive = true;
+const beat = () => { if (pageAlive) api('/api/heartbeat', JSON_POST()).catch(() => {}); };
+setInterval(beat, 20000);
+const JSON_POST = body => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
 const fmtEta = s => s == null ? 'estimating…' : s < 60 ? `about ${Math.round(s)} s` : `about ${Math.floor(s/60)} min ${String(Math.round(s%60)).padStart(2,'0')} s`;
 const fmtT = s => s < 60 ? `${s.toFixed(0)} s` : `${Math.floor(s/60)} min ${String(Math.round(s%60)).padStart(2,'0')} s`;
 
@@ -239,13 +248,17 @@ $('drop').ondragleave = () => $('drop').classList.remove('over');
 $('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('over'); pick(e.dataTransfer.files[0]); };
 $('file').onchange = e => pick(e.target.files[0]);
 function chip(name, sub) { $('chipName').textContent = name; $('chipSub').textContent = sub; $('chip').style.display = 'flex'; $('pickers').style.display = 'none'; $('picked').textContent = ''; }
-function pick(f) { if (!f) return; chosenFile = f; $('path').value = ''; chip(f.name, `${(f.size/1e6).toFixed(1)} MB, loaded in the browser. It is sent to this computer's local server when you press Analyse.`); }
-$('change').onclick = () => { chosenFile = null; $('path').value = ''; $('samples').value = ''; $('file').value = ''; $('chip').style.display = 'none'; $('pickers').style.display = ''; };
-$('path').onchange = () => { const v = $('path').value.trim(); if (v) { chosenFile = null; chip(v.split(/[\/]/).pop(), 'Read in place from ' + v + ' (nothing is copied).'); } };
-$('samples').onchange = () => { const v = $('samples').value; if (v) { $('path').value = v; chosenFile = null; chip(v.split(/[\/]/).pop(), 'Sample file, read in place from ' + v); } };
-fetch('/api/samples').then(r => r.json()).then(list => {
+async function precheck(query) {
+  try { const r = await (await api('/api/precheck?' + query)).json(); $('picked').textContent = r.warning || ''; } catch (e) { $('picked').textContent = ''; }
+}
+function pick(f) { if (!f) return; chosenFile = f; chosenSample = null; $('path').value = ''; chip(f.name, `${(f.size/1e6).toFixed(1)} MB, loaded in the browser. It is sent to this computer's local server when you press Analyse.`); precheck('size_mb=' + (f.size / 1048576)); }
+$('change').onclick = () => { chosenFile = null; chosenSample = null; $('path').value = ''; $('samples').value = ''; $('file').value = ''; $('chip').style.display = 'none'; $('pickers').style.display = ''; };
+$('path').onchange = () => { const v = $('path').value.trim(); if (v) { chosenFile = null; chosenSample = null; chip(v.split(/[\/]/).pop(), 'Read in place from ' + v + ' (nothing is copied).'); precheck('path=' + encodeURIComponent(v)); } };
+$('samples').onchange = () => { const v = $('samples').value; if (v !== '') { $('path').value = ''; chosenFile = null; chosenSample = Number(v); chip($('samples').selectedOptions[0].dataset.name, 'Sample file, read in place on this computer.'); precheck('sample=' + v); } };
+api('/api/environment').then(r => r.json()).then(e => { if (e.message) { $('envnote').textContent = e.message; $('envnote').style.display = ''; } }).catch(() => {});
+api('/api/samples').then(r => r.json()).then(list => {
   if (!list.length) return;
-  $('samples').innerHTML = '<option value="">choose…</option>' + list.map(s => `<option value="${esc(s.path)}">${esc(s.name)} (${s.mb} MB)</option>`).join('');
+  $('samples').innerHTML = '<option value="">choose…</option>' + list.map(s => `<option value="${esc(s.index)}" data-name="${esc(s.name)}">${esc(s.name)} (${s.mb} MB)</option>`).join('');
 });
 
 function params() {
@@ -257,8 +270,9 @@ $('go').onclick = async () => {
   let res;
   const p = params();
   const qs = new URLSearchParams({ ...p, name: chosenFile ? chosenFile.name : '' });
-  if (chosenFile) res = await fetch('/api/upload?' + qs, { method: 'POST', body: chosenFile });
-  else if ($('path').value.trim()) res = await fetch('/api/start_path', { method: 'POST', body: JSON.stringify({ ...p, path: $('path').value.trim() }) });
+  if (chosenFile) res = await api('/api/upload?' + qs, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: chosenFile });
+  else if (chosenSample !== null) res = await api('/api/start_path', JSON_POST({ ...p, sample: chosenSample }));
+  else if ($('path').value.trim()) res = await api('/api/start_path', JSON_POST({ ...p, path: $('path').value.trim() }));
   else { alert('Choose a file or enter a path first.'); return; }
   const j = await res.json();
   if (j.error) { $('progCard').style.display = ''; $('err').textContent = j.error; return; }
@@ -266,10 +280,10 @@ $('go').onclick = async () => {
   $('progTitle').textContent = 'Analysing…'; reveal($('progCard')); poll();
   timer = setInterval(poll, 800);
 };
-$('cancel').onclick = async () => { await fetch('/api/cancel?id=' + jobId, { method: 'POST' }); };
+$('cancel').onclick = async () => { await api('/api/cancel?id=' + jobId, JSON_POST()); };
 
 async function poll() {
-  const s = await (await fetch('/api/status?id=' + jobId)).json();
+  const s = await (await api('/api/status?id=' + jobId)).json();
   $('fill').style.width = Math.round(s.fraction * 100) + '%'; $('fill').dataset.pct = s.done ? '' : Math.round(s.fraction * 100) + ' %';
   $('progMsg').textContent = `${s.stage}: ${s.message}`;
   $('progEta').textContent = s.done ? `Elapsed ${fmtT(s.elapsed_s)}` : `Elapsed ${fmtT(s.elapsed_s)}; remaining ${fmtEta(s.eta_s)} (the estimate improves as parts finish)`;
@@ -294,7 +308,7 @@ function list(items, empty = 'none') { return items.length ? `<ul>${items.map(i 
 function show(s) {
   const r = s.result, id = s.id;
   $('resCard').style.display = '';
-  $('zip').href = (r.understanding ? '/api/pack/download?id=' : '/api/zip?id=') + id;
+  $('zip').href = tq((r.understanding ? '/api/pack/download?id=' : '/api/zip?id=') + encodeURIComponent(id));
   $('askBtn').style.display = r.understanding && r.understanding.questions.length ? '' : 'none';
   $('askBtn').parentElement.style.display = $('askBtn').style.display;
   prevView = null;
@@ -314,24 +328,24 @@ function show(s) {
         r.parts.map(p => [p.id, esc(p.name), p.dims.obb.join(' x '), p.dims.bbox.join(' x '), n(p.dims.volume_mm3), n(p.dims.area_mm2), n(p.dims.mass_g, 1), p.dims.wall == null ? '-' : p.dims.wall.toFixed(2)]));
       const one = p => { const d = p.dims; const sec = (t, items) => items.length ? `<div class="sec">${t} (${items.length})</div>${list(items)}` : '';
         return `<details><summary><b>${esc(p.id)}</b> ${esc(p.name)}: features</summary>`
-          + (d.holes.length ? `<div class="sec">Holes (${d.holes.length})</div>${table(['ID', 'Diameter', 'Depth', 'Counterbore / countersink', 'To nearest edge'], d.holes)}` : '')
-          + (d.cutouts.length ? `<div class="sec">Cutouts (${d.cutouts.length})</div><div class="mute">Levels run from the entry face inward; centre is measured from the outline corner, like the hole positions.</div>${table(['ID', 'Kind', 'Levels', 'Total depth', 'To nearest edge or opening'], d.cutouts)}` : '')
+          + (d.holes.length ? `<div class="sec">Holes (${d.holes.length})</div>${table(['ID', 'Diameter', 'Depth', 'Counterbore / countersink', 'To nearest edge'], d.holes.map(r => r.map(esc)))}` : '')
+          + (d.cutouts.length ? `<div class="sec">Cutouts (${d.cutouts.length})</div><div class="mute">Levels run from the entry face inward; centre is measured from the outline corner, like the hole positions.</div>${table(['ID', 'Kind', 'Levels', 'Total depth', 'To nearest edge or opening'], d.cutouts.map(r => r.map(esc)))}` : '')
           + sec('Slots', d.slots) + sec('Pockets', d.pockets) + sec('Bosses', d.bosses) + sec('Fillets', d.fillets) + sec('Chamfers', d.chamfers)
           + (d.holes.length + d.cutouts.length + d.slots.length + d.pockets.length + d.bosses.length + d.fillets.length + d.chamfers.length ? '' : '<div class="mute">No holes, cutouts, slots, pockets, bosses, fillets or chamfers found.</div>')
           + `</details>`; };
       return head + '<div class="mute" style="margin:10px 0 4px">Open a part to see its feature dimensions.</div>' + r.parts.map(one).join('');
     }],
     'Assembly': ['How the parts fit together, and the fasteners to buy.', () => `<div class="sec">Bill of materials</div><div class="mute">Each unique part and how many copies there are.</div>${list(r.bom, 'single part')}<div class="sec">Relations</div><div class="mute">Which parts rest on, sit inside or are fastened to which.</div>${list(r.relations)}<div class="sec">Fastener joints</div><div class="mute">Screws and the holes they pass through, with the size inferred.</div>${list(r.joints)}<div class="sec">Shopping list</div><div class="mute">Standard hardware implied by the holes and joints.</div>${list(r.shopping)}`],
-    'Images': ['Labelled views with dimensions in mm. Click one to enlarge.', () => r.images.length ? `<div class="grid">${r.images.map(i => `<div><img loading="lazy" src="/files/${id}/${i}" data-src="/files/${id}/${i}"><div class="mute">${esc(i)}</div></div>`).join('')}</div>` : '<div class="mute">No images were rendered (the option was off).</div>'],
+    'Images': ['Labelled views with dimensions in mm. Click one to enlarge.', () => r.images.length ? `<div class="grid">${r.images.map(i => `<div><img loading="lazy" src="${esc(tq(`/files/${id}/${i}`))}" data-src="${esc(tq(`/files/${id}/${i}`))}"><div class="mute">${esc(i)}</div></div>`).join('')}</div>` : '<div class="mute">No images were rendered (the option was off).</div>'],
   };
   if (r.warnings.length || r.errors.length) tabs['Warnings'] = ['What the tool was unsure about or skipped. Check these first.', () => `${list(r.warnings, 'no file-level warnings')}${r.errors.length ? `<div class="sec">Errors</div>${list(r.errors.map(e => JSON.stringify(e)))}` : ''}`];
-  $('tabs').innerHTML = Object.keys(tabs).map((t, i) => `<button class="${i ? '' : 'on'}" data-t="${t}">${t}</button>`).join('');
+  $('tabs').innerHTML = Object.keys(tabs).map((t, i) => `<button class="${i ? '' : 'on'}" data-t="${esc(t)}">${t}</button>`).join('');
   const open = async t => {
     window.__current = t;
     [...$('tabs').children].forEach(b => b.classList.toggle('on', b.dataset.t === t));
     if (t === 'Context pack' && result.stale) {
       $('tabBody').innerHTML = '<div class="mute">Rebuilding the text with your answers...</div>';
-      const p = await (await fetch('/api/pack/preview?id=' + id)).json();
+      const p = await (await api('/api/pack/preview?id=' + id)).json();
       if (p.context_pack) { result.context_pack = p.context_pack; result.stale = false; }
     }
     $('tabBody').innerHTML = `<div class="mute" style="margin-bottom:10px;max-width:80ch">${tabs[t][0]}</div><div class="tabbody-wrap">` + tabs[t][1]() + `</div>`;
@@ -401,10 +415,10 @@ function askRender(st) {
   $('askWhy').textContent = 'Why I ask: ' + q.why;
   $('askControls').innerHTML = askControls(q);
   const refs = (q.refs || []).filter(r => /^(PRT|INS|L|KJ)/.test(r)).join(',');
-  $('askImgWrap').innerHTML = refs ? `<img alt="highlighted: ${esc(refs)}" src="/api/render?id=${jobId}&highlight=${encodeURIComponent(refs)}">` : '';
+  $('askImgWrap').innerHTML = refs ? `<img alt="highlighted: ${esc(refs)}" src="${esc(tq(`/api/render?id=${jobId}&highlight=${encodeURIComponent(refs)}`))}">` : '';
 }
 async function askCall(url, body) {
-  const res = await fetch(url, body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) });
+  const res = await api(url, body === undefined ? {} : JSON_POST(body));
   return res.json();
 }
 async function askStart() {
@@ -426,6 +440,13 @@ $('askSkip').onclick = () => askSend('skipped');
 $('askBack').onclick = async () => askRender(await askCall('/api/answers/undo?id=' + jobId, {}));
 $('askDone').onclick = () => { $('askCard').style.display = 'none'; };
 $('askBtn').onclick = askStart;
+beat();
+$('quit').onclick = async () => {
+  if (!confirm('Stop stepscribe? Running analyses are cancelled; saved answers stay in the pack files.')) return;
+  pageAlive = false;
+  try { await api('/api/shutdown', JSON_POST()); } catch (e) { /* already gone */ }
+  document.body.innerHTML = '<main><div class="card"><h2>stepscribe has stopped</h2><p>You can close this tab.</p></div></main>';
+};
 const preJob = new URLSearchParams(location.search).get('job');
 if (preJob) { jobId = preJob; $('progCard').style.display = ''; $('go').disabled = true; $('progTitle').textContent = 'Analysing...'; poll(); timer = setInterval(poll, 800); }
 let lbList = [], lbIdx = 0;

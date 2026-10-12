@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
+import subprocess
 import sys
 
 
@@ -49,7 +50,14 @@ def main() -> int:
         "MCP server dependencies: "
         + ("available" if info["mcp_server"] else 'missing (pip install "stepscribe[mcp]")')
     )
-    return 0 if info["stepscribe_importable"] and info["opencascade"] else 1
+    if info["stepscribe_importable"]:
+        # the full report (versions, rendering, cache, memory) with a fix for each problem
+        done = subprocess.run(
+            [sys.executable, "-m", "stepscribe", "doctor"], capture_output=True, text=True
+        )
+        print(done.stdout.rstrip() or done.stderr.rstrip())
+        return 0 if done.returncode == 0 else 1
+    return 1
 
 
 if __name__ == "__main__":

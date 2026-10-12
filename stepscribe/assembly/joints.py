@@ -122,7 +122,9 @@ def _designation(members: list[GlobalHole]) -> tuple[str | None, float]:
     return des, total / len(members)
 
 
-def _suggest(designation: str | None, grip: float, threaded: bool) -> tuple[str | None, str]:
+def _suggest(
+    designation: str | None, grip: float, threaded: bool, blind: bool = False
+) -> tuple[str | None, str]:
     """(suggested fastener text, reasoning) following the length rule."""
     if designation is None:
         return None, "no standard screw size matches the hole diameter"
@@ -130,15 +132,22 @@ def _suggest(designation: str | None, grip: float, threaded: bool) -> tuple[str 
     if row is None:
         return f"{designation} screw", "length not suggested for non-metric sizes"
     if threaded:
-        length = _round_down_length(grip)
+        # A blind hole has a bottom: stop one thread pitch short so the screw does not bottom out.
+        margin = float(row["pitch"]) if blind else 0.0
+        length = _round_down_length(grip - margin)
         if length is None:
             return (
                 f"{designation} screw",
                 f"grip {fmt(grip)} mm is shorter than the shortest standard screw",
             )
+        note = (
+            f" less one thread pitch ({fmt(margin, 2)} mm) so it does not bottom out"
+            if blind
+            else ""
+        )
         return (
             f"{designation} × {length} SHCS",
-            f"threaded end: longest standard length not exceeding the {fmt(grip)} mm available depth",
+            f"threaded end: longest standard length not exceeding the {fmt(grip)} mm available depth{note}",
         )
     extra = float(row["nut_m"]) + NUT_THREAD_PITCHES * float(row["pitch"])
     length = _round_up_length(grip + extra)
@@ -180,9 +189,14 @@ def detect_joints(instances: list[InstanceData]) -> list[FastenerJoint]:
             grip = t_hi - t_lo
             dia = Counter(round(g.hole.diameter_mm, 2) for g in chain)
             common = sorted(dia.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-            threaded = any(g.hole.likely_threaded for g in chain)
+            # A blind hole ends the stack: no nut can reach it and the screw must not bottom out,
+            # whether or not the hole looks tapped.
+            blind = any(not g.hole.is_through for g in chain)
+            threaded = blind or any(g.hole.likely_threaded for g in chain)
             desig, conf = _designation(chain)
-            text, why = _suggest(desig, grip, threaded)
+            text, why = _suggest(desig, grip, threaded, blind)
+            if blind and not any(g.hole.likely_threaded for g in chain):
+                why += "; the stack ends in a blind hole that is not tap-drill size, so it needs tapping or an insert"
             origin = ref.origin + d * t_lo
             existing = _existing_fastener(instances, origin, d)
             key = (ids[0], *(round(float(c), 2) for c in origin))

@@ -13,3 +13,16 @@ out/
 # launch-video output
 brag-output/
 brag-output-*/
+
+# hardening run artifacts (scan output, red/green evidence)
+hardening/
+HARDENING_PROMPT.md
+
+# local tool output and helpers (not part of the project)
+.claude/
+.playwright-cli/
+static_analysis_*/
+*.sarif
+junit*.xml
+*_context_pack.zip
+docs/prelaunch_checklist.md

@@ -13,7 +13,7 @@ from OCP.GProp import GProp_GProps
 from OCP.TopoDS import TopoDS_Shape
 
 from stepscribe import config
-from stepscribe.config import MATERIAL_KEYWORDS
+from stepscribe.config import MATERIAL_KEYWORDS, material_keyword
 from stepscribe.geometry.occ_utils import bbox_of, to_np
 from stepscribe.models.schema import BBox, MassProperties, OrientedBBox, Vec3
 
@@ -60,11 +60,8 @@ def obb(shape: TopoDS_Shape) -> OrientedBBox:
 
 def guess_density(name: str) -> tuple[float, str] | None:
     """Density (g/cm3) guess from a part name keyword, or None."""
-    low = name.lower()
-    for key in sorted(MATERIAL_KEYWORDS):
-        if key in low:
-            return MATERIAL_KEYWORDS[key], key
-    return None
+    key = material_keyword(name)
+    return (MATERIAL_KEYWORDS[key], key) if key else None
 
 
 def mass_properties(

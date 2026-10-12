@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import math
 from collections import Counter
 from typing import Any
 
@@ -104,7 +103,9 @@ def level0_context(
             if report.assembly and report.assembly.center_of_mass
             else None
         ),
-        "top_parts": [f"{p.id} {p.name} ({shape_label(p.shape_class)}, ×{qty[p.id]})" for p in top],
+        "top_parts": [
+            f"{p.id} `{p.name}` ({shape_label(p.shape_class)}, ×{qty[p.id]})" for p in top
+        ],
         "headline": headline_semantics(report),
         "summary": u.summary if u else "",
         "top_spots": [
@@ -133,13 +134,13 @@ def assembly_core_context(report: Report) -> dict[str, Any]:
         "shopping": [f"{row['qty']} × {row['item']}" for row in a.fastener_shopping_list],
         "subassemblies": [f"{s.name}: {s.summary}" for s in a.subassemblies],
         "bom": [
-            f"{line.part_id} {line.name} × {line.quantity} ({line.category.replace('_', ' ')})"
+            f"{line.part_id} `{line.name}` × {line.quantity} ({line.category.replace('_', ' ')})"
             for line in a.bom
         ],
         "spatial": [s.sentence for s in a.spatial_facts],
         "placements": [
             f"{i.id} = {i.part_id}: origin of the part's own frame at ({fmt(i.position.x, 2)}, {fmt(i.position.y, 2)}, {fmt(i.position.z, 2)}), "
-            f"rotated {fmt(math.degrees(i.rotation_axis_angle[1]), 1)} deg about "
+            f"rotated {fmt(i.rotation_axis_angle[1], 1)} deg about "
             f"({fmt(i.rotation_axis_angle[0].x, 3)}, {fmt(i.rotation_axis_angle[0].y, 3)}, {fmt(i.rotation_axis_angle[0].z, 3)}); "
             f"world bounds min ({fmt(i.global_bbox.min.x, 2)}, {fmt(i.global_bbox.min.y, 2)}, {fmt(i.global_bbox.min.z, 2)}) "
             f"max ({fmt(i.global_bbox.max.x, 2)}, {fmt(i.global_bbox.max.y, 2)}, {fmt(i.global_bbox.max.z, 2)})"

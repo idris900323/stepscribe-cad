@@ -2,22 +2,26 @@
 # Copyright (C) 2026 idris sadiq
 """MCP tool implementations (read-only). Plain functions: the server only wraps them.
 
-Results are cached by file content hash, so follow-up questions about the same robot do not
-re-run the analysis.
+A file is analysed once, by ``start_analysis`` or ``export_pack``, and written to the shared
+cache (``stepscribe.cache``). The report tools below read that cache and never analyse; the few
+tools that need the OCC model (distances, sections, renders, interview) keep one loaded model.
 """
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import tempfile
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from OCP.BRepExtrema import BRepExtrema_DistShapeShape
 
+from stepscribe import cache, limits
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.api import Analysis, analyze_full
 from stepscribe.assembly import build_instances
@@ -26,16 +30,55 @@ from stepscribe.assembly.tree import InstanceData
 from stepscribe.describe.part_describer import level2_context, shape_label
 from stepscribe.describe.phrases import fmt, hole_callout
 from stepscribe.geometry.occ_utils import to_np
-from stepscribe.models.schema import Part
+from stepscribe.models.schema import Part, Report
 
-CACHE_SIZE = 4
+CACHE_SIZE = 1  # loaded OCC models kept in this process: one, the file being worked on
+MAX_SESSIONS = 2  # interview sessions kept (each holds a model)
 _cache: OrderedDict[str, Analysis] = OrderedDict()
 _sessions: dict[str, Any] = {}  # interview sessions, keyed by analysis identity
 
 
+class NotAnalysed(Exception):
+    """The report tools were asked about a file nobody has analysed yet."""
+
+
 def _key(path: Path, options: AnalyzeOptions) -> str:
-    digest = hashlib.sha1(path.read_bytes()).hexdigest()  # noqa: S324
-    return f"{digest}:{options.material}:{options.density}:{options.up}:{options.front}"
+    return cache.cache_key(path, options)
+
+
+def _need_report(path: str) -> Report:
+    """The cached report of *path*; never analyses. Raises NotAnalysed with the way forward."""
+    from stepscribe.jobs import initial_eta_s
+
+    p = Path(path)
+    if not p.is_file():
+        raise ValueError(f"file not found: {path}")
+    report = cache.load_report(p, AnalyzeOptions(no_timestamp=True))
+    if report is None:
+        eta = max(1, int(initial_eta_s(p)))
+        raise NotAnalysed(
+            f"{p.name} has not been analysed yet. Call start_analysis with this path, poll "
+            f"get_job_status until it reports done (about {eta} s), then ask again."
+        )
+    return report
+
+
+def _report_tool(fn: Callable[..., str]) -> Callable[..., str]:
+    """A tool that reads the cache: a file that was not analysed gets a message, not a long wait."""
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> str:
+        try:
+            return fn(*args, **kwargs)
+        except NotAnalysed as exc:
+            return str(exc)
+
+    return wrapper
+
+
+def _prune_sessions() -> None:
+    while len(_sessions) > MAX_SESSIONS:
+        _sessions.pop(next(iter(_sessions)))
 
 
 def get_analysis(path: str, material: str | None = None) -> Analysis:
@@ -64,8 +107,8 @@ def clear_cache() -> None:
     _sessions.clear()
 
 
-def _find_part(analysis: Analysis, token: str) -> Part:
-    parts = analysis.report.parts
+def _find_part(report: Report, token: str) -> Part:
+    parts = report.parts
     exact = [p for p in parts if token in (p.id, p.name)]
     if len(exact) == 1:
         return exact[0]
@@ -77,34 +120,36 @@ def _find_part(analysis: Analysis, token: str) -> Part:
 
 
 # ------------------------------------------------------------------ tools
+@_report_tool
 def get_overview(path: str) -> str:
     """Level 0 overview: size, parts, headline features, fasteners."""
     from stepscribe.pack.writer import _env, build_sections
 
-    a = get_analysis(path)
-    rep = a.report
+    rep = _need_report(path)
     up = rep.assembly.up_axis if rep.assembly else "+Z"
     front = rep.assembly.front_axis if rep.assembly else "-Y"
-    root = a.model.root_name if a.model else Path(path).stem
+    root = rep.assembly.root_name if rep.assembly else Path(path).stem
     return build_sections(rep, root, _env(), up, front).level0
 
 
+@_report_tool
 def get_part(path: str, part: str) -> str:
     """Level 2 detail for one part (by ID such as PRT003, or by name)."""
     from stepscribe.pack.writer import _env, relations_by_part
 
-    a = get_analysis(path)
-    p = _find_part(a, part)
-    rel = relations_by_part(a.report).get(p.id)
+    rep = _need_report(path)
+    p = _find_part(rep, part)
+    rel = relations_by_part(rep).get(p.id)
     return _env().get_template("part.md.j2").render(c=level2_context(p, rel)).rstrip() + "\n"
 
 
+@_report_tool
 def list_holes(
     path: str, part: str | None = None, min_d: float | None = None, max_d: float | None = None
 ) -> str:
     """Hole table, optionally for one part and a diameter range (mm)."""
-    a = get_analysis(path)
-    parts = [_find_part(a, part)] if part else a.report.parts
+    rep = _need_report(path)
+    parts = [_find_part(rep, part)] if part else rep.parts
     rows = []
     for p in parts:
         for h in p.holes:
@@ -126,12 +171,13 @@ def list_holes(
     return head + "\n".join(rows)
 
 
+@_report_tool
 def list_cutouts(path: str, part: str | None = None) -> str:
     """Cut-out table (ID, kind, each level's shape, size, depth, centre, edge distance)."""
     from stepscribe.describe.part_describer import cutout_row
 
-    a = get_analysis(path)
-    parts = [_find_part(a, part)] if part else a.report.parts
+    rep = _need_report(path)
+    parts = [_find_part(rep, part)] if part else rep.parts
     rows = []
     for p in parts:
         for c in p.cutouts:
@@ -148,17 +194,18 @@ def list_cutouts(path: str, part: str | None = None) -> str:
     return head + "\n".join(rows)
 
 
+@_report_tool
 def get_relations(path: str, part: str | None = None) -> str:
     """Relation sentences, optionally only those involving one part."""
     from stepscribe.pack.writer import relations_by_part
 
-    a = get_analysis(path)
-    if a.report.assembly is None:
+    rep = _need_report(path)
+    if rep.assembly is None:
         return "This file is a single part; there are no assembly relations."
     if part:
-        lines = relations_by_part(a.report).get(_find_part(a, part).id, [])
+        lines = relations_by_part(rep).get(_find_part(rep, part).id, [])
     else:
-        lines = [f"{r.id}: {r.sentence}" for r in a.report.assembly.relations]
+        lines = [f"{r.id}: {r.sentence}" for r in rep.assembly.relations]
     return "\n".join(f"- {s}" for s in lines) or "No relations found."
 
 
@@ -201,12 +248,13 @@ def measure_distance(path: str, a: str, b: str) -> str:
     )
 
 
+@_report_tool
 def find_parts(path: str, query: str) -> str:
     """Parts whose name, shape class, hardware guess or semantic tags contain *query*."""
-    a = get_analysis(path)
+    rep = _need_report(path)
     q = query.lower()
     out = []
-    for p in a.report.parts:
+    for p in rep.parts:
         haystack = " ".join(
             [
                 p.name,
@@ -223,14 +271,13 @@ def find_parts(path: str, query: str) -> str:
     return "\n".join(out) or f"No part matches '{query}'."
 
 
+@_report_tool
 def get_shopping_list(path: str) -> str:
     """Fastener shopping list derived from the joints."""
-    a = get_analysis(path)
-    if a.report.assembly is None or not a.report.assembly.fastener_shopping_list:
+    rep = _need_report(path)
+    if rep.assembly is None or not rep.assembly.fastener_shopping_list:
         return "No fasteners could be derived (single part, or no aligned holes across parts)."
-    return "\n".join(
-        f"- {r['qty']} × {r['item']}" for r in a.report.assembly.fastener_shopping_list
-    )
+    return "\n".join(f"- {r['qty']} × {r['item']}" for r in rep.assembly.fastener_shopping_list)
 
 
 def section(path: str, plane: str, part: str | None = None) -> tuple[str, bytes]:
@@ -301,7 +348,7 @@ def render_view_result(
     if part:
         from stepscribe.exporter_text import panel_text
 
-        p = _find_part(get_analysis(path), part)
+        p = _find_part(get_analysis(path).report, part)
         lines.append(f"Info panel of {p.id} {p.name}: {panel_text(p)}.")
     saved = _save_image(png, "view_" + _digest(path, view, part, highlight))
     lines.append(f"Saved at {saved}")
@@ -344,14 +391,16 @@ def start_analysis(path: str, material: str | None = None) -> str:
     options = AnalyzeOptions(material=material, no_timestamp=True)
     hit = cached_export(p, job_out_dir(p, options), options)
     state = MANAGER.start(p, options)
-    return json.dumps(
-        {
-            "job_id": state.id,
-            "cached": hit is not None,
-            "eta_s": 0 if hit else initial_eta_s(p),
-            "note": "poll get_job_status; when it is done, call export_pack",
-        }
-    )
+    info: dict[str, Any] = {
+        "job_id": state.id,
+        "cached": hit is not None,
+        "eta_s": 0 if hit else initial_eta_s(p),
+        "note": "poll get_job_status; when it is done, call export_pack",
+    }
+    warning = None if hit else limits.large_file_warning(p.stat().st_size)
+    if warning:
+        info["warning"] = warning
+    return json.dumps(info)
 
 
 def get_job_status(job_id: str) -> str:
@@ -453,9 +502,10 @@ def _copy_export(result: Any, dest: Path) -> Path:
     return target
 
 
+@_report_tool
 def diff(path_a: str, path_b: str) -> str:
     """What changed between two versions of a design (parts by name, BOM, counts)."""
-    ra, rb = get_analysis(path_a).report, get_analysis(path_b).report
+    ra, rb = _need_report(path_a), _need_report(path_b)
     pa = {p.name: p for p in ra.parts}
     pb = {p.name: p for p in rb.parts}
     lines: list[str] = []
@@ -523,6 +573,7 @@ def _session(path: str) -> Any:
         if pipe is None:
             raise ValueError("the understanding layer is not available for this file")
         _sessions[key] = Session(a, pipe.opts)
+        _prune_sessions()
     return _sessions[key]
 
 

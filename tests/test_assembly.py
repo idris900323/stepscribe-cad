@@ -67,6 +67,39 @@ def test_tapped_joint_has_threaded_end_and_rule_length(analyses) -> None:  # typ
     assert a.fastener_shopping_list == [{"item": "M3 × 12 SHCS", "qty": 4}]
 
 
+def test_screw_into_a_blind_hole_needs_no_nut_and_must_not_bottom_out(analyses) -> None:  # type: ignore[no-untyped-def]
+    """Plate 6 + a 7 mm blind hole = 13 mm: an M2 x 16 would bottom out and a nut has nowhere to go."""
+    _r, a = asm(analyses, "blind_clearance_assembly")
+    assert len(a.fastener_joints) == 4
+    for j in a.fastener_joints:
+        assert j.stack_thickness_mm == pytest.approx(13.0, abs=1e-3)
+        assert j.suggested_fastener == "M2 × 12 SHCS", j.evidence
+    assert a.fastener_shopping_list == [{"item": "M2 × 12 SHCS", "qty": 4}]
+
+
+def test_a_screw_in_a_blind_hole_stops_one_thread_pitch_short(analyses) -> None:  # type: ignore[no-untyped-def]
+    """3 mm + a 3 mm blind hole = 6 mm: M1.6 x 6 would touch the bottom, M1.6 x 5 leaves 1 mm."""
+    _r, a = asm(analyses, "blind_thin_stack_assembly")
+    assert len(a.fastener_joints) == 4
+    for j in a.fastener_joints:
+        assert j.stack_thickness_mm == pytest.approx(6.0, abs=1e-3)
+        assert j.suggested_fastener == "M1.6 × 5 SHCS", j.evidence
+        assert "thread pitch" in j.evidence and "bottom out" in j.evidence
+    assert a.fastener_shopping_list == [{"item": "M1.6 × 5 SHCS", "qty": 4}]
+
+
+def test_the_margin_is_only_for_blind_ends() -> None:
+    from stepscribe.assembly.joints import _suggest
+
+    # a threaded through hole cannot be bottomed out: the longest standard length that fits
+    assert _suggest("M2", 13.0, True, blind=False)[0] == "M2 × 12 SHCS"
+    assert _suggest("M1.6", 6.0, True, blind=False)[0] == "M1.6 × 6 SHCS"
+    assert _suggest("M1.6", 6.0, True, blind=True)[0] == "M1.6 × 5 SHCS"
+    # where the longest standard length already leaves a pitch, nothing changes
+    assert _suggest("M2", 13.0, True, blind=True)[0] == "M2 × 12 SHCS"
+    assert _suggest("M3", 13.0, True, blind=True)[0] == "M3 × 12 SHCS"
+
+
 def test_shaft_in_bearing_cylindrical_fit(analyses) -> None:  # type: ignore[no-untyped-def]
     _r, a = asm(analyses, "shaft_in_bearing_assembly")
     (c,) = a.contacts
@@ -137,7 +170,7 @@ def test_pack_includes_assembly_sections(step_files, tmp_path: Path) -> None:  #
     )
     asm_md = (folder / "02_assembly.md").read_text(encoding="utf-8")
     assert "TopPlate is bolted to BasePlate with 4 × M3 screws (J001–J004)." in asm_md
-    assert "Plate × 2" in asm_md and "4 × M3 × 14 SHCS" in asm_md
+    assert "`Plate` × 2" in asm_md and "4 × M3 × 14 SHCS" in asm_md
     pack = (folder / "context_pack.md").read_text(encoding="utf-8")
     assert "## Relations" in pack and "TopPlate rests on BasePlate" in pack
     assert "Fastener shopping list" in pack

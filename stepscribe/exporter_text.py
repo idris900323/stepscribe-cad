@@ -19,6 +19,7 @@ from stepscribe.describe.budget import PackSections, estimate_tokens
 from stepscribe.describe.part_describer import level2_context
 from stepscribe.models.schema import Part, Report
 from stepscribe.pack.writer import PackBuild
+from stepscribe.text_safety import DATA_NOTICE
 from stepscribe.understanding.describe import answers_section, understanding_markdown
 
 NOT_ANALYSED = "Not analysed (layer not enabled)."
@@ -159,7 +160,7 @@ def describe_image(rel: str, report: Report) -> tuple[str, str]:
     parts = {p.id: p for p in report.parts}
     if stem.startswith("assembly_"):
         view = stem[len("assembly_") :]
-        listed = ", ".join(f"{p.id} {p.name}" for p in report.parts[:30])
+        listed = ", ".join(f"{p.id} `{p.name}`" for p in report.parts[:30])
         more = " and more" if len(report.parts) > 30 else ""
         text = (
             f"{_VIEW_TEXT.get(view, f'{view} view of the whole assembly.')} Labels are part IDs "
@@ -190,7 +191,7 @@ def describe_image(rel: str, report: Report) -> tuple[str, str]:
             else f"in a {m.group(2)} view"
         )
         text = (
-            f"Part {p.id} {p.name}, viewed {how}. The white panel on the right of the image repeats: "
+            f"Part {p.id} `{p.name}`, viewed {how}. The white panel on the right of the image repeats: "
             f"{panel_text(p)}."
         )
         return f"{p.id} {p.name}, {m.group(2)} view", text
@@ -202,6 +203,8 @@ def _title_block(build: PackBuild, report: Report, name: str, no_timestamp: bool
     meta = report.meta
     lines = [
         f"# {name}: stepscribe full export",
+        "",
+        DATA_NOTICE,
         "",
         f"- Source file: {', '.join(meta.source_files)}",
         f"- Tool: stepscribe {__version__}; report schema {meta.schema_version}",
@@ -363,6 +366,7 @@ def compose_small(
     u = report.understanding
     header = (
         f"# {name}: small version\n\n"
+        f"{DATA_NOTICE}\n\n"
         f"Small version (about {budget_tokens} tokens) for free-tier chats and small models. "
         f"`{name}_COMPACT.md` has more detail and `{name}_FULL.md` has everything. Units are mm, "
         f"degrees, grams; up axis {up}, front axis {front}. Statements starting with `Likely:` "

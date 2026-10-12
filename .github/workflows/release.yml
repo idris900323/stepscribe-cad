@@ -18,7 +18,8 @@ jobs:
       - run: mypy stepscribe
       - run: python scripts/sync_skills.py --check
       - run: python scripts/check_release.py --tag "${GITHUB_REF_NAME}"
-      - run: xvfb-run -a pytest -q -p no:cacheprovider
+      - run: xvfb-run -a pytest -q -p no:cacheprovider --junitxml=junit.xml
+      - run: python scripts/check_skips.py junit.xml
 
   build:
     needs: test

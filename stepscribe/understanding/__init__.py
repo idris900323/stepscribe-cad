@@ -229,8 +229,19 @@ class UnderstandingPipeline:
             ans.apply_material(analysis, effects.material)
         conflicts += ans.apply_process(parts, effects.process)
         sub_roles = []
+        from stepscribe.understanding.ml_roles import load_enabled
+
+        learned = load_enabled(context)
+        if learned.info:
+            report.meta.options["ml_models"] = learned.info
+        else:
+            report.meta.options.pop("ml_models", None)
+        for name in learned.problems:
+            note = f"learned role model '{name}' was asked for but could not be loaded"
+            if note not in report.warnings:
+                report.warnings.append(note)
         if asm is not None and ctx is not None:
-            assign_roles(analysis, kin, ctx, confirmed=effects.roles)
+            assign_roles(analysis, kin, ctx, confirmed=effects.roles, ml_models=learned.models)
             sub_roles = subassembly_roles(analysis, kin, ctx)
         else:
             assign_single_part_roles(analysis)

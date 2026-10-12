@@ -11,20 +11,29 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ["3.11", "3.12"]
+        python: ["3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: Virtual display for the image renderer (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0
       - run: python -m pip install -e ".[dev,mcp,llm]"
+      - name: Dependency audit (a warning for now; make it blocking once it is clean)
+        run: pip-audit --skip-editable
+        continue-on-error: true
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy stepscribe
       - run: python scripts/sync_skills.py --check
       - run: python scripts/check_release.py
-      - run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}pytest -q -p no:cacheprovider
+      - run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}pytest -q -p no:cacheprovider --junitxml=junit.xml
+      - name: No test may be skipped unexpectedly (the POSIX tests must run on Linux and macOS)
+        if: always()
+        run: python scripts/check_skips.py junit.xml

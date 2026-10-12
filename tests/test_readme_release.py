@@ -44,7 +44,8 @@ def test_readme_has_the_documented_sections() -> None:
     ):
         assert heading in text, heading
     for link in ("COMMERCIAL.md", "CLA.md", "TRADEMARKS.md"):
-        assert f"]({link})" in text
+        # absolute, so they also work on PyPI (see test_readme_links_are_absolute)
+        assert f"](https://github.com/idris900323/stepscribe-cad/blob/main/{link})" in text
 
 
 @pytest.mark.parametrize("argv", _readme_commands(), ids=lambda a: " ".join(a)[:60])

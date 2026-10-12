@@ -281,8 +281,12 @@ def save_answers(
             out.append(f"  {qid}:" + (f"  # {note}" if note else ""))
             for key in ("status", "value", "note", "answered_at"):
                 if row.get(key) not in (None, ""):
+                    # width: never fold long text onto a second line (that is invalid YAML here)
                     dumped = yaml.safe_dump(
-                        {key: row[key]}, default_flow_style=True, allow_unicode=True
+                        {key: row[key]},
+                        default_flow_style=True,
+                        allow_unicode=True,
+                        width=2**31 - 1,
                     )
                     out.append("    " + dumped.strip().strip("{}").strip())
         tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")

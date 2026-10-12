@@ -1,4 +1,4 @@
-# PRT001 plate_4xM3
+# PRT001 `plate_4xM3`
 
 - Source file: plate_4xM3.step
 - Size (oriented bounding box): 60.0 × 60.0 × 5.0 mm

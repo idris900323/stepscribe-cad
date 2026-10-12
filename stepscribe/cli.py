@@ -11,20 +11,38 @@ from typing import Annotated, Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from stepscribe import __version__, config
+from stepscribe import __version__, config, envcheck, limits
+from stepscribe import cache as cache_mod
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.batch import Job, options_dict, run_jobs, write_index
+from stepscribe.errors import FriendlyGroup
 from stepscribe.geometry.occ_utils import occt_version
 from stepscribe.io.discovery import find_step_files
 from stepscribe.progress import Progress as Progress_
 from stepscribe.progress import format_eta
 
 app = typer.Typer(
-    add_completion=False, no_args_is_help=True, help="Turn STEP files into an LLM Context Pack."
+    add_completion=False,
+    no_args_is_help=True,
+    cls=FriendlyGroup,
+    help="Turn STEP files into an LLM Context Pack.",
 )
+
+
+@app.callback()
+def _main(
+    ctx: typer.Context,
+    debug: Annotated[
+        bool, typer.Option("--debug", help="Show the full traceback when something fails.")
+    ] = False,
+) -> None:
+    ctx.meta["stepscribe.debug"] = debug
+
+
 console = Console()
 
 
@@ -75,6 +93,11 @@ def _options(
 def _run(
     files: list[Path], jobs_tpl: dict[str, Any], jobs: int, timeout_s: int
 ) -> list[dict[str, Any]]:
+    envcheck.check_occt()  # one clear line if OpenCASCADE is the wrong version
+    for f in files:
+        warning = limits.large_file_warning(f.stat().st_size)
+        if warning:
+            typer.echo(f"warning: {f.name}: {warning}", err=True)
     todo = [Job(path=str(f), **jobs_tpl) for f in files]
     results: list[dict[str, Any]] = []
     if len(todo) > 1:
@@ -349,6 +372,24 @@ def schema(out: Annotated[Path | None, typer.Option("--out", "-o")] = None) -> N
         console.print(f"Wrote {out}")
     else:
         sys.stdout.write(text)
+
+
+@app.command()
+def doctor(
+    json_out: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+) -> None:
+    """Check this computer: versions, rendering, cache, memory; with a fix for each problem."""
+    import dataclasses
+
+    from stepscribe import doctor as doctor_mod
+
+    checks = doctor_mod.run_checks()
+    if json_out:
+        typer.echo(json.dumps([dataclasses.asdict(c) for c in checks], indent=2))
+    else:
+        typer.echo(doctor_mod.format_report(checks))
+    if any(c.level == "fail" for c in checks):
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -630,21 +671,109 @@ def ui(
     samples: Annotated[
         Path | None, typer.Option(help="Folder of STEP files offered as samples.")
     ] = None,
+    max_upload_mb: Annotated[
+        int, typer.Option(help="Largest STEP file the page may upload, in MB.")
+    ] = 500,
+    max_jobs: Annotated[int, typer.Option(help="Analyses that may run at the same time.")] = 1,
+    session_idle_min: Annotated[
+        float, typer.Option(help="Minutes after which an unused interview session ends.")
+    ] = 15.0,
+    cache_max_gb: Annotated[
+        float, typer.Option(help="Size the result cache is trimmed to, in GB.")
+    ] = cache_mod.DEFAULT_MAX_GB,
+    idle_exit_min: Annotated[
+        float,
+        typer.Option(
+            help="Stop by itself after this many minutes without an open page (0 = never)."
+        ),
+    ] = 10.0,
 ) -> None:
     """Start the local web UI: upload a STEP file, see an ETA, inspect the context pack."""
     from stepscribe.ui.server import serve
 
     default = Path("robot_steps")
     folder = samples or (default if default.is_dir() else None)
-    serve(port, not no_browser, folder, path)
+    serve(
+        port,
+        not no_browser,
+        folder,
+        path,
+        max_upload_mb,
+        max_jobs,
+        session_idle_min,
+        cache_max_gb,
+        idle_exit_min,
+    )
 
 
 @app.command()
-def mcp() -> None:
+def shortcut(
+    remove: Annotated[bool, typer.Option("--remove", help="Delete the launchers.")] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Replace a file that stepscribe did not create.")
+    ] = False,
+    minimised: Annotated[
+        bool, typer.Option("--minimised", help="Windows: start the console window minimised.")
+    ] = False,
+) -> None:
+    """Put an icon on the desktop that opens the page; closing the page stops everything."""
+    from stepscribe import launcher
+
+    loc = launcher.default_locations()
+    if remove:
+        gone = launcher.remove(loc)
+        for path in gone:
+            typer.echo(f"Removed {path}")
+        if not gone:
+            typer.echo("Nothing to remove.")
+        return
+    for made in launcher.create(loc, force=force, minimised=minimised):
+        if made.skipped:
+            typer.echo(f"Skipped {made.path}: {made.reason}")
+        else:
+            typer.echo(f"Created {made.path}")
+    typer.echo(
+        "Double-click it to open stepscribe. Remove it with: python -m stepscribe shortcut --remove"
+    )
+
+
+@app.command()
+def mcp(
+    max_jobs: Annotated[int, typer.Option(help="Analyses that may run at the same time.")] = 1,
+    cache_max_gb: Annotated[
+        float, typer.Option(help="Size the result cache is trimmed to, in GB.")
+    ] = cache_mod.DEFAULT_MAX_GB,
+) -> None:
     """Run the read-only MCP server over stdio (needs: pip install stepscribe[mcp])."""
     from stepscribe.mcp.server import main
+    from stepscribe.runner import RUNNER
 
+    RUNNER.set_max_jobs(max_jobs)
+    cache_mod.set_max_gb(cache_max_gb)
     main()
+
+
+cache_app = typer.Typer(help="Look at or empty the result cache.", no_args_is_help=True)
+app.add_typer(cache_app, name="cache")
+
+
+@cache_app.command("info")
+def cache_info() -> None:
+    """Where the cache is, how many analyses it holds and how big it is."""
+    info = cache_mod.info()
+    typer.echo(f"Cache folder: {info['path']}")
+    typer.echo(
+        f"{info['entries']} entries, {info['bytes'] / 1024**2:.1f} MB "
+        f"(limit {cache_mod.max_bytes() / 1024**3:.1f} GB)"
+    )
+    if info["fallback_reason"]:
+        typer.echo(f"The usual cache folder was not used: it {info['fallback_reason']}.")
+
+
+@cache_app.command("clear")
+def cache_clear() -> None:
+    """Delete every cached analysis."""
+    typer.echo(f"Removed {cache_mod.clear()} entries.")
 
 
 def _llm_pack(path: Path, vision: bool) -> tuple[str, list[Path], Any]:
@@ -670,31 +799,41 @@ def _llm_config() -> Any:
     try:
         return LLMConfig.from_env()
     except LLMConfigError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(2) from exc
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(2) from None
+
+
+def _chat_or_exit(cfg: Any, prompt: str, images: Any) -> str:
+    from stepscribe.llm.adapter import LLMConfigError, LLMError, chat
+
+    try:
+        return chat(cfg, prompt, images)
+    except (LLMConfigError, LLMError) as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(1) from None
 
 
 @app.command()
 def ask(path: Path_, question: Annotated[str, typer.Argument(help="Your question.")]) -> None:
     """Ask a question about a design: builds the pack and sends it to your configured LLM."""
-    from stepscribe.llm.adapter import build_prompt, chat
+    from stepscribe.llm.adapter import build_prompt
 
     cfg = _llm_config()
     text, images, _report = _llm_pack(path, cfg.vision)
-    console.print(chat(cfg, build_prompt(text, f"Question: {question}"), images))
+    console.print(_chat_or_exit(cfg, build_prompt(text, f"Question: {question}"), images))
 
 
 @app.command("eval")
 def eval_cmd(path: Path_, limit: Annotated[int, typer.Option(help="Max questions.")] = 12) -> None:
     """Score how well your configured LLM answers factual questions about a design."""
-    from stepscribe.llm.adapter import build_prompt, chat
+    from stepscribe.llm.adapter import build_prompt
     from stepscribe.llm.evaluate import SUFFIX, EvalResult, accuracy, build_questions, score
 
     cfg = _llm_config()
     text, images, report = _llm_pack(path, cfg.vision)
     results = []
     for q in build_questions(report, limit):
-        answer = chat(cfg, build_prompt(text, q.text), images)
+        answer = _chat_or_exit(cfg, build_prompt(text, q.text), images)
         results.append(EvalResult(q, answer, score(answer, q)))
     table = Table(title=f"stepscribe eval: {cfg.model}")
     for col in ("question", "expected", "model answer", "ok"):

@@ -22,6 +22,7 @@ THIN_RATIO = 0.12  # thin-walled if 2V/A <= this * middle OBB size
 PLATE_C_OVER_B = 0.2
 PLATE_AREA_SHARE = 0.7
 CYL_AREA_SHARE = 0.9
+END_FACE_SLACK = 1.05  # an end face may be at most this much larger than the widest circle
 BAR_ASPECT = 4.0
 HOUSING_FILL = 0.35
 GEAR_MIN_TEETH = 8
@@ -168,13 +169,16 @@ def rule_revolved(ctx: Ctx) -> ShapeClass | None:
             if coax and par:
                 share += f.area
                 radii.append(c.radius)
-        elif f.kind in ("plane", "cone"):
-            if f.kind == "plane":
-                n, _o = plane_normal_origin(f.face)
-                if abs(abs(float(np.dot(n, axis))) - 1) < 1e-4:
-                    share += f.area
-            else:
+    # An end face of a body of revolution fits inside its widest coaxial cylinder. A plane that
+    # is larger belongs to something else (the big faces of a plate with holes along its axis).
+    end_face_max = math.pi * max(radii) ** 2 * END_FACE_SLACK
+    for f in table.faces:
+        if f.kind == "plane":
+            n, _o = plane_normal_origin(f.face)
+            if abs(abs(float(np.dot(n, axis))) - 1) < 1e-4 and f.area <= end_face_max:
                 share += f.area
+        elif f.kind == "cone":
+            share += f.area
     if share / total < CYL_AREA_SHARE:
         return None
     proj = [abs(float(np.dot(ax, axis))) for ax in ctx.axes]

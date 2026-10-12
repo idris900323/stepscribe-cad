@@ -19,10 +19,26 @@ def predict(part):               # part: stepscribe.models.schema.Part
     return {"motor_mount": 0.7, "arm_link": 0.2}   # role -> probability, roles from roles.yaml
 ```
 
-For every part, each installed model's probabilities are multiplied by `understanding.ml.weight`
+A model is third-party code, so **it never runs on its own**. Installing the package is not
+enough; you switch it on by name, either with `STEPSCRIBE_ML` in the environment or with
+`ml.enabled` in `design_context.yaml`:
+
+```bash
+STEPSCRIBE_ML=my_model,other_model stepscribe pack robot.step
+```
+
+```yaml
+ml:
+  enabled: [my_model]
+```
+
+For every part, each enabled model's probabilities are multiplied by `understanding.ml.weight`
 in `stepscribe/knowledge/roles.yaml` (default 0.8) and added to the rule evidence, labelled
-`ml:<name>` so the pack shows where a role came from. Nothing is installed or run by default; a
-model that fails to load or raises is skipped. See `stepscribe/understanding/ml_roles.py`.
+`ml:<name>` so the pack shows where a role came from. The models that ran (name, package,
+version) are recorded in `meta.options.ml_models` of `report.json` and listed in
+`05_understanding.md`. A name that is not installed, a model that fails to load and one that
+raises are skipped (the first two are reported as a warning). See
+`stepscribe/understanding/ml_roles.py`.
 
 ## What a model has to clear before it is worth shipping
 

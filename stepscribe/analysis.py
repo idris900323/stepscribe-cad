@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 idris sadiq
-"""Per-part analysis: ties readers, geometry and feature detectors into ``Part`` models."""
+"""Per-part analysis: ties readers, geometry and feature detectors into ``Part`` models.
+
+Worker memory (`estimate_worker_mb`): a part-pool worker needs about WORKER_BASE_MB plus
+WORKER_MB_PER_KFACE per thousand faces of the largest part (MB per worker). The constants come
+from hardening/H3/worker_rss.py run on SO_5DOF_ARM100_Assembly.step and SO101 Assembly.step;
+`worker_count` keeps the estimate under RAM_SHARE of the memory that is free.
+"""
 
 from __future__ import annotations
 
@@ -219,14 +225,78 @@ def analyze_brep_file(
     return part, time.time() - started
 
 
-def worker_count(n_parts: int) -> int:
-    """Processes to use for part analysis: env STEPSCRIBE_WORKERS, else CPUs - 1 (min 1)."""
+WORKER_BASE_MB = 340.0  # interpreter + OCC + numpy, measured 341 MB at 10 faces
+WORKER_MB_PER_KFACE = 45.0  # measured about 43 MB per 1000 faces (pool worker: 383 MB at 617 faces)
+RAM_SHARE = 0.6  # of the free memory that the part workers may use
+_UNSET: Any = object()
+
+
+def estimate_worker_mb(max_faces: int) -> float:
+    """Expected peak memory of one part worker, in MB, from the face count of the largest part."""
+    return WORKER_BASE_MB + WORKER_MB_PER_KFACE * max_faces / 1000.0
+
+
+def available_ram_bytes(platform: str | None = None) -> int | None:
+    """Free physical memory, or None if this OS does not say."""
     import os
+    import sys
+
+    try:
+        if (platform or sys.platform) == "win32":
+            import ctypes
+
+            class _Status(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = _Status()
+            status.dwLength = ctypes.sizeof(_Status)
+            kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 - Windows only
+            ok = kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+            return int(status.ullAvailPhys) if ok else None
+        sysconf = getattr(os, "sysconf")  # noqa: B009 - POSIX only
+        return int(sysconf("SC_AVPHYS_PAGES")) * int(sysconf("SC_PAGE_SIZE"))
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def worker_count(
+    n_parts: int,
+    max_faces: int = 0,
+    available_bytes: int | None = _UNSET,
+    cpus: int | None = None,
+    jobs: int | None = None,
+) -> int:
+    """Processes to use for part analysis.
+
+    STEPSCRIBE_WORKERS wins. Otherwise CPUs - 1 (at most 8) shared between the jobs allowed to run
+    at once, and never more than the free memory allows (`estimate_worker_mb`, RAM_SHARE).
+    """
+    import os
+
+    from stepscribe.limits import parallelism
+    from stepscribe.runner import RUNNER
 
     env = os.environ.get("STEPSCRIBE_WORKERS")
     if env and env.isdigit():
         return max(1, min(int(env), n_parts))
-    return max(1, min((os.cpu_count() or 2) - 1, n_parts, 8))
+    n_jobs = max(1, jobs if jobs is not None else RUNNER.max_jobs)
+    by_cpu = max(1, parallelism(cpus) // n_jobs)
+    n = max(1, min(by_cpu, n_parts))
+    free = available_ram_bytes() if available_bytes is _UNSET else available_bytes
+    if free is not None and max_faces > 0:
+        per_worker = estimate_worker_mb(max_faces) * 1024**2
+        n = min(n, max(1, int(RAM_SHARE * free / (per_worker * n_jobs))))
+    return n
 
 
 def assign_part_ids(parts: list[Part]) -> None:

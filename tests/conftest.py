@@ -17,6 +17,7 @@ from assembly_fixtures_u import generate_kinematic  # noqa: E402
 from cutout_fixtures import generate_cutouts  # noqa: E402
 from generate_fixtures import generate_all  # noqa: E402
 from mechanism_fixtures import generate_mechanisms  # noqa: E402
+from pack_issue_fixtures import generate_pack_issue_fixtures  # noqa: E402
 from part_fixtures import generate_parts  # noqa: E402
 from risk_fixtures import generate_risks  # noqa: E402
 
@@ -40,6 +41,14 @@ def _not_headless():  # type: ignore[no-untyped-def]
     os.environ.pop("STEPSCRIBE_HEADLESS", None)
 
 
+@pytest.fixture(autouse=True)
+def _private_cache(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No test reads or fills the real per-user result cache."""
+    monkeypatch.setenv("STEPSCRIBE_CACHE", str(tmp_path_factory.mktemp("stepscribe_cache")))
+
+
 @pytest.fixture(scope="session")
 def step_files() -> dict[str, Path]:
     """Generate every STEP fixture once per session."""
@@ -50,6 +59,7 @@ def step_files() -> dict[str, Path]:
     paths.update(generate_kinematic())
     paths.update(generate_mechanisms())
     paths.update(generate_risks())
+    paths.update(generate_pack_issue_fixtures())
     return paths
 
 
