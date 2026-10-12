@@ -239,7 +239,12 @@ def test_shutdown_leaves_no_worker_processes(ui: Ui, step_files: dict[str, Path]
     proc = ui.app.jobs[job].process
     assert proc is not None and proc.is_alive()
     ui.app.shutdown()
-    proc.join(5)  # a worker that is already exiting can still be reported alive for a moment
+    # Several threads poll the same Process object.  While one has reaped the child but not yet
+    # stored its exit code, is_alive() still says True (multiprocessing returns None on ECHILD),
+    # so wait for the exit code to appear instead of checking at one instant.
+    deadline = time.monotonic() + 10
+    while proc.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.05)
     assert not proc.is_alive(), describe_process(proc.pid)
 
 
