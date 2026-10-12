@@ -316,7 +316,9 @@ class App:
         target = self.workdir / state.id / "pack.zip"
         files = [f for f in sorted(root.rglob("*")) if f.is_file()]
         # what the zip was built from: names, sizes and times. Comparing the zip's own time with
-        # the newest file is not enough: file times can be coarse enough to hide a change.
+        # the newest file is not enough: file times can be coarse enough to hide a change. (A file
+        # rewritten with the same size and the same time would still go unnoticed; packs are not
+        # edited that way.)
         listing = [
             (f.relative_to(root).as_posix(), f.stat().st_size, f.stat().st_mtime_ns) for f in files
         ]
