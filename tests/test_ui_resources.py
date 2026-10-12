@@ -239,6 +239,7 @@ def test_shutdown_leaves_no_worker_processes(ui: Ui, step_files: dict[str, Path]
     proc = ui.app.jobs[job].process
     assert proc is not None and proc.is_alive()
     ui.app.shutdown()
+    proc.join(5)  # a worker that is already exiting can still be reported alive for a moment
     assert not proc.is_alive(), describe_process(proc.pid)
 
 
