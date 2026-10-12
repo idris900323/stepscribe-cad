@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.4
+
+Fixes found on a real design (`full ass.step`).
+
+- **Pilot holes set the screw size.** A clearance hole over a smaller blind hole names the screw: a Ø3.2 hole over a Ø2.6 / Ø2.2 blind hole is an M3 into its tapping (pilot) hole, not an M2. The joint text now says so, and no longer says the blind hole "needs tapping or an insert". A Ø2.3 hole over a Ø1.6 blind hole stays M2.
+- **Hole table shows ambiguous sizes.** A hole that fits two screw sizes lists both, for example Ø1.6 as "Likely: M1.6 nominal (1.00); or M2 tap drill". The joint evidence names the other reading and says the mating hole decided.
+- **Joint lines read correctly.** "Through 2 parts" is used only for stacks that go through; a stack that ends in a threaded or blind hole says "across 2 parts, ending in a threaded or blind hole". The confidence follows the same pattern as every other guess: "Likely: M3 × 14 SHCS (0.90)" instead of "M3 × 14 SHCS (Likely, 0.90)". The wording changes in the single-file pack and the exports.
+- Version strings are 0.1.4 in the package, the plugin and the marketplace file.
+
 ## 0.1.3
 
 Security and resource hardening (phases H1 to H3) and fixes found on a real design.

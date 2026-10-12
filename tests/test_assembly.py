@@ -269,3 +269,18 @@ def test_a_hole_that_fits_two_sizes_shows_the_other_reading_in_the_part_line(ana
     # the mating Ø2.3 clearance hole decides the joint; the evidence says what else it could read as
     evidence = a.fastener_joints[0].evidence
     assert "pilot (tapping) hole for M2" in evidence and "could also read as M1.6" in evidence
+
+
+def test_joint_lines_follow_the_likely_convention_and_name_the_end(analyses) -> None:  # type: ignore[no-untyped-def]
+    from stepscribe.describe.assembly_describer import assembly_core_context
+
+    rep, _a = asm(analyses, "two_plates_assembly")
+    line = assembly_core_context(rep)["joints"][0]
+    assert "Likely: M3 × 14 SHCS (" in line and "(Likely," not in line, line
+    assert "through 2 parts" in line and "threaded or blind" not in line  # a through stack
+    rep, _a = asm(analyses, "pilot_over_blind_assembly")
+    line = assembly_core_context(rep)["joints"][0]
+    assert "through 2 parts" not in line, line
+    assert (
+        "2 parts, ending in a threaded or blind hole" in line and "Likely: M3 × 12 SHCS (" in line
+    )
