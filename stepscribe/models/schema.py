@@ -484,6 +484,7 @@ class Question(_M):
         "joint_drive",
         "joint_range",
         "joint_ranges",
+        "joint_directions",
         "joint_direction",
         "joint_axis",
         "kin_base",

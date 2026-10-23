@@ -225,6 +225,13 @@ def answers_to_kinematics(
             r = row(q.refs[0], qid)
             if r is not None:
                 r["positive"] = v
+        elif q.kind == "joint_directions" and q.refs:
+            from stepscribe.understanding.answers import parse_directions
+
+            for jid, sign in parse_directions(str(v), q.refs).items():
+                r = row(jid, qid)
+                if r is not None:
+                    r["positive"] = sign
         elif q.kind == "joint_ranges" and q.refs:
             from stepscribe.understanding.answers import parse_ranges
 
@@ -328,9 +335,29 @@ def _override(j: KinJoint, d: DeclaredJoint) -> None:
         bits.append(f"positive {d.positive}")
     j.declared_by_designer = True
     j.confidence = 1.0
-    j.evidence = [e for e in j.evidence if e.code != "designer"] + [
+    j.evidence = [e for e in j.evidence if e.code not in ("designer", "designer_sign")] + [
         _designer(f"{j.id} " + (", ".join(bits) if bits else "exists"))
     ]
+    if d.positive in ("cw", "-"):
+        j.evidence.append(
+            Evidence(
+                code="designer_sign",
+                refs=[j.id],
+                weight=1.0,
+                text=f"Confirmed by designer: flipped ({j.id} turns the other way, so its axis arrow "
+                "is reversed in robot.json and robot.urdf)",
+            )
+        )
+    elif d.positive in ("ccw", "+"):
+        j.evidence.append(
+            Evidence(
+                code="designer_sign",
+                refs=[j.id],
+                weight=1.0,
+                text=f"Confirmed by designer: {j.id} positive motion is counter-clockwise "
+                "(right-hand rule); the axis arrow is unchanged",
+            )
+        )
     j.description = j.description.split("; declared")[0] + "; declared by the designer"
 
 

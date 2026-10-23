@@ -666,7 +666,13 @@ def answer(
     parsed: Any = value
     if status == "answered" and q.answer_type == "multi_choice" and value is not None:
         parsed = [v.strip() for v in value.split(",") if v.strip()]
-    change = session.answer(question_id, status, parsed if status == "answered" else None, note)
+    from stepscribe.understanding.answers import AnswerError
+
+    try:
+        change = session.answer(question_id, status, parsed if status == "answered" else None, note)
+    except AnswerError as exc:
+        console.print(f"Not saved. {exc}", markup=False)
+        raise typer.Exit(2) from exc
     session.save(context)
     console.print(f"{question_id}: {status}. {change.text}", markup=False)
     if session.questions:

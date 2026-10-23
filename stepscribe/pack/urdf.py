@@ -117,20 +117,21 @@ def build_urdf(robot: dict[str, Any] | None) -> str:
             ]
         out.append("  </link>")
     for j in robot["joints"]:
-        axis = list(j["axis"])
+        axis = list(j["axis"])  # robot.json already holds the arrow in the designer's convention
         notes = []
-        if j["positive_direction"] == "cw" and j["type"] == "revolute":
-            axis = [-x for x in axis]
-            notes.append("positive direction cw: axis flipped")
-        if j["positive_direction"] == "-" and j["type"] == "prismatic":
-            axis = [-x for x in axis]
-            notes.append("positive direction against the stored axis: axis flipped")
+        if j.get("axis_flipped"):
+            notes.append(
+                "positive direction cw: axis flipped"
+                if j["type"] == "revolute"
+                else "positive direction against the found axis: axis flipped"
+            )
         lim = j["limits"]
         unknown = lim["lower"] is None
         jtype = "continuous" if unknown and j["type"] == "revolute" else j["type"]
         label = f"{j['id']} ({j['type']}, confidence {_n(j['confidence'])})"
         out.append(f"  <!-- {_c(label)}{_c('; ' + '; '.join(notes)) if notes else ''} -->")
         out.append(f"  <joint name={quoteattr('joint_' + j['id'])} type={quoteattr(jtype)}>")
+        out.append("    <!-- effort and velocity unknown; set before simulating -->")
         out += [
             f"    <parent link={quoteattr(j['parent'])}/>",
             f"    <child link={quoteattr(j['child'])}/>",

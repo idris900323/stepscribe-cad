@@ -181,11 +181,15 @@ def test_a_clockwise_positive_joint_has_its_axis_flipped(step_files, tmp_path) -
     apply_context(opts, load_context(yaml_path))
     robot = build_robot(analyze_full(step_files["arm_6_axis"], opts).report)
     assert robot is not None
+    baseline = build_robot(
+        analyze_full(step_files["arm_6_axis"], AnalyzeOptions(no_timestamp=True)).report
+    )
+    assert baseline is not None
     root = parse(build_urdf(robot))
     j2 = root.findall("joint")[1]
-    assert floats(j2.find("axis").get("xyz")) == pytest.approx(
-        [-v for v in robot["joints"][1]["axis"]]
-    )  # type: ignore[union-attr]
+    # robot.json already holds the flipped arrow; the URDF carries it once, not twice
+    assert floats(j2.find("axis").get("xyz")) == pytest.approx(robot["joints"][1]["axis"])  # type: ignore[union-attr]
+    assert robot["joints"][1]["axis"] == pytest.approx([-v for v in baseline["joints"][1]["axis"]])
     assert "positive direction cw: axis flipped" in build_urdf(robot)
 
 
@@ -205,3 +209,11 @@ def test_the_pack_contains_the_urdf_for_a_robot_only(tmp_path: Path, step_files)
         )
         assert res.exit_code == 0, res.output
         assert bool(list(out.rglob("robot.urdf"))) is expected
+
+
+def test_every_joint_says_that_effort_and_velocity_are_unknown(arm) -> None:  # type: ignore[no-untyped-def]
+    text = build_urdf(build_robot(arm))  # type: ignore[arg-type]
+    note = "effort and velocity unknown; set before simulating"
+    assert text.count(note) == 6
+    for block in text.split("<joint ")[1:]:
+        assert note in block.split("</joint>")[0]

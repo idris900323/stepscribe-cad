@@ -19,7 +19,7 @@ import yaml
 from stepscribe.describe.phrases import fmt
 from stepscribe.models.schema import Question, Understanding
 from stepscribe.understanding import UnderstandingPipeline
-from stepscribe.understanding.answers import answers_from_context
+from stepscribe.understanding.answers import answers_from_context, validate_answer
 
 if TYPE_CHECKING:
     from stepscribe.analysis import AnalyzeOptions
@@ -147,6 +147,9 @@ class Session:
         """Record an answer ("answered", "skipped" or "not_sure"), re-run, describe the change."""
         if status not in ("answered", "skipped", "not_sure"):
             raise ValueError(f"unknown status {status!r}")
+        asked = next((q for q in self.all_questions() if q.id == question_id), None)
+        if asked is not None and status == "answered":
+            validate_answer(asked, value)  # AnswerError: nothing is recorded
         before = _metrics(self.understanding, self.analysis)
         t0 = time.time()
         self.answers[question_id] = {
@@ -160,7 +163,6 @@ class Session:
         self.removed.discard(question_id)
         self.order.append(question_id)
         self.asked_this_session += 1
-        asked = next((q for q in self.all_questions() if q.id == question_id), None)
         if asked is not None:
             self.asked[question_id] = asked  # kept: a confirmed joint stops being asked about
         self.understanding = self.pipe.finish(self.answers, self.context)

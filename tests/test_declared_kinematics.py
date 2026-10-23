@@ -132,7 +132,7 @@ def test_the_interview_asks_for_base_ranges_directions_and_flange_only_axes(anal
     top = {q.kind for q in generate_questions(analyses("arm_6_axis").report)}
     assert "kin_base" in top  # asked early: it decides how every joint is read
     every = {q.kind for q in generate_questions(analyses("arm_6_axis").report, limit=None)}
-    assert {"kin_base", "joint_ranges", "joint_direction", "joint_axis"} <= every
+    assert {"kin_base", "joint_ranges", "joint_directions", "joint_axis"} <= every
     axis_q = [
         q
         for q in generate_questions(analyses("arm_6_axis").report, limit=None)
@@ -147,10 +147,10 @@ def test_answers_to_the_new_questions_change_the_model(step_files, tmp_path) -> 
     from stepscribe.understanding.questions import generate_questions
 
     qs = {(q.kind, tuple(q.refs)): q for q in generate_questions(a.report, limit=None)}
-    kj2 = ("joint_direction", ("KJ2",))
+    kj2 = ("joint_directions", tuple(f"KJ{i}" for i in range(1, 7)))
     base_q = qs[("kin_base", ())]
     answers = {
-        qs[kj2].id: {"status": "answered", "value": "cw"},
+        qs[kj2].id: {"status": "answered", "value": "KJ2: cw"},
         base_q.id: {"status": "answered", "value": "L0"},
     }
     pipeline = UnderstandingPipeline(a, AnalyzeOptions(no_timestamp=True))

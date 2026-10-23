@@ -300,7 +300,11 @@ def generate_questions(
                     1.5,
                     1.0,
                 )
-            if j.positive_direction is None and j.kind in ("revolute", "prismatic"):
+            if (
+                j.positive_direction is None
+                and j.kind in ("revolute", "prismatic")
+                and not is_robot(u.kinematics)  # a robot gets one question below
+            ):
                 add(_direction_question(j), 0.8, 1.0)
             if _flange_only(j) and not j.declared_by_designer:
                 add(_axis_question(j), 2.0, 0.6)
@@ -322,6 +326,30 @@ def generate_questions(
                     1.0,
                 )
     if is_robot(u.kinematics):
+        unsigned = [
+            j
+            for j in u.kinematics.joints
+            if j.kind in ("revolute", "prismatic") and j.positive_direction is None
+        ]
+        if unsigned:
+            add(
+                _q(
+                    "joint_directions",
+                    "Which way is positive motion of each joint? Positive rotation is "
+                    "counter-clockwise looking along the axis arrow toward its origin "
+                    "(right-hand rule). Answer one line per joint: 'KJ1: ccw' if that matches, "
+                    "'KJ1: cw' if the joint turns the other way (the axis is then reversed); for a "
+                    "slide '+' (along the arrow) or '-' (against it). Axis arrows: "
+                    + "; ".join(f"{j.id} axis arrow {_arrow(j)}" for j in unsigned)
+                    + ".",
+                    "A robot model needs the sign convention of each joint to match the controller.",
+                    "text",
+                    refs=[j.id for j in unsigned],
+                    applies=["summary"],
+                ),
+                1.0,
+                1.0,
+            )
         missing = [
             j
             for j in u.kinematics.joints
@@ -373,6 +401,12 @@ def _fastened(report: Report, a: str, b: str) -> bool:
     if asm is None:
         return False
     return any(a in j.instance_ids and b in j.instance_ids for j in asm.fastener_joints)
+
+
+def _arrow(j) -> str:  # type: ignore[no-untyped-def]
+    d = j.axis.direction
+    parts = [f"{round(v, 2) + 0.0:g}" for v in (d.x, d.y, d.z)]
+    return "(" + ", ".join(parts) + ")"
 
 
 def _axis_name(j) -> str:  # type: ignore[no-untyped-def]
@@ -433,7 +467,7 @@ def _is_input(u, joint_id: str) -> bool:  # type: ignore[no-untyped-def]
     return any(m.parameters.get("input_joint") == joint_id for m in u.kinematics.mechanisms)
 
 
-ROBOT_ORDER = ("kin_base", "joint_axis", "joint_direction", "joint_ranges")
+ROBOT_ORDER = ("kin_base", "joint_axis", "joint_directions", "joint_ranges")
 ROBOT_BOOST = (
     5000.0  # above the global questions (1000): a robot is asked about its kinematics first
 )

@@ -12,21 +12,20 @@ from stepscribe.pack.design_context import apply_context, load_context
 from stepscribe.understanding.questions import generate_questions
 from stepscribe.understanding.session import Session, save_answers
 
-ROBOT_KINDS = {"kin_base", "joint_axis", "joint_direction", "joint_ranges"}
+ROBOT_KINDS = {"kin_base", "joint_axis", "joint_directions", "joint_ranges"}
+JOINTS = [f"KJ{i}" for i in range(1, 7)]
 
 
 def test_a_robot_is_asked_about_its_kinematics_before_anything_else(analyses) -> None:  # type: ignore[no-untyped-def]
     report = analyses("arm_6_axis").report
     top = generate_questions(report)
     kinds = [q.kind for q in top]
-    assert len(top) == 10 and set(kinds) <= ROBOT_KINDS, kinds
-    assert kinds[0] == "kin_base"
+    assert kinds[:5] == ["kin_base", "joint_axis", "joint_axis", "joint_directions", "joint_ranges"]
     # the joints that rest on a flange alone (the others have a pivot bore that confirms them)
     assert [q.refs[0] for q in top[1:3]] == ["KJ1", "KJ5"]
-    assert kinds[1:3] == ["joint_axis"] * 2
-    assert kinds[3:9] == ["joint_direction"] * 6  # then the sign of motion, joint by joint
-    # then ONE question for the ranges of the whole arm, not six
-    assert kinds[9] == "joint_ranges" and top[9].refs == [f"KJ{i}" for i in range(1, 7)]
+    # ONE question for the sign of motion and ONE for the ranges of the whole arm, not six each
+    assert top[3].refs == JOINTS and top[4].refs == JOINTS
+    assert "joint_direction" not in kinds and "joint_range" not in kinds
 
 
 def test_what_drives_it_and_the_global_questions_come_after_all_of_them(analyses) -> None:  # type: ignore[no-untyped-def]
@@ -35,16 +34,10 @@ def test_what_drives_it_and_the_global_questions_come_after_all_of_them(analyses
     last_robot = max(i for i, k in enumerate(kinds) if k in ROBOT_KINDS)
     first_other = min(i for i, k in enumerate(kinds) if k not in ROBOT_KINDS)
     assert first_other > last_robot
-    assert (
-        kinds.count("joint_ranges") == 1
-        and "joint_range" not in kinds
-        and kinds.count("joint_direction") == 6
-    )
+    assert kinds.count("joint_directions") == 1 and kinds.count("joint_ranges") == 1
+    assert "joint_direction" not in kinds and "joint_range" not in kinds
     assert "joint_drive" in kinds[first_other:]
-    # the single range question comes after the directions
-    assert kinds.index("joint_ranges") > max(
-        i for i, k in enumerate(kinds) if k == "joint_direction"
-    )
+    assert kinds.index("joint_ranges") > kinds.index("joint_directions")
 
 
 def test_a_design_that_is_not_a_robot_keeps_its_ranking(analyses) -> None:  # type: ignore[no-untyped-def]
@@ -63,8 +56,9 @@ def test_answers_are_written_to_the_kinematics_section(step_files, tmp_path) -> 
     session, by = answered_session(step_files)
     session.answer(by[("kin_base", ())].id, "answered", "L0")
     session.answer(by[("joint_axis", ("KJ5",))].id, "answered", "yes")
-    session.answer(by[("joint_direction", ("KJ5",))].id, "answered", "cw")
-    ranges = by[("joint_ranges", tuple(f"KJ{i}" for i in range(1, 7)))]
+    directions = by[("joint_directions", tuple(JOINTS))]
+    session.answer(directions.id, "answered", "KJ5: cw\nKJ2: counter-clockwise")
+    ranges = by[("joint_ranges", tuple(JOINTS))]
     session.answer(ranges.id, "answered", "KJ5: -90 to 110\nKJ2 -30 45")
     path = tmp_path / "design_context.yaml"
     session.save(path)
@@ -79,13 +73,13 @@ def test_answers_are_written_to_the_kinematics_section(step_files, tmp_path) -> 
     row = rows[("LINK4", "LINK5")]
     assert row["axis"] == "+Y" and row["positive"] == "cw" and row["range"] == [-90.0, 110.0]
     assert rows[("LINK1", "LINK2")]["range"] == [-30.0, 45.0]
-    assert set(data["answers"]) >= {by[("joint_direction", ("KJ5",))].id}  # the answers stay too
+    assert set(data["answers"]) >= {directions.id}  # the answers stay too
 
 
 def test_the_written_section_overrides_detection_on_the_next_run(step_files, tmp_path) -> None:  # type: ignore[no-untyped-def]
     session, by = answered_session(step_files)
     session.answer(by[("joint_axis", ("KJ5",))].id, "answered", "yes")
-    session.answer(by[("joint_direction", ("KJ5",))].id, "answered", "cw")
+    session.answer(by[("joint_directions", tuple(JOINTS))].id, "answered", "KJ5: cw")
     path = tmp_path / "design_context.yaml"
     session.save(path)
     opts = AnalyzeOptions(no_timestamp=True)
@@ -98,13 +92,15 @@ def test_the_written_section_overrides_detection_on_the_next_run(step_files, tmp
     assert any("Confirmed by designer" in e.text for e in j.evidence)
     # the confirmed joint is no longer asked about
     asked = [(q.kind, tuple(q.refs)) for q in generate_questions(report, limit=None)]
-    assert ("joint_axis", ("KJ5",)) not in asked and ("joint_direction", ("KJ5",)) not in asked
+    assert ("joint_axis", ("KJ5",)) not in asked
+    (left,) = [refs for kind, refs in asked if kind == "joint_directions"]
+    assert "KJ5" not in left and len(left) == 5  # only the other joints are still asked
 
 
 def test_undoing_an_answer_removes_what_it_wrote(step_files, tmp_path) -> None:  # type: ignore[no-untyped-def]
     session, by = answered_session(step_files)
-    qid = by[("joint_direction", ("KJ5",))].id
-    session.answer(qid, "answered", "cw")
+    qid = by[("joint_directions", tuple(JOINTS))].id
+    session.answer(qid, "answered", "KJ5: cw")
     path = tmp_path / "design_context.yaml"
     session.save(path)
     assert yaml.safe_load(path.read_text(encoding="utf-8"))["kinematics"]["joints"]
@@ -121,7 +117,7 @@ def test_hand_written_entries_survive_a_save(step_files, tmp_path) -> None:  # t
         encoding="utf-8",
     )
     session, by = answered_session(step_files)
-    session.answer(by[("joint_direction", ("KJ5",))].id, "answered", "ccw")
+    session.answer(by[("joint_directions", tuple(JOINTS))].id, "answered", "KJ5: ccw")
     session.save(path)
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     pairs = {tuple(r["between"]) for r in data["kinematics"]["joints"]}
@@ -205,3 +201,12 @@ def test_a_robot_needs_at_least_three_joints() -> None:
     plain = synthetic_arm(4)
     plain.headline = ""
     assert not is_robot(plain)  # no arm headline: not a robot
+
+
+def test_direction_lines_are_read_in_several_spellings() -> None:
+    from stepscribe.understanding.answers import parse_directions
+
+    text = "KJ1: ccw\nKJ2 cw\nKJ3: clockwise; KJ4 counter-clockwise\nKJ5: anticlockwise\nKJ6 +\nKJ9: cw\nnoise"
+    got = parse_directions(text, JOINTS)
+    assert got == {"KJ1": "ccw", "KJ2": "cw", "KJ3": "cw", "KJ4": "ccw", "KJ5": "ccw", "KJ6": "+"}
+    assert parse_directions("KJ2 -", JOINTS) == {"KJ2": "-"}

@@ -99,6 +99,16 @@ mirrored into `kinematics:` (each generated entry has a `source:` list of questi
 `stepscribe answer --undo` removes exactly what the answer wrote; entries you wrote yourself are
 never touched).
 
+### Which way is positive
+
+Positive rotation is counter-clockwise looking along the joint's axis arrow toward its origin (the
+right-hand rule). For a robot, one question lists every joint's axis arrow as a vector and asks for
+one line per joint: `KJ1: ccw` keeps the arrow, `KJ1: cw` reverses it (a slide takes `+` or `-`).
+A `cw` joint gets the reversed vector in `robot.json` (`axis_flipped: true`) and in `robot.urdf`,
+once, with the evidence "Confirmed by designer: flipped"; the DH-style numbers follow the reversed
+arrow. An answer that cannot be read (an unknown joint, a word other than ccw/cw/+/-, an empty
+answer) is refused with a message that shows the expected format, and nothing is recorded.
+
 ## 7. Joint origins
 
 Each joint origin lies on its axis line. The first joint keeps the point found from the geometry

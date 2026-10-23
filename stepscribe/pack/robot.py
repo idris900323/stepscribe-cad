@@ -93,6 +93,20 @@ def _closest_points(
     return p1 + d1 * t, p2 + d2 * s
 
 
+def effective_axis(j: KinJoint) -> np.ndarray:
+    """The unit axis arrow of a joint as the designer's sign convention reads it.
+
+    Positive rotation is counter-clockwise looking along the arrow toward its origin (right-hand
+    rule); a joint the designer says turns the other way gets the reversed arrow.
+    """
+    v = _vec(j.axis.direction)
+    v = v / np.linalg.norm(v)
+    flipped = (j.kind == "revolute" and j.positive_direction == "cw") or (
+        j.kind == "prismatic" and j.positive_direction == "-"
+    )
+    return -v if flipped else v  # type: ignore[no-any-return]
+
+
 def _signed_angle(a: np.ndarray, b: np.ndarray, about: np.ndarray) -> float:
     return math.degrees(math.atan2(float(np.cross(a, b) @ about), float(a @ b)))
 
@@ -109,7 +123,7 @@ def joint_frames(
     origins: list[np.ndarray] = []
     rows: list[dict[str, Any]] = []
     parent_of_link: dict[str, int] = {}
-    axes = [_vec(j.axis.direction) / np.linalg.norm(_vec(j.axis.direction)) for j in joints]
+    axes = [effective_axis(j) for j in joints]
     for k, j in enumerate(joints):
         raw = _vec(j.axis.origin)
         z = axes[k]
@@ -201,7 +215,8 @@ def build_robot(report: Report) -> dict[str, Any] | None:
                 "type": j.kind,
                 "parent": j.parent_link,
                 "child": j.child_link,
-                "axis": _vec(j.axis.direction) / np.linalg.norm(_vec(j.axis.direction)),
+                "axis": effective_axis(j),
+                "axis_flipped": bool(float(effective_axis(j) @ _vec(j.axis.direction)) < 0.0),
                 "origin_mm": o,
                 "evidence_point_mm": _vec(j.axis.origin),
                 "origin_in_parent_mm": o - parent_o,
