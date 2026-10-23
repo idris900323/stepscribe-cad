@@ -16,6 +16,7 @@ from typing import Any
 
 from stepscribe import config
 from stepscribe.models.schema import AnswerOption, Question, Report
+from stepscribe.understanding.arm_check import is_robot
 
 MAX_QUESTIONS = 10
 GLOBAL_KINDS = ("purpose", "material", "process", "payload")
@@ -303,7 +304,11 @@ def generate_questions(
                 add(_direction_question(j), 0.8, 1.0)
             if _flange_only(j) and not j.declared_by_designer:
                 add(_axis_question(j), 2.0, 0.6)
-            if j.range_deg_or_mm is None and j.kind in ("revolute", "prismatic"):
+            if (
+                j.range_deg_or_mm is None
+                and j.kind in ("revolute", "prismatic")
+                and not is_robot(u.kinematics)  # a robot gets one question below
+            ):
                 add(
                     _q(
                         "joint_range",
@@ -316,6 +321,28 @@ def generate_questions(
                     1.0,
                     1.0,
                 )
+    if is_robot(u.kinematics):
+        missing = [
+            j
+            for j in u.kinematics.joints
+            if j.kind in ("revolute", "prismatic") and j.range_source != "designer"
+        ]
+        if missing:
+            listing = "; ".join(f"{j.id} about {_axis_name(j)}" for j in missing)
+            add(
+                _q(
+                    "joint_ranges",
+                    "What is the allowed range of each joint? One line per joint, for example "
+                    "'KJ1: -170 to 170' (degrees; mm for a slide). Joints: " + listing + ".",
+                    "The ranges tell which poses to check for collisions and set the joint limits "
+                    "in robot.urdf; none are invented.",
+                    "text",
+                    refs=[j.id for j in missing],
+                    applies=["weak_spots"],
+                ),
+                1.0,
+                1.0,
+            )
     add(
         _q(
             "load",
@@ -338,7 +365,7 @@ def generate_questions(
         0.8,
         1.0,
     )
-    return _rank(scored, answers, limit)
+    return _rank(scored, answers, limit, _robot_boost(u, [q for _s, q in scored]))
 
 
 def _fastened(report: Report, a: str, b: str) -> bool:
@@ -346,6 +373,12 @@ def _fastened(report: Report, a: str, b: str) -> bool:
     if asm is None:
         return False
     return any(a in j.instance_ids and b in j.instance_ids for j in asm.fastener_joints)
+
+
+def _axis_name(j) -> str:  # type: ignore[no-untyped-def]
+    d = j.axis.direction
+    k = max(range(3), key=lambda i: abs((d.x, d.y, d.z)[i]))
+    return "XYZ"[k]
 
 
 def _flange_only(j) -> bool:  # type: ignore[no-untyped-def]
@@ -400,8 +433,30 @@ def _is_input(u, joint_id: str) -> bool:  # type: ignore[no-untyped-def]
     return any(m.parameters.get("input_joint") == joint_id for m in u.kinematics.mechanisms)
 
 
+ROBOT_ORDER = ("kin_base", "joint_axis", "joint_direction", "joint_ranges")
+ROBOT_BOOST = (
+    5000.0  # above the global questions (1000): a robot is asked about its kinematics first
+)
+
+
+def _robot_boost(u, questions: list[Question]) -> dict[str, float]:  # type: ignore[no-untyped-def]
+    """Rank boosts for a detected robot: base, then flange-only axes, signs, ranges, joint by joint."""
+    if not is_robot(u.kinematics):
+        return {}
+    index = {j.id: i for i, j in enumerate(u.kinematics.joints)}
+    out: dict[str, float] = {}
+    for q in questions:
+        if q.kind in ROBOT_ORDER:
+            tier = len(ROBOT_ORDER) - ROBOT_ORDER.index(q.kind)
+            out[q.id] = ROBOT_BOOST + 100.0 * tier - 0.5 * index.get(q.refs[0] if q.refs else "", 0)
+    return out
+
+
 def _rank(
-    scored: list[tuple[float, Question]], answers: dict[str, dict[str, Any]], limit: int | None
+    scored: list[tuple[float, Question]],
+    answers: dict[str, dict[str, Any]],
+    limit: int | None,
+    robot: dict[str, float] | None = None,
 ) -> list[Question]:
     """Rank by value; with ``limit=None`` every question is returned, answered ones included."""
     out: list[tuple[float, Question]] = []
@@ -417,6 +472,8 @@ def _rank(
             s *= 0.1  # a lower priority, permanently
         unsure = bool(a and a.get("status") == "not_sure")
         boost = 1000.0 if q.kind in GLOBAL_KINDS and not unsure else 0.0
+        if not unsure and robot and q.id in robot:
+            boost = robot[q.id] - s  # the robot order replaces the value score entirely
         out.append((s + boost, q))
     out.sort(key=lambda t: (-t[0], t[1].id))
     ranked = [q for _s, q in (out if limit is None else out[:limit])]

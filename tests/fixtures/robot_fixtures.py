@@ -97,3 +97,13 @@ def named_links_resting(out: Path = FIXTURE_DIR) -> Path:
         parts[f"LINK{k}"] = _box((-10, 10), (-10, 10), (40 * (k - 1), 40 * k))
     root = Node("Stack", children=[Node(n, n, Location()) for n in parts])
     return write_assembly(out / "named_links_resting.step", parts, root)
+
+
+def named_two_links(out: Path = FIXTURE_DIR) -> Path:
+    """Two bars named LINK1 and LINK2 side by side, nothing joining them."""
+    parts = {
+        "LINK1": _box((-10, 10), (-10, 10), (0, 40)),
+        "LINK2": _box((30, 50), (-10, 10), (0, 40)),
+    }
+    root = Node("Pair", children=[Node(n, n, Location()) for n in parts])
+    return write_assembly(out / "named_two_links.step", parts, root)

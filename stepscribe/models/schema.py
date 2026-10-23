@@ -390,6 +390,26 @@ class KinematicModel(_M):
     floating_groups: list[str] = Field(default_factory=list)
     description: str = ""
     mermaid: str = ""
+    headline: str = ""  # "Likely: 6-axis serial arm (confidence X; evidence ...)"; empty for others
+    headline_confidence: float | None = None
+    headline_evidence: list[str] = Field(default_factory=list)
+    statement: str = ""  # the headline plus chain facts and the axis-pattern result
+    axis_pattern: list[str] = Field(default_factory=list)  # OK:/DIFFERS: lines (six-axis arms)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_headline(self, handler: Any) -> dict[str, Any]:
+        """The headline fields appear in report.json only when there is a headline to carry."""
+        data: dict[str, Any] = handler(self)
+        if not self.headline and not self.statement:
+            for key in (
+                "headline",
+                "headline_confidence",
+                "headline_evidence",
+                "statement",
+                "axis_pattern",
+            ):
+                data.pop(key, None)
+        return data
 
 
 class LoadPath(_M):
@@ -463,6 +483,7 @@ class Question(_M):
         "connection_type",
         "joint_drive",
         "joint_range",
+        "joint_ranges",
         "joint_direction",
         "joint_axis",
         "kin_base",

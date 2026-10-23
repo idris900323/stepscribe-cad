@@ -148,6 +148,9 @@ class UnderstandingPipeline:
         self.kin.joints[:] = [j.model_copy(deep=True) for j in k0.joints]
         self.kin.dof, self.kin.topology = k0.dof, k0.topology
         self.kin.description, self.kin.mermaid = k0.description, k0.mermaid
+        self.kin.headline, self.kin.headline_confidence = k0.headline, k0.headline_confidence
+        self.kin.headline_evidence, self.kin.statement = k0.headline_evidence, k0.statement
+        self.kin.axis_pattern = list(k0.axis_pattern)
         for j in self.kin.joints:
             j.driven_by, j.range_deg_or_mm, j.description = self._joints[j.id]
         if self.asm is not None and self._asm is not None:
@@ -228,6 +231,13 @@ class UnderstandingPipeline:
             return
         if decl.base is None and effects.base:
             decl.base = effects.base
+        current = {
+            j.id: (j.axis.direction.x, j.axis.direction.y, j.axis.direction.z)
+            for j in self.kin.joints
+        }
+        for jid in sorted(effects.axis_confirmed - set(effects.axes)):
+            if jid in current:
+                decl.joints.append(DeclaredJoint("", "", joint_id=jid, axis=current[jid]))
         for jid in sorted(set(effects.directions) | set(effects.axes)):
             decl.joints.append(
                 DeclaredJoint(

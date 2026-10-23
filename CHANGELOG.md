@@ -10,6 +10,10 @@ Robot files from vendors (an ABB arm, for example): links, joints and a robot de
 - **`--debug-kinematics`** (on `pack` and `export`) writes `data/kinematics_debug.md` and a `kinematics_debug` section in `report.json`: for every contact, why it was merged or kept apart; for every unmatched hole stack, why it is not a fastener.
 - **Designer input.** A `kinematics:` section in `design_context.yaml` (base, and joints with type, axis, origin, range, positive direction) replaces what was detected and is marked "Confirmed by designer". New interview questions ask for the base link, the axis of joints known only from a flange, and the sign of positive motion.
 - **`robot.json`** in the pack for a model with at least one revolute or prismatic joint: link frames, joint axes and origins, a DH-style table, mass and inertia per link (estimates), and joint limits only from the yaml.
+- **Headline.** A chain of revolute joints reads `Likely: 6-axis serial arm (confidence 0.70; evidence KJ1..KJ6, L0..L6)`, with the chain facts and a check of the usual 6-axis layout (a mismatch is written out and lowers the confidence; the confidence is capped by the weakest joint). Parts named `LINK<n>` with no joint evidence read "Joint structure not determined", never "static structure". The overview, understanding file and single-file pack carry the same text.
+- **Interview.** For a robot the base link, the axis of flange-only joints, the sign of positive motion and the ranges come first. Answers are also written to the `kinematics:` section, and undo removes them.
+- **Joint origins** lie on their axis (common perpendicular from the previous axis); the raw point is kept as `evidence_point_mm`.
+- **`robot.urdf`** next to `robot.json`: a draft in SI units with no invented limits or masses.
 - Report schema 0.6.0 (new optional fields).
 
 ## 0.1.4

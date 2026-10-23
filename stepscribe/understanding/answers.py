@@ -42,11 +42,23 @@ class Effects:
     directions: dict[str, str] = field(default_factory=dict)  # joint id -> ccw|cw|+|-
     axes: dict[str, tuple[float, float, float]] = field(default_factory=dict)
     base: str | None = None  # link id
+    axis_confirmed: set[str] = field(default_factory=set)  # joint ids the designer said are right
     suppress_floating: set[str] = field(default_factory=set)  # instance ids
     fasteners_missing: list[tuple[str, str]] = field(default_factory=list)
     text: dict[str, str] = field(default_factory=dict)  # purpose / load / environment
     unconfirmed: list[str] = field(default_factory=list)  # question ids skipped
     unsure: list[str] = field(default_factory=list)
+
+
+def parse_ranges(text: str, joint_ids: list[str]) -> list[tuple[str, float, float]]:
+    """'KJ1: -170 to 170' lines to (joint, lower, upper); lines for unknown joints are ignored."""
+    out = []
+    for line in re.split(r"[\n;]+", text):
+        m = re.match(r"\s*(KJ\d+)\b\D*?(-?\d+(?:\.\d+)?)\D+?(-?\d+(?:\.\d+)?)", line)
+        if m and m.group(1) in joint_ids:
+            lo, hi = sorted((float(m.group(2)), float(m.group(3))))
+            out.append((m.group(1), lo, hi))
+    return out
 
 
 def answers_from_context(raw: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
@@ -101,8 +113,13 @@ def collect_effects(answers: dict[str, dict[str, Any]], questions: dict[str, Que
             if len(nums) >= 2:
                 lo, hi = sorted(float(n) for n in nums[:2])
                 fx.ranges[q.refs[0]] = (lo, hi)
+        elif q.kind == "joint_ranges":
+            for jid, lo, hi in parse_ranges(str(v), q.refs):
+                fx.ranges[jid] = (lo, hi)
         elif q.kind == "joint_direction" and q.refs and v in ("ccw", "cw", "+", "-"):
             fx.directions[q.refs[0]] = str(v)
+        elif q.kind == "joint_axis" and q.refs and v == "yes":
+            fx.axis_confirmed.add(q.refs[0])
         elif q.kind == "joint_axis" and q.refs and isinstance(v, str) and v in ("X", "Y", "Z"):
             unit = [0.0, 0.0, 0.0]
             unit["XYZ".index(v)] = 1.0

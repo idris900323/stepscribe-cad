@@ -247,6 +247,11 @@ def write_pack_build(
     robot = robot_json(report)
     if robot is not None:
         put("robot.json", robot)
+        from stepscribe.pack.urdf import urdf_text
+
+        urdf = urdf_text(report)
+        if urdf is not None:
+            put("robot.urdf", urdf)
     if report.meta.options.get("debug_graphs"):
         import json
 

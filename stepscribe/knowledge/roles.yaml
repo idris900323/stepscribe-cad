@@ -36,6 +36,17 @@ kinematics:
     flange_min_area_mm2: 500.0     # a planar contact between two link groups at least this big
     confidence_flange: 0.55        # a flange alone (no bore on the same pair)
     disagree_factor: 0.7           # bore and flange normal disagree: the bore wins at this factor
+  arm_headline:
+    # "Likely: 6-axis serial arm (confidence X)": a base confidence, plus or minus per axis check
+    tolerance_deg: 5.0             # axes this close to parallel / perpendicular / vertical match
+    base_confidence: 0.5
+    per_match: 0.065               # six matching checks give 0.89
+    per_mismatch: 0.08             # each mismatch lowers it, and is written out in words
+    min_confidence: 0.1
+    max_confidence: 0.95
+    other_axis_count_confidence: 0.55   # an arm with a number of axes other than six: not checked
+    weakest_joint_headroom: 0.15   # the headline is never above (weakest joint confidence + this)
+    robot_min_joints: 3            # an arm with fewer joints is asked the ordinary questions
   name_groups:
     min_numbered_groups: 3         # BASE does not count; LINK1..LINK3 or more
     confidence: 0.8

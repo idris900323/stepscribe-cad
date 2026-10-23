@@ -1931,6 +1931,42 @@
           "default": "",
           "title": "Mermaid",
           "type": "string"
+        },
+        "headline": {
+          "default": "",
+          "title": "Headline",
+          "type": "string"
+        },
+        "headline_confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Headline Confidence"
+        },
+        "headline_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Headline Evidence",
+          "type": "array"
+        },
+        "statement": {
+          "default": "",
+          "title": "Statement",
+          "type": "string"
+        },
+        "axis_pattern": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Axis Pattern",
+          "type": "array"
         }
       },
       "required": [
@@ -2639,6 +2675,7 @@
             "connection_type",
             "joint_drive",
             "joint_range",
+            "joint_ranges",
             "joint_direction",
             "joint_axis",
             "kin_base",

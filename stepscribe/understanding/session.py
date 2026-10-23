@@ -114,6 +114,7 @@ class Session:
         self.answers: dict[str, dict[str, Any]] = answers_from_context(opts.extra.get("answers"))
         self.order: list[str] = []
         self.removed: set[str] = set()  # answers undone since the last save
+        self.asked: dict[str, Question] = {}  # the questions answered in this session
         self.asked_this_session = 0
         self.understanding: Understanding = self.pipe.finish(self.answers, self.context)
 
@@ -159,6 +160,9 @@ class Session:
         self.removed.discard(question_id)
         self.order.append(question_id)
         self.asked_this_session += 1
+        asked = next((q for q in self.all_questions() if q.id == question_id), None)
+        if asked is not None:
+            self.asked[question_id] = asked  # kept: a confirmed joint stops being asked about
         self.understanding = self.pipe.finish(self.answers, self.context)
         return self._change(before, t0)
 
@@ -192,8 +196,46 @@ class Session:
         removed = self.removed - set(self.order)
         texts = {q.id: q.text for q in self.questions}
         n = save_answers(path, self.answers, texts, only=set(self.order), remove=removed)
+        self._save_kinematics(path, removed)
         self.removed -= removed
         return n
+
+    def _save_kinematics(self, path: str | Path, removed: set[str]) -> None:
+        """Mirror the kinematic answers (base, axes, signs, ranges) into a `kinematics:` section."""
+        from stepscribe.pack.design_context import (
+            read_kinematics_block,
+            without_answer_sources,
+            write_kinematics_block,
+        )
+        from stepscribe.understanding.declared import answers_to_kinematics
+
+        if self.pipe.ctx is None:
+            return
+        mine = {q: self.answers[q] for q in self.order if q in self.answers}
+        fresh = answers_to_kinematics(mine, self.asked, self.pipe.kin, self.pipe.ctx)
+        p = Path(path)
+        with _locked(p):
+            text = p.read_text(encoding="utf-8") if p.is_file() else ""
+            cut = next(
+                (i for i, ln in enumerate(text.split("\n")) if ln.startswith("answers:")), None
+            )
+            lines = text.split("\n")
+            head = "\n".join(lines if cut is None else lines[:cut])
+            tail = "" if cut is None else "\n" + "\n".join(lines[cut:])
+            old = without_answer_sources(read_kinematics_block(head), set(self.order) | removed)
+            merged = dict(old)
+            if fresh.get("base"):
+                merged["base"], merged["base_source"] = fresh["base"], fresh["base_source"]
+            joints = list(old.get("joints") or []) + list(fresh.get("joints") or [])
+            if joints:
+                merged["joints"] = joints
+            if merged == read_kinematics_block(head):
+                return
+            new_head = write_kinematics_block(head.rstrip("\n"), merged).rstrip("\n")
+            tmp = p.with_suffix(p.suffix + ".tmp")
+            body = new_head + ("\n\n" + tail.lstrip("\n") if tail else "\n")
+            tmp.write_text(body, encoding="utf-8", newline="\n")
+            os.replace(tmp, p)
 
 
 @contextmanager
@@ -251,7 +293,12 @@ def save_answers(
     answers another writer saved meanwhile are never overwritten with stale values; ``remove``
     deletes undone answers.
     """
-    from stepscribe.pack.design_context import CONTEXT_TEMPLATE
+    from stepscribe.pack.design_context import (
+        CONTEXT_TEMPLATE,
+        read_kinematics_block,
+        without_answer_sources,
+        write_kinematics_block,
+    )
 
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -261,6 +308,11 @@ def save_answers(
         lines = text.split("\n")
         cut = next((i for i, ln in enumerate(lines) if ln.startswith("answers:")), len(lines))
         head = "\n".join(lines[:cut]).rstrip("\n")
+        drop = set(remove)
+        if drop:  # undone answers also take back what they wrote under kinematics:
+            kin = read_kinematics_block(head)
+            if kin:
+                head = write_kinematics_block(head, without_answer_sources(kin, drop)).rstrip("\n")
         existing: dict[str, Any] = {}
         if cut < len(lines):
             try:

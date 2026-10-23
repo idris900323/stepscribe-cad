@@ -254,13 +254,19 @@ def generate_assemblies(out: Path = FIXTURE_DIR) -> dict[str, Path]:
         shaft_in_bearing_assembly,
         nested_assembly,
     )
-    from robot_fixtures import arm_6_axis, arm_axis_disagree, named_links_resting
+    from robot_fixtures import (
+        arm_6_axis,
+        arm_axis_disagree,
+        named_links_resting,
+        named_two_links,
+    )
 
     out_map = {fn.__name__: fn(out) for fn in builders}
     out_map["arm_6_axis"] = arm_6_axis(out)
     out_map["arm_6_axis_occurrence"] = arm_6_axis(out, occurrence=True)
     out_map["arm_axis_disagree"] = arm_axis_disagree(out)
     out_map["named_links_resting"] = named_links_resting(out)
+    out_map["named_two_links"] = named_two_links(out)
     return out_map
 
 

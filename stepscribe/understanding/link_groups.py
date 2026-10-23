@@ -56,6 +56,16 @@ def parse_group(*names: str) -> tuple[str, int] | None:
     return None
 
 
+def numbered_groups(insts: list[InstanceData]) -> dict[str, int]:
+    """The numbered groups (LINK1, LINK2, ...) named by the instances, with their numbers."""
+    out: dict[str, int] = {}
+    for inst in insts:
+        found = parse_group(inst.name, inst.ap.part.name)
+        if found is not None and found[0] != "BASE":
+            out[found[0]] = found[1]
+    return out
+
+
 def _adjacent_groups(asm: AssemblyInfo, group_of: dict[str, str]) -> set[frozenset[str]]:
     """Pairs of groups that touch (or are held together by a hole stack)."""
     pairs: set[frozenset[str]] = set()

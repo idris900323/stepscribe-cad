@@ -132,7 +132,7 @@ def test_the_interview_asks_for_base_ranges_directions_and_flange_only_axes(anal
     top = {q.kind for q in generate_questions(analyses("arm_6_axis").report)}
     assert "kin_base" in top  # asked early: it decides how every joint is read
     every = {q.kind for q in generate_questions(analyses("arm_6_axis").report, limit=None)}
-    assert {"kin_base", "joint_range", "joint_direction", "joint_axis"} <= every
+    assert {"kin_base", "joint_ranges", "joint_direction", "joint_axis"} <= every
     axis_q = [
         q
         for q in generate_questions(analyses("arm_6_axis").report, limit=None)

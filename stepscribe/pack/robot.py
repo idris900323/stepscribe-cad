@@ -97,7 +97,7 @@ def _signed_angle(a: np.ndarray, b: np.ndarray, about: np.ndarray) -> float:
     return math.degrees(math.atan2(float(np.cross(a, b) @ about), float(a @ b)))
 
 
-def _joint_frames(
+def joint_frames(
     joints: list[KinJoint], base_link: str, up: np.ndarray
 ) -> tuple[list[np.ndarray], list[dict[str, Any]]]:
     """Joint origins (on their own axis, at the common perpendicular to the previous axis).
@@ -189,7 +189,7 @@ def build_robot(report: Report) -> dict[str, Any] | None:
             shells += low
         links.append(row)
 
-    origins, dh_rows = _joint_frames(movers, base, _up(asm.up_axis))
+    origins, dh_rows = joint_frames(movers, base, _up(asm.up_axis))
     joints: list[dict[str, Any]] = []
     prev_origin_of_link: dict[str, np.ndarray] = {}
     for k, j in enumerate(movers):
@@ -203,6 +203,7 @@ def build_robot(report: Report) -> dict[str, Any] | None:
                 "child": j.child_link,
                 "axis": _vec(j.axis.direction) / np.linalg.norm(_vec(j.axis.direction)),
                 "origin_mm": o,
+                "evidence_point_mm": _vec(j.axis.origin),
                 "origin_in_parent_mm": o - parent_o,
                 "limits": _limits(j),
                 "positive_direction": j.positive_direction,

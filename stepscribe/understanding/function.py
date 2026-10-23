@@ -23,13 +23,16 @@ from stepscribe.models.schema import (
     Evidence,
     Hypothesis,
     KinematicModel,
+    KinJoint,
     Part,
     SubassemblyRole,
     WeakSpot,
 )
+from stepscribe.understanding.arm_check import Headline, arm_headline, undetermined_headline
 from stepscribe.understanding.kinematics import (
     KinContext,
     axis_label,
+    axis_vector,
     hardware_kind,
     wheel_joint_ids,
 )
@@ -688,20 +691,14 @@ def design_summary(
     else:
         head = f"a mechanism with {len(model.joints)} joints ({topo.replace('_', ' ')})"
     sentences = [f"Likely {head}"]
+    headline = _apply_headline(model, ctx, arm_joints if topo == "serial_chain" else [])
     listed = arm_joints or (movers if len(movers) <= 4 else [])
-    if listed:
-        parts_txt = []
-        for j in listed:
-            t = f"{j.id} {j.kind} about {axis_label(np.array([j.axis.direction.x, j.axis.direction.y, j.axis.direction.z]))}"
-            mech = next((m for m in model.mechanisms if m.id == j.driven_by), None)
-            if mech and mech.kind == "belt_drive":
-                t += f" via a {fmt(mech.ratio or 0, 1)}:1 {mech.parameters.get('profile', 'belt')} belt"
-            elif mech and mech.kind == "gear_pair":
-                t += f" via a {fmt(mech.ratio or 0, 1)}:1 gear pair"
-            elif mech and mech.kind == "direct_drive":
-                t += " direct drive"
-            parts_txt.append(t)
-        sentences[0] += " (" + ", ".join(parts_txt) + ")"
+    if headline is not None:
+        sentences = [headline.text]
+        if headline.is_arm and listed:
+            sentences[0] += ": " + ", ".join(_joint_phrases(model, listed))
+    elif listed:
+        sentences[0] += " (" + ", ".join(_joint_phrases(model, listed)) + ")"
     for m in model.mechanisms:
         if m.kind == "lead_screw":
             lead = m.parameters.get("lead_mm")
@@ -735,6 +732,43 @@ def design_summary(
         sentences.append(f"{total} fastener pieces to buy (screws, nuts, washers){mostly}")
     sentences += _risk_sentence(spots)
     return ". ".join(sentences) + "."
+
+
+def _joint_phrases(model: KinematicModel, joints: list[KinJoint]) -> list[str]:
+    out = []
+    for j in joints:
+        t = f"{j.id} {j.kind} about {axis_label(np.array([j.axis.direction.x, j.axis.direction.y, j.axis.direction.z]))}"
+        mech = next((m for m in model.mechanisms if m.id == j.driven_by), None)
+        if mech and mech.kind == "belt_drive":
+            t += f" via a {fmt(mech.ratio or 0, 1)}:1 {mech.parameters.get('profile', 'belt')} belt"
+        elif mech and mech.kind == "gear_pair":
+            t += f" via a {fmt(mech.ratio or 0, 1)}:1 gear pair"
+        elif mech and mech.kind == "direct_drive":
+            t += " direct drive"
+        out.append(t)
+    return out
+
+
+def _apply_headline(
+    model: KinematicModel, ctx: KinContext | None, arm_joints: list[KinJoint]
+) -> Headline | None:
+    """Set the headline fields on *model*: a 6-axis arm, or "joint structure not determined".
+
+    The statement leads ``model.description`` so the overview, the understanding file and the
+    single-file pack say the same thing. Other designs keep their existing wording.
+    """
+    if ctx is None:
+        return None
+    up = axis_vector(ctx.asm.up_axis)
+    hl = arm_headline(model, arm_joints, up) or undetermined_headline(model, ctx.insts)
+    if hl is None:
+        return None
+    model.headline, model.headline_confidence = hl.text, hl.confidence
+    model.headline_evidence, model.statement = hl.evidence, hl.statement
+    model.axis_pattern = hl.axis_pattern
+    if not model.description.startswith(hl.statement):
+        model.description = hl.statement + " " + model.description
+    return hl
 
 
 RISK_WORDS = {

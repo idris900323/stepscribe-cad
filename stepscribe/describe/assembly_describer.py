@@ -108,6 +108,7 @@ def level0_context(
         ],
         "headline": headline_semantics(report),
         "summary": u.summary if u else "",
+        "kinematics": u.kinematics.statement if u else "",
         "top_spots": [
             f"{w.id} ({w.severity}): {w.message}" for w in (u.weak_spots[:3] if u else [])
         ],

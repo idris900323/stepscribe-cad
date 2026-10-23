@@ -48,9 +48,81 @@ centroid (confidence 0.55). On the same pair:
   shoulder and elbow of an arm), the confidence is multiplied by 0.7 and the flange reading is
   listed as the alternative.
 
-## 4. Looking at the decisions
+## 4. The headline and its confidence
+
+A chain of revolute joints from the base is headlined `Likely: N-axis serial arm (confidence X;
+evidence KJ1..KJn, L0..Ln)`, followed by the chain facts (links, joints, serial order) and, for six
+axes, the layout check: axis 1 vertical; axes 2 and 3 parallel and perpendicular to axis 1; axis 4
+perpendicular to axis 3; axis 5 perpendicular to axis 4; axis 6 parallel to axis 4 (within 5
+degrees). The confidence is computed in three steps (numbers in `roles.yaml`, `kinematics.arm_headline`):
+
+1. support = 0.50 + 0.065 for every matching check (all six: 0.89);
+2. **cap**: support is never above the *weakest joint's confidence + 0.15*, so a matching layout
+   cannot make a chain of weak joints look sure (six flange-only joints at 0.55 give at most 0.70);
+   when the cap applies the statement says so;
+3. each mismatching check then takes 0.08 off, and the mismatch is written out in words.
+
+Axes other than six are not checked and get 0.55, with the same cap. Parts named `LINK<n>` with no
+joint evidence are reported as "joint structure not determined", never as a static structure.
+
+## 5. Looking at the decisions
 
 `stepscribe export --debug-kinematics` (also `pack`) writes `data/kinematics_debug.md` and adds a
 `kinematics_debug` section to `report.json`. For every contact it lists the kind, area, normal,
 centroid, distance, how the pair was classified, the links and why it was merged or kept apart;
 for every unmatched hole stack it lists why it is not a fastener and what the model did with it.
+
+## 6. Telling stepscribe what it cannot see
+
+Add a `kinematics:` section to `design_context.yaml`:
+
+```yaml
+kinematics:
+  base: BASE                  # a link name (BASE, LINK3), a link ID (L0) or a part-name fragment
+  joints:
+    - between: [LINK1, LINK2] # the two links the joint connects
+      type: revolute          # revolute | prismatic | cylindrical
+      axis: "+Y"              # +X..-Z or [x, y, z] in the file's frame
+      origin: [150, 0, 486.5] # optional, mm; any point on the axis
+      range: [-90, 110]       # degrees (revolute) or mm (prismatic)
+      positive: cw            # ccw | cw (revolute), "+" | "-" (prismatic)
+```
+
+A declared joint replaces the detected one, is marked "Confirmed by designer" and gets confidence 1.0.
+A design counts as a robot when it is headlined as a serial arm with at least 3 revolute joints
+(`kinematics.arm_headline.robot_min_joints` in `roles.yaml`); a two-joint arm keeps the ordinary
+interview. For a robot the interview asks first: which link is the base; whether each joint that rests on a
+flange alone really turns about the axis found; which way positive rotation goes; and the range of
+the joints, as one question for the whole arm (one line per joint, for example `KJ1: -170 to 170`),
+asked only for joints without a `range` in the yaml. The "what drives it" questions come after. Answers are saved under `answers:` and also
+mirrored into `kinematics:` (each generated entry has a `source:` list of question IDs, so
+`stepscribe answer --undo` removes exactly what the answer wrote; entries you wrote yourself are
+never touched).
+
+## 7. Joint origins
+
+Each joint origin lies on its axis line. The first joint keeps the point found from the geometry
+(the flange centroid, projected onto the axis). Later joints use the foot of the common
+perpendicular from the previous joint's axis: for crossing axes that is the intersection, for skew
+axes the point of closest approach, and for parallel axes the previous origin projected onto the new
+axis. The raw point stays in the data as `evidence_point_mm`.
+
+## 8. robot.json and robot.urdf
+
+For a design with at least one revolute or prismatic joint the pack contains `robot.json` and a
+draft `robot.urdf`: link frames (parallel to the file's axes, joints at zero in the stored pose),
+joint axes and origins, a DH-style table, and per-link mass, centre of mass and inertia from CAD
+volume and a density. All of it is marked as a draft needing human verification:
+
+- masses are estimates, and absent when no material is set (pass `--material`);
+- masses of simplified vendor shell models are not reliable (bodies whose volume is far below their
+  bounding box are listed);
+- a joint limit is written only when `range` is given in design_context.yaml; otherwise it is
+  "unknown" in robot.json. In URDF a revolute joint needs a lower/upper limit (they default to 0,
+  which would lock it), so a revolute joint with no known limit is written as `type="continuous"`
+  with the comment "limits unknown; change to revolute and add a limit"; one with a designer range
+  stays `revolute` with lower, upper, effort 0 and velocity 0 (effort and velocity are not known).
+  A prismatic joint has no unlimited form in URDF, so it stays prismatic with a comment;
+- lengths in the URDF are metres (a joint at z = 125.7 mm is written 0.1257), masses kilograms,
+  inertia kg m^2 and angles radians;
+- there is no visual or collision geometry, and the URDF is in metres, kilograms and radians.

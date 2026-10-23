@@ -143,6 +143,105 @@ def resolve_link(token: str, model: KinematicModel, kctx: KinContext) -> str | N
     return next(iter(hits)) if len(hits) == 1 else None
 
 
+def link_token(model: KinematicModel, kctx: KinContext, link_id: str) -> str:
+    """How to name a link in design_context.yaml: its name group (LINK3) when it has one."""
+    groups = kctx.name_groups
+    link = next((g for g in model.links if g.id == link_id), None)
+    if groups is not None and link is not None:
+        names = {groups.group_of.get(i) for i in link.instance_ids}
+        if len(names) == 1 and None not in names:
+            return str(next(iter(names)))
+    return link_id
+
+
+def _axis_text(d: tuple[float, float, float]) -> str | list[float]:
+    v = np.array(d, dtype=float)
+    v = v / np.linalg.norm(v)
+    k = int(np.argmax(np.abs(v)))
+    if abs(abs(float(v[k])) - 1.0) < 1e-3:
+        return ("+" if v[k] > 0 else "-") + "XYZ"[k]
+    return [round(float(x), 4) for x in v]
+
+
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def answers_to_kinematics(
+    answers: dict[str, dict[str, Any]],
+    known: dict[str, Any],
+    model: KinematicModel,
+    kctx: KinContext,
+) -> dict[str, Any]:
+    """The `kinematics:` section that the designer's answers amount to.
+
+    Every entry written here carries ``source: [question ids]`` (``base_source`` for the base) so
+    that undoing an answer can remove exactly what it wrote; entries without it are the
+    designer's own and are never touched.
+    """
+    by_id = {j.id: j for j in model.joints}
+    rows: dict[str, dict[str, Any]] = {}
+    out: dict[str, Any] = {}
+
+    def row(jid: str, qid: str) -> dict[str, Any] | None:
+        j = by_id.get(jid)
+        if j is None:
+            return None
+        r = rows.setdefault(
+            jid,
+            {
+                "between": [
+                    link_token(model, kctx, j.parent_link),
+                    link_token(model, kctx, j.child_link),
+                ],
+                "source": [],
+            },
+        )
+        r["source"].append(qid)
+        return r
+
+    for qid, a in sorted(answers.items()):
+        q = known.get(qid)
+        if q is None or a.get("status") != "answered":
+            continue
+        v = a.get("value")
+        if q.kind == "kin_base" and isinstance(v, str) and v:
+            link = next((g.id for g in model.links if g.id.lower() == v.lower()), None)
+            if link is not None:
+                out["base"] = link_token(model, kctx, link)
+                out["base_source"] = qid
+        elif q.kind == "joint_axis" and q.refs:
+            j = by_id.get(q.refs[0])
+            r = row(q.refs[0], qid) if j is not None else None
+            if r is not None and j is not None:
+                if v == "yes":
+                    r["axis"] = _axis_text(
+                        (j.axis.direction.x, j.axis.direction.y, j.axis.direction.z)
+                    )
+                elif isinstance(v, str) and v in ("X", "Y", "Z"):
+                    r["axis"] = "+" + v
+                else:
+                    rows[q.refs[0]]["source"].remove(qid)
+        elif q.kind == "joint_direction" and q.refs and v in ("ccw", "cw", "+", "-"):
+            r = row(q.refs[0], qid)
+            if r is not None:
+                r["positive"] = v
+        elif q.kind == "joint_ranges" and q.refs:
+            from stepscribe.understanding.answers import parse_ranges
+
+            for jid, lo, hi in parse_ranges(str(v), q.refs):
+                r = row(jid, qid)
+                if r is not None:
+                    r["range"] = [lo, hi]
+        elif q.kind == "joint_range" and q.refs:
+            nums = _NUMBER.findall(str(v))
+            r = row(q.refs[0], qid) if len(nums) >= 2 else None
+            if r is not None:
+                lo, hi = sorted(float(n) for n in nums[:2])
+                r["range"] = [lo, hi]
+    out["joints"] = [r for _jid, r in sorted(rows.items()) if len(r) > 2 or r["source"]]
+    return out
+
+
 def _designer(text: str) -> Evidence:
     return Evidence(code="designer", refs=[], weight=1.0, text=f"Confirmed by designer: {text}")
 
