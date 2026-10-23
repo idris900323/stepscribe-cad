@@ -207,6 +207,18 @@ def _existing_fastener(instances: list[InstanceData], origin: Vec, d: Vec) -> st
     return None
 
 
+PIVOT_JOINT_CONFIDENCE = 0.5  # the stack is probably not a fastener; the kinematic stage decides
+
+
+def _is_pivot_size(diameter: float, length: float) -> bool:
+    """A hole stack that matches no screw is a pivot candidate when it is wide and long."""
+    cfg = load_table("roles.yaml")["kinematics"]["pivot"]
+    return (
+        diameter >= float(cfg["min_diameter_mm"])
+        and length >= float(cfg["min_length_over_diameter"]) * diameter
+    )
+
+
 def detect_joints(instances: list[InstanceData]) -> list[FastenerJoint]:
     """Joints between instances; IDs J001... sorted by first instance and position."""
     joints: list[tuple[tuple[object, ...], FastenerJoint]] = []
@@ -240,6 +252,14 @@ def detect_joints(instances: list[InstanceData]) -> list[FastenerJoint]:
                 why += "; the stack ends in a blind hole that is not tap-drill size, so it needs tapping or an insert"
             origin = ref.origin + d * t_lo
             existing = _existing_fastener(instances, origin, d)
+            pivot = desig is None and existing is None and _is_pivot_size(float(common), grip)
+            if pivot:
+                threaded = False
+                conf = PIVOT_JOINT_CONFIDENCE / JOINT_CONF_FACTOR
+                why = (
+                    f"no standard screw size matches Ø{fmt(float(common), 2)}; a bore this wide and at "
+                    "least as long as it is wide is more likely a pivot or press fit than a screw"
+                )
             key = (ids[0], *(round(float(c), 2) for c in origin))
             joints.append(
                 (
@@ -261,6 +281,7 @@ def detect_joints(instances: list[InstanceData]) -> list[FastenerJoint]:
                         suggested_fastener=text,
                         has_threaded_end=threaded,
                         existing_fastener_instance_id=existing,
+                        pivot_candidate=pivot,
                     ),
                 )
             )

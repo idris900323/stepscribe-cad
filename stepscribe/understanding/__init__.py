@@ -93,6 +93,11 @@ class UnderstandingPipeline:
             from stepscribe.understanding.mechanisms import detect_mechanisms
 
             self.kin, self.ctx = build_kinematics_ex(analysis)
+            self.kin_debug = None
+            if opts.debug_kinematics:
+                from stepscribe.understanding.kin_debug import build_debug
+
+                self.kin_debug = build_debug(analysis, self.kin, self.ctx)
             detect_mechanisms(analysis, self.kin, self.ctx)
             if opts.check_motion:
                 from stepscribe.understanding.motion_check import check_motion
@@ -102,6 +107,7 @@ class UnderstandingPipeline:
                 check_motion(analysis, self.kin, self.ctx, float(opts.motion_budget_s))
         else:
             self.kin = single_part_kinematics(analysis)
+            self.kin_debug = None
         if tracker is not None:
             tracker.stage("understanding", "load paths, weak spots and stability")
         self._snapshot()
@@ -197,6 +203,7 @@ class UnderstandingPipeline:
             qtext = {k: q.text for k, q in known.items()}
         self._restore()
         und = self._compute(effects, context, wheels, generate=True, answers=answers, qtext=qtext)
+        und.kinematics_debug = self.kin_debug
         return und
 
     def _compute(

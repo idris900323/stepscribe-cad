@@ -143,6 +143,20 @@ def _file_label(path: str | Path) -> str:
     return clean_name(Path(path).stem) or "model"
 
 
+OCCURRENCE_LABEL = re.compile(r"^NAUO\d+$", re.IGNORECASE)
+
+
+def _instance_name(occurrence: str | None, product: str | None) -> str:
+    """The name of an instance: its own label, unless that is only an occurrence id (NAUO4).
+
+    STEP writers label assembly-tree occurrences NAUO<n>; the product name (LINK3) is the one a
+    person recognises.  A meaningful instance label (BasePlate for an instance of Plate) is kept.
+    """
+    if occurrence and OCCURRENCE_LABEL.match(occurrence) and product and not _is_generic(product):
+        return product
+    return occurrence or product or "Part"
+
+
 def _is_generic(name: str | None) -> bool:
     return (
         name is None
@@ -198,7 +212,7 @@ class _Walker:
             ref = TDF_Label()
             st.GetReferredShape_s(label, ref)
             new_loc = loc.Multiplied(st.GetLocation_s(label))
-            ref_name = _label_name(label) or _label_name(ref) or "Part"
+            ref_name = _instance_name(_label_name(label), _label_name(ref))
             if st.IsAssembly_s(ref):
                 self.model.is_assembly = True
                 here = f"{path}/{ref_name}" if path else ref_name

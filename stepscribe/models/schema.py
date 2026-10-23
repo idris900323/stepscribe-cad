@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
-SCHEMA_VERSION = "0.5.0"
+SCHEMA_VERSION = "0.6.0"
 
 AxisLabel = Literal["+X", "-X", "+Y", "-Y", "+Z", "-Z"]
 
@@ -490,8 +490,58 @@ class Answer(_M):
     question: str | None = None  # the question text, so the pack can print a Q&A list
 
 
+class KinContactDebug(_M):
+    """One contact between two instances and what the kinematic model did with its pair."""
+
+    id: str
+    instance_a: str
+    instance_b: str
+    name_a: str
+    name_b: str
+    kind: str
+    area_mm2: float | None = None
+    normal: Vec3 | None = None
+    centroid: Vec3 | None = None
+    distance_mm: float
+    connection: str  # how the pair was classified: fixed, soft, revolute, ... or none
+    link_a: str
+    link_b: str
+    decision: Literal["merged", "separate"]
+    reason: str
+
+
+class KinHolePairDebug(_M):
+    """A stack of coaxial holes across instances, and whether it became a fastener."""
+
+    joint_id: str
+    instance_ids: list[str]
+    instance_names: list[str]
+    links: list[str]
+    hole_refs: list[tuple[str, str]]
+    diameters_mm: list[float]
+    stack_thickness_mm: float
+    axis: Axis
+    became_fastener: bool
+    reason: str
+    kinematic_effect: str
+
+
+class KinematicsDebug(_M):
+    contacts: list[KinContactDebug] = Field(default_factory=list)
+    hole_pairs: list[KinHolePairDebug] = Field(default_factory=list)
+
+
 class Understanding(_M):
     kinematics: KinematicModel
+    kinematics_debug: KinematicsDebug | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_debug(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``kinematics_debug`` only when --debug-kinematics asked for it."""
+        data: dict[str, Any] = handler(self)
+        if data.get("kinematics_debug") is None:
+            data.pop("kinematics_debug", None)
+        return data
     load_paths: list[LoadPath] = Field(default_factory=list)
     weak_spots: list[WeakSpot] = Field(default_factory=list)
     stability: StabilityInfo | None = None
@@ -576,6 +626,7 @@ class FastenerJoint(Inference):
     suggested_fastener: str | None = None
     has_threaded_end: bool = False
     existing_fastener_instance_id: str | None = None
+    pivot_candidate: bool = False  # a wide, long bore with no screw size: more likely a pivot
 
 
 class Relation(_M):

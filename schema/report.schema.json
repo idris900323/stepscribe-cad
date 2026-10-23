@@ -1001,6 +1001,11 @@
           ],
           "default": null,
           "title": "Existing Fastener Instance Id"
+        },
+        "pivot_candidate": {
+          "default": false,
+          "title": "Pivot Candidate",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1534,6 +1539,203 @@
       "title": "Instance",
       "type": "object"
     },
+    "KinContactDebug": {
+      "additionalProperties": false,
+      "description": "One contact between two instances and what the kinematic model did with its pair.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "instance_a": {
+          "title": "Instance A",
+          "type": "string"
+        },
+        "instance_b": {
+          "title": "Instance B",
+          "type": "string"
+        },
+        "name_a": {
+          "title": "Name A",
+          "type": "string"
+        },
+        "name_b": {
+          "title": "Name B",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "area_mm2": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area Mm2"
+        },
+        "normal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "centroid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "distance_mm": {
+          "title": "Distance Mm",
+          "type": "number"
+        },
+        "connection": {
+          "title": "Connection",
+          "type": "string"
+        },
+        "link_a": {
+          "title": "Link A",
+          "type": "string"
+        },
+        "link_b": {
+          "title": "Link B",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "merged",
+            "separate"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "instance_a",
+        "instance_b",
+        "name_a",
+        "name_b",
+        "kind",
+        "distance_mm",
+        "connection",
+        "link_a",
+        "link_b",
+        "decision",
+        "reason"
+      ],
+      "title": "KinContactDebug",
+      "type": "object"
+    },
+    "KinHolePairDebug": {
+      "additionalProperties": false,
+      "description": "A stack of coaxial holes across instances, and whether it became a fastener.",
+      "properties": {
+        "joint_id": {
+          "title": "Joint Id",
+          "type": "string"
+        },
+        "instance_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Instance Ids",
+          "type": "array"
+        },
+        "instance_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Instance Names",
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Links",
+          "type": "array"
+        },
+        "hole_refs": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Hole Refs",
+          "type": "array"
+        },
+        "diameters_mm": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Diameters Mm",
+          "type": "array"
+        },
+        "stack_thickness_mm": {
+          "title": "Stack Thickness Mm",
+          "type": "number"
+        },
+        "axis": {
+          "$ref": "#/$defs/Axis"
+        },
+        "became_fastener": {
+          "title": "Became Fastener",
+          "type": "boolean"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "kinematic_effect": {
+          "title": "Kinematic Effect",
+          "type": "string"
+        }
+      },
+      "required": [
+        "joint_id",
+        "instance_ids",
+        "instance_names",
+        "links",
+        "hole_refs",
+        "diameters_mm",
+        "stack_thickness_mm",
+        "axis",
+        "became_fastener",
+        "reason",
+        "kinematic_effect"
+      ],
+      "title": "KinHolePairDebug",
+      "type": "object"
+    },
     "KinJoint": {
       "additionalProperties": false,
       "properties": {
@@ -1697,6 +1899,27 @@
         "joints"
       ],
       "title": "KinematicModel",
+      "type": "object"
+    },
+    "KinematicsDebug": {
+      "additionalProperties": false,
+      "properties": {
+        "contacts": {
+          "items": {
+            "$ref": "#/$defs/KinContactDebug"
+          },
+          "title": "Contacts",
+          "type": "array"
+        },
+        "hole_pairs": {
+          "items": {
+            "$ref": "#/$defs/KinHolePairDebug"
+          },
+          "title": "Hole Pairs",
+          "type": "array"
+        }
+      },
+      "title": "KinematicsDebug",
       "type": "object"
     },
     "LoadPath": {
@@ -3255,6 +3478,17 @@
       "properties": {
         "kinematics": {
           "$ref": "#/$defs/KinematicModel"
+        },
+        "kinematics_debug": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KinematicsDebug"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "load_paths": {
           "items": {

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from build123d import Box, Cylinder, Location, Pos, Rot, Shape
+from build123d import Axis, Box, Cylinder, Location, Pos, Rot, Shape
 from generate_fixtures import FIXTURE_DIR
 from OCP.STEPCAFControl import STEPCAFControl_Writer
 from OCP.STEPControl import STEPControl_AsIs
@@ -182,6 +182,34 @@ def pilot_thin_assembly(out: Path = FIXTURE_DIR) -> Path:
     return write_assembly(out / "pilot_thin_assembly.step", {"Block": block, "Cover": cover}, root)
 
 
+def occurrence_label_assembly(out: Path = FIXTURE_DIR) -> Path:
+    """Three bars; two instances carry assembly-tree occurrence labels (NAUO4, NAUO7) like vendor files."""
+    root = Node(
+        "Arm",
+        children=[
+            Node("NAUO4", "LINK3", Pos(0, 0, 0)),
+            Node("Holder", "LINK2", Pos(0, 0, 10)),
+            Node("NAUO7", "LINK6", Pos(0, 0, 20)),
+        ],
+    )
+    return write_assembly(
+        out / "occurrence_label_assembly.step",
+        {"LINK3": Box(20, 20, 10), "LINK2": Box(20, 20, 10), "LINK6": Box(20, 20, 10)},
+        root,
+    )
+
+
+def pivot_pair_assembly(out: Path = FIXTURE_DIR) -> Path:
+    """Two blocks side by side on the X axis, each with a coaxial Ø50 bore (a pivot, no screw size)."""
+    a = Box(40, 80, 80) - Cylinder(25, 50).rotate(Axis.Y, 90)
+    b = Box(20, 80, 80) - Cylinder(25, 30).rotate(Axis.Y, 90)
+    root = Node(
+        "Pivot",
+        children=[Node("LINK1", "A", Pos(0, 0, 0)), Node("LINK2", "B", Pos(30, 0, 0))],
+    )
+    return write_assembly(out / "pivot_pair_assembly.step", {"A": a, "B": b}, root)
+
+
 def shaft_in_bearing_assembly(out: Path = FIXTURE_DIR) -> Path:
     """Ø8 shaft in a Ø8.06 bore (diametral clearance 0.06)."""
     block = Box(30, 30, 20) - Cylinder(4.03, 22)
@@ -219,12 +247,21 @@ def generate_assemblies(out: Path = FIXTURE_DIR) -> dict[str, Path]:
         tapped_assembly,
         blind_clearance_assembly,
         blind_thin_stack_assembly,
+        occurrence_label_assembly,
+        pivot_pair_assembly,
         pilot_over_blind_assembly,
         pilot_thin_assembly,
         shaft_in_bearing_assembly,
         nested_assembly,
     )
-    return {fn.__name__: fn(out) for fn in builders}
+    from robot_fixtures import arm_6_axis, arm_axis_disagree, named_links_resting
+
+    out_map = {fn.__name__: fn(out) for fn in builders}
+    out_map["arm_6_axis"] = arm_6_axis(out)
+    out_map["arm_6_axis_occurrence"] = arm_6_axis(out, occurrence=True)
+    out_map["arm_axis_disagree"] = arm_axis_disagree(out)
+    out_map["named_links_resting"] = named_links_resting(out)
+    return out_map
 
 
 if __name__ == "__main__":

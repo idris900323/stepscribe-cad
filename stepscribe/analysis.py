@@ -65,6 +65,7 @@ class AnalyzeOptions:
     check_motion: bool = False
     motion_budget_s: int = 120
     debug_graphs: bool = False
+    debug_kinematics: bool = False
     precision: int = 4
     extra: dict[str, Any] = field(default_factory=dict)
 

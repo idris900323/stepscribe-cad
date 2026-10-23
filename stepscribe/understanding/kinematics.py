@@ -20,7 +20,7 @@ import numpy as np
 
 from stepscribe import config
 from stepscribe.assembly import build_instances
-from stepscribe.assembly.contacts import PartFaces, part_faces
+from stepscribe.assembly.contacts import PartFaces, part_faces, planar_contact_detail
 from stepscribe.assembly.tree import InstanceData
 from stepscribe.describe.phrases import fmt
 from stepscribe.features.hole_standards import load_table
@@ -30,11 +30,13 @@ from stepscribe.models.schema import (
     AssemblyInfo,
     Axis,
     Evidence,
+    FastenerJoint,
     KinematicModel,
     KinJoint,
     Mechanism,
     RigidGroup,
 )
+from stepscribe.understanding.link_groups import NameGroups, detect_name_groups
 
 if TYPE_CHECKING:
     from stepscribe.api import Analysis
@@ -233,7 +235,7 @@ def _servo_horn_conn(
 
 
 def classify_connections(
-    analysis: Analysis, insts: list[InstanceData]
+    analysis: Analysis, insts: list[InstanceData], groups: NameGroups | None = None
 ) -> tuple[list[Conn], dict[tuple[str, str], list[str]]]:
     """Connections for every touching instance pair; also pair -> contact IDs for evidence."""
     asm = analysis.report.assembly
@@ -262,12 +264,23 @@ def classify_connections(
             planar[key] = planar.get(key, 0.0) + (c.contact_area_mm2 or 0.0)
     conns: list[Conn] = []
     fastened: set[tuple[str, str]] = set()
+    pivots: list[FastenerJoint] = []
+    flanges: list[tuple[str, str]] = []
     for j in asm.fastener_joints:
         existing = by_id.get(j.existing_fastener_instance_id or "") or _pin_in_joint(
             j, insts, faces, float(r["coaxial_tol_mm"])
         )
         if existing is not None and hardware_kind(existing) != "fastener":
             continue  # a pin that is not a screw/bolt: judged by its fit below (pivot or press)
+        if j.pivot_candidate and existing is None:
+            pivots.append(j)  # a wide bore with no screw size: a pivot candidate, not a fastener
+            continue
+        if (
+            groups is not None
+            and not j.suggested_fastener
+            and any(groups.differ(x, y) for x in j.instance_ids for y in j.instance_ids if x < y)
+        ):
+            continue  # no screw size: not a clamp between two named links (a flange may decide)
         ids = list(j.instance_ids) + (
             [j.existing_fastener_instance_id] if j.existing_fastener_instance_id else []
         )
@@ -325,6 +338,10 @@ def classify_connections(
                 _cyl_conn(a, b, pairs, key in planar, refs, conf, float(r["loose_clearance_mm"]))
             )
         elif key in planar:
+            if groups is not None and groups.differ(a.id, b.id):
+                if planar[key] >= float(r["pivot"]["flange_min_area_mm2"]):
+                    flanges.append(key)  # a flange candidate, judged with the pivot bores below
+                continue  # different link groups are never merged by a planar rest
             conns.append(
                 Conn(
                     a.id,
@@ -342,7 +359,150 @@ def classify_connections(
                     ],
                 )
             )
+    conns += _pivot_and_flange_conns(asm, by_id, pivots, flanges, contacts_of, groups, faces, r)
     return conns, contacts_of
+
+
+def _label(d: Vec) -> str:
+    return axis_label(canonical_dir(d))
+
+
+def _pivot_and_flange_conns(
+    asm: AssemblyInfo,
+    by_id: dict[str, InstanceData],
+    pivots: list[FastenerJoint],
+    flanges: list[tuple[str, str]],
+    contacts_of: dict[tuple[str, str], list[str]],
+    groups: NameGroups | None,
+    faces: Callable[[InstanceData], PartFaces],
+    r: dict,  # type: ignore[type-arg]
+) -> list[Conn]:
+    """Revolute candidates between link groups: pivot bores with no screw size, and flanges.
+
+    A bore and a flange normal on the same pair that point the same way raise the confidence
+    (both are cited); when they disagree the bore wins (a perpendicular pivot is the usual case
+    for the shoulder and elbow of an arm) and the flange reading is listed as the alternative.
+    """
+    cfg = r["pivot"]
+    tol = float(r["parallel_tol_deg"])
+    named_conf = float(cfg["confidence_named"])
+    unnamed_conf = float(cfg["confidence_unnamed"])
+    contacts = {c.id: c for c in asm.contacts}
+
+    def pair_key(a: str, b: str) -> tuple[str, ...]:
+        if groups is not None and groups.differ(a, b):
+            return tuple(sorted((groups.group_of[a], groups.group_of[b])))
+        return ("inst", *sorted((a, b)))
+
+    bores: dict[tuple[str, ...], tuple[FastenerJoint, str, str]] = {}
+    for j in pivots:
+        seq: list[str] = []
+        for inst_id, _hole in j.hole_refs:
+            if not seq or seq[-1] != inst_id:
+                seq.append(inst_id)
+        for a_id, b_id in zip(seq, seq[1:], strict=False):
+            if groups is not None and groups.same(a_id, b_id):
+                continue  # inside one named link
+            bores.setdefault(pair_key(a_id, b_id), (j, a_id, b_id))
+    flange_of: dict[tuple[str, ...], tuple[str, str, float, Vec, Vec]] = {}
+    for a_id, b_id in flanges:
+        a, b = by_id[a_id], by_id[b_id]
+        has_planar = any(
+            contacts[cid].kind == "planar_face" for cid in contacts_of.get((a_id, b_id), [])
+        )
+        detail = planar_contact_detail(a, b, faces(a), faces(b)) if has_planar else None
+        if detail is None:
+            continue
+        area, normal, centroid = detail
+        key = pair_key(a_id, b_id)
+        if key not in flange_of or area > flange_of[key][2]:
+            flange_of[key] = (a_id, b_id, area, normal, centroid)
+    out: list[Conn] = []
+    for key in sorted(set(bores) | set(flange_of)):
+        named = key[0] != "inst"
+        bore = bores.get(key)
+        fl = flange_of.get(key)
+        if bore is None:
+            assert fl is not None
+            fa, fb, area, normal, centroid = fl
+            out.append(
+                Conn(
+                    fa,
+                    fb,
+                    "revolute",
+                    float(cfg["confidence_flange"]),
+                    centroid,
+                    canonical_dir(normal),
+                    [
+                        _flange_ev(
+                            by_id, fa, fb, area, normal, "revolute candidate about the normal"
+                        )
+                    ],
+                )
+            )
+            continue
+        j, ba, bb = bore
+        d = canonical_dir(np.array([j.axis.direction.x, j.axis.direction.y, j.axis.direction.z]))
+        o = np.array([j.axis.origin.x, j.axis.origin.y, j.axis.origin.z])
+        if fl is not None:
+            o = o + d * float(np.dot(fl[4] - o, d))  # the axis point nearest the flange centre
+        else:
+            o = o + d * (0.5 * j.stack_thickness_mm)
+        wording = (
+            "a pivot" if named else "pivot or press fit candidate (no link names to confirm it)"
+        )
+        ev_bore = _ev(
+            "pivot_bore",
+            [j.id, ba, bb],
+            0.7 if named else 0.4,
+            f"{j.id}: coaxial Ø{fmt(j.common_diameter_mm, 1)} bore across {by_id[ba].name} and "
+            f"{by_id[bb].name}, {fmt(j.stack_thickness_mm, 0)} mm long, matches no screw size: "
+            f"{wording} about {axis_label(d)}",
+        )
+        conf = named_conf if named else unnamed_conf
+        if fl is None:
+            out.append(Conn(ba, bb, "revolute", conf, o, d, [ev_bore]))
+            continue
+        fa, fb, area, normal, centroid = fl
+        if _parallel(d, canonical_dir(normal), tol):
+            ev_fl = _flange_ev(by_id, fa, fb, area, normal, "the same direction as the bore axis")
+            out.append(Conn(ba, bb, "revolute", conf, o, d, [ev_bore]))
+            out.append(Conn(fa, fb, "revolute", float(cfg["confidence_flange"]), o, d, [ev_fl]))
+        else:
+            ev_fl = _flange_ev(
+                by_id,
+                fa,
+                fb,
+                area,
+                normal,
+                f"disagrees with the bore axis {axis_label(d)}: the bore is used and the flange "
+                f"reading (revolute about {_label(normal)}) is the alternative",
+                code="flange_disagree",
+            )
+            out.append(
+                Conn(
+                    ba, bb, "revolute", conf * float(cfg["disagree_factor"]), o, d, [ev_bore, ev_fl]
+                )
+            )
+    return out
+
+
+def _flange_ev(
+    by_id: dict[str, InstanceData],
+    a: str,
+    b: str,
+    area: float,
+    normal: Vec,
+    tail: str,
+    code: str = "flange",
+) -> Evidence:
+    return _ev(
+        code,
+        [a, b],
+        0.55,
+        f"flange: planar contact of {fmt(area, 0)} mm² between {by_id[a].name} and "
+        f"{by_id[b].name}, normal {_label(normal)}, {tail}",
+    )
 
 
 def _pin_in_joint(j, insts, faces, tol: float):  # type: ignore[no-untyped-def]
@@ -691,6 +851,7 @@ class KinContext:
     conns: list[Conn]
     contacts_of: dict[tuple[str, str], list[str]]
     soft_used: list[Conn] = field(default_factory=list)
+    name_groups: NameGroups | None = None
 
 
 def build_kinematics(analysis: Analysis) -> KinematicModel:
@@ -750,7 +911,8 @@ def build_kinematics_ex(analysis: Analysis) -> tuple[KinematicModel, KinContext]
     r = rules()
     insts = build_instances(analysis)
     by_id = {i.id: i for i in insts}
-    conns, contacts_of = classify_connections(analysis, insts)
+    name_groups = detect_name_groups(insts, asm)
+    conns, contacts_of = classify_connections(analysis, insts, name_groups)
     up = axis_vector(asm.up_axis)
     ids = [i.id for i in insts]
 
@@ -760,6 +922,12 @@ def build_kinematics_ex(analysis: Analysis) -> tuple[KinematicModel, KinContext]
     uf = UnionFind(ids)
     for c in hard:
         uf.union(c.a, c.b)
+    if name_groups is not None:  # bodies of one named link are one rigid link
+        first: dict[str, str] = {}
+        for i in ids:
+            g = name_groups.group_of.get(i)
+            if g is not None:
+                uf.union(first.setdefault(g, i), i)
     soft_used: list[Conn] = []
     ground = ""
     ground_ev: list[Evidence] = []
@@ -799,7 +967,8 @@ def build_kinematics_ex(analysis: Analysis) -> tuple[KinematicModel, KinContext]
                 is_ground=root == ground,
                 ground_evidence=ground_ev if root == ground else [],
                 mass_g=float(sum(mass)) if all(x is not None for x in mass) else None,  # type: ignore[arg-type]
-                description=_link_description(members),
+                description=_link_description(members)
+                + (_group_note(members, name_groups) if name_groups is not None else ""),
             )
         )
     floating = [names[x] for x in order if x not in reach]
@@ -821,7 +990,7 @@ def build_kinematics_ex(analysis: Analysis) -> tuple[KinematicModel, KinContext]
     model.mermaid = mermaid(model)
     link_of = {i: names[root] for root, ms in links.items() for i in (m.id for m in ms)}
     return model, KinContext(
-        insts, by_id, names, link_of, screws, asm, conns, contacts_of, soft_used
+        insts, by_id, names, link_of, screws, asm, conns, contacts_of, soft_used, name_groups
     )
 
 
@@ -908,6 +1077,11 @@ def _order_links(
                 q.append(n)
     rest = sorted((k for k in links if k not in seen), key=lambda k: min(i.id for i in links[k]))
     return order + rest
+
+
+def _group_note(members: list[InstanceData], groups: NameGroups) -> str:
+    names = sorted({groups.group_of[m.id] for m in members if m.id in groups.group_of})
+    return f" [name pattern {', '.join(names)}]" if names else ""
 
 
 def _link_description(members: list[InstanceData]) -> str:

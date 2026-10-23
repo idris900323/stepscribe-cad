@@ -73,6 +73,7 @@ def _options(
     check_motion: bool = False,
     motion_budget_s: int = 120,
     debug_graphs: bool = False,
+    debug_kinematics: bool = False,
 ) -> AnalyzeOptions:
     return AnalyzeOptions(
         density=density,
@@ -87,6 +88,7 @@ def _options(
         check_motion=check_motion,
         motion_budget_s=motion_budget_s,
         debug_graphs=debug_graphs,
+        debug_kinematics=debug_kinematics,
     )
 
 
@@ -187,6 +189,13 @@ def pack(
     debug_graphs: Annotated[
         bool, typer.Option("--debug-graphs", help="Also write data/aag_<part>.json.")
     ] = False,
+    debug_kinematics: Annotated[
+        bool,
+        typer.Option(
+            "--debug-kinematics",
+            help="Also write data/kinematics_debug.md: why each contact was merged or kept apart.",
+        ),
+    ] = False,
     jobs: Annotated[int, typer.Option(help="Parallel workers for folders.")] = 1,
     timeout_s: Annotated[
         int, typer.Option(help="Per-file timeout in seconds.")
@@ -214,6 +223,7 @@ def pack(
         check_motion=check_motion,
         motion_budget_s=motion_budget_s,
         debug_graphs=debug_graphs,
+        debug_kinematics=debug_kinematics,
     )
     tpl = {
         "out_dir": str(out),
@@ -261,6 +271,13 @@ def export(
     check_interference: Annotated[bool, typer.Option("--check-interference")] = False,
     understanding: Annotated[bool, typer.Option("--understanding/--no-understanding")] = True,
     check_motion: Annotated[bool, typer.Option("--check-motion")] = False,
+    debug_kinematics: Annotated[
+        bool,
+        typer.Option(
+            "--debug-kinematics",
+            help="Also write data/kinematics_debug.md: why each contact was merged or kept apart.",
+        ),
+    ] = False,
     jobs: Annotated[int, typer.Option(help="Parallel workers for folders.")] = 1,
     timeout_s: Annotated[
         int, typer.Option(help="Per-file timeout in seconds.")
@@ -286,6 +303,7 @@ def export(
         no_timestamp,
         understanding=understanding,
         check_motion=check_motion,
+        debug_kinematics=debug_kinematics,
     )
     tpl = {
         "out_dir": str(out),
