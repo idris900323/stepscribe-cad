@@ -65,7 +65,7 @@ def build_assembly(
         return None
     gbox = union_bounds(instances)
     contacts = detect_contacts(instances, tracker)
-    joints = detect_joints(instances)
+    joints = detect_joints(instances, opts.pivot_min_diameter_mm, opts.pivot_min_length_ratio)
     relations = build_relations(instances, contacts, joints, opts.up)
     masses = [i.ap.part.mass.mass_g for i in instances]
     known = all(m is not None for m in masses)

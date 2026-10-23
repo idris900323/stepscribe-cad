@@ -74,6 +74,8 @@ def _options(
     motion_budget_s: int = 120,
     debug_graphs: bool = False,
     debug_kinematics: bool = False,
+    pivot_min_diameter: float | None = None,
+    pivot_min_length_ratio: float | None = None,
 ) -> AnalyzeOptions:
     return AnalyzeOptions(
         density=density,
@@ -89,6 +91,8 @@ def _options(
         motion_budget_s=motion_budget_s,
         debug_graphs=debug_graphs,
         debug_kinematics=debug_kinematics,
+        pivot_min_diameter_mm=pivot_min_diameter,
+        pivot_min_length_ratio=pivot_min_length_ratio,
     )
 
 
@@ -196,6 +200,20 @@ def pack(
             help="Also write data/kinematics_debug.md: why each contact was merged or kept apart.",
         ),
     ] = False,
+    pivot_min_diameter: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-diameter",
+            help="Smallest hole stack (mm) with no screw size that counts as a pivot. Default 20.",
+        ),
+    ] = None,
+    pivot_min_length_ratio: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-length-ratio",
+            help="Shortest such stack, in diameters, that counts as a pivot. Default 1.",
+        ),
+    ] = None,
     jobs: Annotated[int, typer.Option(help="Parallel workers for folders.")] = 1,
     timeout_s: Annotated[
         int, typer.Option(help="Per-file timeout in seconds.")
@@ -224,6 +242,8 @@ def pack(
         motion_budget_s=motion_budget_s,
         debug_graphs=debug_graphs,
         debug_kinematics=debug_kinematics,
+        pivot_min_diameter=pivot_min_diameter,
+        pivot_min_length_ratio=pivot_min_length_ratio,
     )
     tpl = {
         "out_dir": str(out),
@@ -278,6 +298,20 @@ def export(
             help="Also write data/kinematics_debug.md: why each contact was merged or kept apart.",
         ),
     ] = False,
+    pivot_min_diameter: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-diameter",
+            help="Smallest hole stack (mm) with no screw size that counts as a pivot. Default 20.",
+        ),
+    ] = None,
+    pivot_min_length_ratio: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-length-ratio",
+            help="Shortest such stack, in diameters, that counts as a pivot. Default 1.",
+        ),
+    ] = None,
     jobs: Annotated[int, typer.Option(help="Parallel workers for folders.")] = 1,
     timeout_s: Annotated[
         int, typer.Option(help="Per-file timeout in seconds.")
@@ -304,6 +338,8 @@ def export(
         understanding=understanding,
         check_motion=check_motion,
         debug_kinematics=debug_kinematics,
+        pivot_min_diameter=pivot_min_diameter,
+        pivot_min_length_ratio=pivot_min_length_ratio,
     )
     tpl = {
         "out_dir": str(out),

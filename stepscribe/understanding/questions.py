@@ -173,6 +173,22 @@ def generate_questions(
             3.0,
             1.0,
         )
+    if len(u.kinematics.joints) >= 2 and not (ctx.get("kinematics") or {}).get("base"):
+        ground = next((g for g in u.kinematics.links if g.is_ground), None)
+        if ground is not None and not any(e.code == "designer" for e in ground.ground_evidence):
+            add(
+                _q(
+                    "kin_base",
+                    "Which link is the fixed base of the mechanism?",
+                    "The base decides which way every joint is read (parent and child) and what the chain is.",
+                    "single_choice",
+                    options=[(g.id, f"{g.id}: {g.description}") for g in u.kinematics.links],
+                    guess=ground.id,
+                    applies=["summary"],
+                ),
+                3.0,
+                0.5,
+            )
     # ---- per-part and per-joint questions
     gap = 0.1
     for p in fab:
@@ -283,6 +299,10 @@ def generate_questions(
                     1.5,
                     1.0,
                 )
+            if j.positive_direction is None and j.kind in ("revolute", "prismatic"):
+                add(_direction_question(j), 0.8, 1.0)
+            if _flange_only(j) and not j.declared_by_designer:
+                add(_axis_question(j), 2.0, 0.6)
             if j.range_deg_or_mm is None and j.kind in ("revolute", "prismatic"):
                 add(
                     _q(
@@ -326,6 +346,54 @@ def _fastened(report: Report, a: str, b: str) -> bool:
     if asm is None:
         return False
     return any(a in j.instance_ids and b in j.instance_ids for j in asm.fastener_joints)
+
+
+def _flange_only(j) -> bool:  # type: ignore[no-untyped-def]
+    """A revolute joint whose axis rests on a flange normal alone (no pivot bore confirms it)."""
+    codes = {e.code for e in j.evidence}
+    return (
+        j.kind == "revolute"
+        and bool(codes & {"flange", "flange_disagree"})
+        and "pivot_bore" not in codes
+    )
+
+
+def _direction_question(j) -> Question:  # type: ignore[no-untyped-def]
+    if j.kind == "prismatic":
+        options = [("+", "along the axis"), ("-", "against the axis")]
+        text = f"Which way is positive motion of {j.id}?"
+    else:
+        options = [
+            ("ccw", "counter-clockwise looking from the axis tip toward the joint"),
+            ("cw", "clockwise looking from the axis tip toward the joint"),
+        ]
+        text = f"Which way is positive rotation of {j.id}?"
+    return _q(
+        "joint_direction",
+        text,
+        "A robot model needs the sign convention of each joint to match the controller.",
+        "single_choice",
+        refs=[j.id],
+        options=options,
+        applies=["summary"],
+    )
+
+
+def _axis_question(j) -> Question:  # type: ignore[no-untyped-def]
+    d = j.axis.direction
+    k = max(range(3), key=lambda i: abs((d.x, d.y, d.z)[i]))
+    here = "XYZ"[k]
+    return _q(
+        "joint_axis",
+        f"Does {j.id} ({j.parent_link} to {j.child_link}) turn about the {here} axis?",
+        "Only the face where the two links meet suggests this axis; no bore confirms it.",
+        "single_choice",
+        refs=[j.id],
+        options=[("yes", f"yes, about {here}")]
+        + [(a, f"no, about {a}") for a in "XYZ" if a != here],
+        guess="yes",
+        applies=["summary"],
+    )
 
 
 def _is_input(u, joint_id: str) -> bool:  # type: ignore[no-untyped-def]

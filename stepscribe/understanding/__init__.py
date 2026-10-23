@@ -123,6 +123,7 @@ class UnderstandingPipeline:
         self._joints = {
             j.id: (j.driven_by, j.range_deg_or_mm, j.description) for j in self.kin.joints
         }
+        self._kin0 = self.kin.model_copy(deep=True)
         a = self.asm
         self._asm = (
             None
@@ -142,6 +143,11 @@ class UnderstandingPipeline:
             mass, und = self._parts[ap.part.id]
             ap.part.mass = mass.model_copy(deep=True)
             ap.part.understanding = copy.deepcopy(und)
+        k0 = self._kin0  # undo what the designer's section or answers did to links and joints
+        self.kin.links[:] = [g.model_copy(deep=True) for g in k0.links]
+        self.kin.joints[:] = [j.model_copy(deep=True) for j in k0.joints]
+        self.kin.dof, self.kin.topology = k0.dof, k0.topology
+        self.kin.description, self.kin.mermaid = k0.description, k0.mermaid
         for j in self.kin.joints:
             j.driven_by, j.range_deg_or_mm, j.description = self._joints[j.id]
         if self.asm is not None and self._asm is not None:
@@ -206,6 +212,38 @@ class UnderstandingPipeline:
         und.kinematics_debug = self.kin_debug
         return und
 
+    def _apply_declared(self, effects: Effects, context: dict | None, report: Any) -> None:  # type: ignore[type-arg]
+        """The designer's `kinematics:` section, then interview answers about base, axes and signs."""
+        from stepscribe.understanding.declared import (
+            DeclaredJoint,
+            apply_declared,
+            parse_declared,
+        )
+
+        try:
+            decl = parse_declared(context)
+        except ValueError as exc:
+            if str(exc) not in report.warnings:
+                report.warnings.append(str(exc))
+            return
+        if decl.base is None and effects.base:
+            decl.base = effects.base
+        for jid in sorted(set(effects.directions) | set(effects.axes)):
+            decl.joints.append(
+                DeclaredJoint(
+                    "",
+                    "",
+                    joint_id=jid,
+                    axis=effects.axes.get(jid),
+                    positive=effects.directions.get(jid),
+                )
+            )
+        found: list[str] = []
+        apply_declared(self.kin, decl, self.ctx, found)
+        for w in found:
+            if w not in report.warnings:
+                report.warnings.append(w)
+
     def _compute(
         self,
         effects: Effects,
@@ -260,9 +298,11 @@ class UnderstandingPipeline:
         for jid, rng in effects.ranges.items():
             if jid in by_joint:
                 by_joint[jid].range_deg_or_mm = rng
+                by_joint[jid].range_source = "designer"
                 by_joint[
                     jid
                 ].description += f"; range {rng[0]:g} to {rng[1]:g} given by the designer"
+        self._apply_declared(effects, context, report)
         stab = load = None
         payload = None
         if asm is not None and ctx is not None:

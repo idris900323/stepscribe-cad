@@ -1820,6 +1820,45 @@
           "default": "",
           "title": "Description",
           "type": "string"
+        },
+        "declared_by_designer": {
+          "default": false,
+          "title": "Declared By Designer",
+          "type": "boolean"
+        },
+        "range_source": {
+          "anyOf": [
+            {
+              "enum": [
+                "designer",
+                "motion_check"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Range Source"
+        },
+        "positive_direction": {
+          "anyOf": [
+            {
+              "enum": [
+                "ccw",
+                "cw",
+                "+",
+                "-"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Positive Direction"
         }
       },
       "required": [
@@ -2600,6 +2639,9 @@
             "connection_type",
             "joint_drive",
             "joint_range",
+            "joint_direction",
+            "joint_axis",
+            "kin_base",
             "payload",
             "purpose",
             "load",

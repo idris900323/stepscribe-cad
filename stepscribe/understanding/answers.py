@@ -39,6 +39,9 @@ class Effects:
     roles: dict[str, str] = field(default_factory=dict)  # part id -> label
     drives: dict[str, str] = field(default_factory=dict)  # joint id -> "designer:motor"
     ranges: dict[str, tuple[float, float]] = field(default_factory=dict)
+    directions: dict[str, str] = field(default_factory=dict)  # joint id -> ccw|cw|+|-
+    axes: dict[str, tuple[float, float, float]] = field(default_factory=dict)
+    base: str | None = None  # link id
     suppress_floating: set[str] = field(default_factory=set)  # instance ids
     fasteners_missing: list[tuple[str, str]] = field(default_factory=list)
     text: dict[str, str] = field(default_factory=dict)  # purpose / load / environment
@@ -98,6 +101,14 @@ def collect_effects(answers: dict[str, dict[str, Any]], questions: dict[str, Que
             if len(nums) >= 2:
                 lo, hi = sorted(float(n) for n in nums[:2])
                 fx.ranges[q.refs[0]] = (lo, hi)
+        elif q.kind == "joint_direction" and q.refs and v in ("ccw", "cw", "+", "-"):
+            fx.directions[q.refs[0]] = str(v)
+        elif q.kind == "joint_axis" and q.refs and isinstance(v, str) and v in ("X", "Y", "Z"):
+            unit = [0.0, 0.0, 0.0]
+            unit["XYZ".index(v)] = 1.0
+            fx.axes[q.refs[0]] = (unit[0], unit[1], unit[2])
+        elif q.kind == "kin_base" and isinstance(v, str) and v:
+            fx.base = v
         elif q.kind == "missing_part" and v in ("missing", "purchased", "loose"):
             fx.suppress_floating.update(q.refs)
         elif q.kind == "connection_type" and v == "fasteners_missing" and len(q.refs) == 2:

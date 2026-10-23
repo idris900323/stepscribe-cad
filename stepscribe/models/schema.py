@@ -347,6 +347,9 @@ class KinJoint(_M):
     range_deg_or_mm: tuple[float, float] | None = None
     blocked_by: list[str] = Field(default_factory=list)
     description: str = ""
+    declared_by_designer: bool = False  # from the `kinematics:` section: replaces the detection
+    range_source: Literal["designer", "motion_check"] | None = None  # who set range_deg_or_mm
+    positive_direction: Literal["ccw", "cw", "+", "-"] | None = None  # sign of positive motion
 
 
 class Mechanism(_M):
@@ -460,6 +463,9 @@ class Question(_M):
         "connection_type",
         "joint_drive",
         "joint_range",
+        "joint_direction",
+        "joint_axis",
+        "kin_base",
         "payload",
         "purpose",
         "load",
@@ -542,6 +548,7 @@ class Understanding(_M):
         if data.get("kinematics_debug") is None:
             data.pop("kinematics_debug", None)
         return data
+
     load_paths: list[LoadPath] = Field(default_factory=list)
     weak_spots: list[WeakSpot] = Field(default_factory=list)
     stability: StabilityInfo | None = None

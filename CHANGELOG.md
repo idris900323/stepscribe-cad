@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Robot files from vendors (an ABB arm, for example): links, joints and a robot description.
+
+- **Names.** An instance labelled only with an assembly-tree occurrence id (`NAUO4`) now takes the product name (`LINK3`).
+- **Links from names.** `BASE`, `LINK<n>` and `AXIS<n>` are found anywhere in a part name, with any prefix and a `_body<k>` suffix. With three or more numbered groups in a chain, bodies of one group are one link and different groups are never merged because they rest on each other.
+- **Pivots and flanges.** A coaxial hole stack that matches no screw size, at least 20 mm wide and as long as it is wide, is a pivot candidate (revolute about the bore) instead of a confidence-0 fastener that locked two links together. A large planar contact between two link groups is a revolute candidate about its normal; a bore that agrees raises the confidence, one that disagrees wins with a lower confidence and the flange reading is listed. Change the limits with `--pivot-min-diameter` and `--pivot-min-length-ratio`; see `docs/kinematics.md`.
+- **`--debug-kinematics`** (on `pack` and `export`) writes `data/kinematics_debug.md` and a `kinematics_debug` section in `report.json`: for every contact, why it was merged or kept apart; for every unmatched hole stack, why it is not a fastener.
+- **Designer input.** A `kinematics:` section in `design_context.yaml` (base, and joints with type, axis, origin, range, positive direction) replaces what was detected and is marked "Confirmed by designer". New interview questions ask for the base link, the axis of joints known only from a flange, and the sign of positive motion.
+- **`robot.json`** in the pack for a model with at least one revolute or prismatic joint: link frames, joint axes and origins, a DH-style table, mass and inertia per link (estimates), and joint limits only from the yaml.
+- Report schema 0.6.0 (new optional fields).
+
 ## 0.1.4
 
 Fixes found on a real design (`full ass.step`).

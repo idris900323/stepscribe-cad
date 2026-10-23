@@ -242,6 +242,11 @@ def write_pack_build(
 
         (folder / "data").mkdir(parents=True, exist_ok=True)
         put("data/kinematics_debug.md", debug_markdown(report.understanding.kinematics_debug))
+    from stepscribe.pack.robot import robot_json
+
+    robot = robot_json(report)
+    if robot is not None:
+        put("robot.json", robot)
     if report.meta.options.get("debug_graphs"):
         import json
 
