@@ -488,6 +488,7 @@ class Question(_M):
         "joint_direction",
         "joint_axis",
         "kin_base",
+        "files_frame",
         "payload",
         "purpose",
         "load",
@@ -626,6 +627,15 @@ class Instance(_M):
     rotation_axis_angle: tuple[Vec3, float]
     global_bbox: BBox
     subassembly: str | None = None
+    source_file: str | None = None  # the input file, when several files are combined
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_source(self, handler: Any) -> dict[str, Any]:
+        """A single-file report has no ``source_file`` on its instances."""
+        data: dict[str, Any] = handler(self)
+        if data.get("source_file") is None:
+            data.pop("source_file", None)
+        return data
 
 
 class BOMLine(_M):
@@ -743,6 +753,17 @@ class Meta(_M):
     options: dict[str, Any]
 
 
+class SourceFile(_M):
+    """One input file of a combined run."""
+
+    name: str  # cleaned file name, unique within the run
+    sha256: str
+    size_bytes: int
+    placement: Literal["as in file", "designer-supplied"] = "as in file"
+    offset_mm: list[float] | None = None  # designer-supplied only
+    rotation_deg: list[float] | None = None
+
+
 class Report(_M):
     meta: Meta
     parts: list[Part]
@@ -750,6 +771,15 @@ class Report(_M):
     understanding: Understanding | None = None
     warnings: list[str] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
+    sources: list[SourceFile] = Field(default_factory=list)  # empty (and absent) for one file
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_sources(self, handler: Any) -> dict[str, Any]:
+        """``sources`` appears only when several files were combined."""
+        data: dict[str, Any] = handler(self)
+        if not data.get("sources"):
+            data.pop("sources", None)
+        return data
 
 
 def json_schema() -> dict[str, Any]:

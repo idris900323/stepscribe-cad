@@ -43,6 +43,7 @@ class ProtoPart:
     shape: TopoDS_Shape
     color_rgb: list[float] | None = None
     name_cleaned: bool = False  # the file's name was altered by cleaning (the text is dropped)
+    source_file: str | None = None  # set when several files are combined
 
 
 @dataclass
@@ -54,6 +55,19 @@ class InstanceRec:
     matrix: np.ndarray  # 4x4 global transform (rigid)
     parent_path: str | None
     subassembly: str | None
+    source_file: str | None = None  # set when several files are combined
+
+
+@dataclass
+class SourceRec:
+    """One input file of a combined model."""
+
+    name: str  # cleaned file name, unique within the run
+    sha256: str
+    size_bytes: int
+    placement: str = "as in file"  # or "designer-supplied"
+    offset_mm: list[float] | None = None
+    rotation_deg: list[float] | None = None
 
 
 @dataclass
@@ -67,6 +81,7 @@ class StepModel:
     instances: list[InstanceRec] = field(default_factory=list)
     is_assembly: bool = False
     warnings: list[str] = field(default_factory=list)
+    sources: list[SourceRec] = field(default_factory=list)  # empty for a single file
 
 
 _UNIT_PREFIX = {

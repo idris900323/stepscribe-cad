@@ -1529,6 +1529,18 @@
           ],
           "default": null,
           "title": "Subassembly"
+        },
+        "source_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source File"
         }
       },
       "required": [
@@ -2685,6 +2697,7 @@
             "joint_direction",
             "joint_axis",
             "kin_base",
+            "files_frame",
             "payload",
             "purpose",
             "load",
@@ -3093,6 +3106,70 @@
         "face_ids"
       ],
       "title": "Slot",
+      "type": "object"
+    },
+    "SourceFile": {
+      "additionalProperties": false,
+      "description": "One input file of a combined run.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "placement": {
+          "default": "as in file",
+          "enum": [
+            "as in file",
+            "designer-supplied"
+          ],
+          "title": "Placement",
+          "type": "string"
+        },
+        "offset_mm": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Offset Mm"
+        },
+        "rotation_deg": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rotation Deg"
+        }
+      },
+      "required": [
+        "name",
+        "sha256",
+        "size_bytes"
+      ],
+      "title": "SourceFile",
       "type": "object"
     },
     "SpatialFact": {
@@ -3835,6 +3912,13 @@
         "type": "object"
       },
       "title": "Errors",
+      "type": "array"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceFile"
+      },
+      "title": "Sources",
       "type": "array"
     }
   },

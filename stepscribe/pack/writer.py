@@ -199,7 +199,10 @@ def write_pack_build(
         else str(report.meta.options.get("front", "-Y"))
     )
     env = _env()
-    folder = folder or out_dir / f"{_safe(Path(report.meta.source_files[0]).stem)}_context_pack"
+    stem = (
+        root_name if len(report.meta.source_files) > 1 else Path(report.meta.source_files[0]).stem
+    )
+    folder = folder or out_dir / f"{_safe(stem)}_context_pack"
     (folder / "03_parts").mkdir(parents=True, exist_ok=True)
     ctx: dict[str, Any] = load_context(context_file) if context_file else {}
     images_written: list[str] = []
@@ -225,7 +228,7 @@ def write_pack_build(
     put(
         "00_READ_ME_FIRST.md",
         env.get_template("00_READ_ME_FIRST.md.j2").render(
-            up=up, front=front, has_images=bool(images_written)
+            up=up, front=front, has_images=bool(images_written), sources=report.sources
         ),
     )
     put("01_overview.md", sections.level0 + "\n")

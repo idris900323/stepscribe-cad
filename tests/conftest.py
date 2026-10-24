@@ -17,6 +17,7 @@ from assembly_fixtures_u import generate_kinematic  # noqa: E402
 from cutout_fixtures import generate_cutouts  # noqa: E402
 from generate_fixtures import generate_all  # noqa: E402
 from mechanism_fixtures import generate_mechanisms  # noqa: E402
+from multi_fixtures import generate_multi  # noqa: E402
 from pack_issue_fixtures import generate_pack_issue_fixtures  # noqa: E402
 from part_fixtures import generate_parts  # noqa: E402
 from risk_fixtures import generate_risks  # noqa: E402
@@ -60,6 +61,7 @@ def step_files() -> dict[str, Path]:
     paths.update(generate_mechanisms())
     paths.update(generate_risks())
     paths.update(generate_pack_issue_fixtures())
+    paths.update(generate_multi())
     return paths
 
 

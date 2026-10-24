@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,8 +25,9 @@ from stepscribe.analysis import (
 from stepscribe.geometry.occ_utils import unique_subshapes
 from stepscribe.geometry.part_geom import PartGeom
 from stepscribe.io.step_reader import StepModel, StepReadError, read_step
-from stepscribe.models.schema import SCHEMA_VERSION, Meta, Part, Report
+from stepscribe.models.schema import SCHEMA_VERSION, Meta, Part, Report, SourceFile
 from stepscribe.progress import Tracker
+from stepscribe.text_safety import clean_name
 
 PARALLEL_MIN_PARTS = 3
 PARALLEL_MIN_FACES = 300  # below this, starting processes costs more than it saves
@@ -79,6 +81,7 @@ def _analyse_bodies(
     opts: AnalyzeOptions,
     tracker: Tracker,
     errors: list[dict[str, object]],
+    source_of: dict[str, str] | None = None,
 ) -> list[tuple[str, PartGeom, Part]]:
     """Analyse every body, on a process pool for large assemblies.
 
@@ -98,9 +101,12 @@ def _analyse_bodies(
         workers = 1
     results: dict[int, Part] = {}
 
+    def src(i: int) -> str:
+        return (source_of or {}).get(bodies[i][0], source_file)
+
     def failed(i: int, exc: Exception) -> None:
         name = bodies[i][1]
-        errors.append({"file": source_file, "part": name, "error": f"{type(exc).__name__}: {exc}"})
+        errors.append({"file": src(i), "part": name, "error": f"{type(exc).__name__}: {exc}"})
         tracker.part_done(name, faces[id(bodies[i][2])], 0.0)
 
     with tempfile.TemporaryDirectory(prefix="stepscribe_") as tmp:
@@ -112,7 +118,7 @@ def _analyse_bodies(
             paths.append(f)
 
         def args(i: int) -> tuple[str, str, str, AnalyzeOptions, list[float] | None]:
-            return paths[i], bodies[i][1], source_file, opts, bodies[i][3]
+            return paths[i], bodies[i][1], src(i), opts, bodies[i][3]
 
         if workers == 1:
             for i in range(len(bodies)):
@@ -164,19 +170,37 @@ def _analyse_bodies(
 
 
 def analyze_full(
-    path: str | Path, options: AnalyzeOptions | None = None, tracker: Tracker | None = None
+    path: str | Path | Sequence[str | Path],
+    options: AnalyzeOptions | None = None,
+    tracker: Tracker | None = None,
+    name: str | None = None,
 ) -> Analysis:
-    """Analyse one STEP file; unreadable files yield a report with an ``errors`` entry."""
+    """Analyse one STEP file, or several combined into one assembly (a list of paths).
+
+    Unreadable files yield a report with an ``errors`` entry naming the file; with several files
+    one bad file means no parts at all, never a partial result.  A list of one file is the same
+    as the file.
+    """
     from stepscribe import envcheck
 
     envcheck.check_occt()  # a clear one-liner instead of a crash deep inside OCCT calls
     opts = options or AnalyzeOptions()
-    p = Path(path)
+    paths = [Path(path)] if isinstance(path, (str, Path)) else [Path(q) for q in path]
+    p = paths[0]
+    combined = len(paths) > 1
     try:
-        model = read_step(p)
+        if combined:
+            from stepscribe.io.multi import read_step_files
+
+            files = opts.extra.get("context", {}).get("files") or None
+            model = read_step_files(paths, files, name)
+        else:
+            model = read_step(p)
     except StepReadError as exc:
+        shown = sorted(clean_name(q.name) or "model" for q in paths)
+        bad = next((n for n in shown if str(exc).startswith(f"{n}:")), shown[0])
         report = Report(
-            meta=_meta([p.name], "mm", opts), parts=[], errors=[{"file": p.name, "error": str(exc)}]
+            meta=_meta(shown, "mm", opts), parts=[], errors=[{"file": bad, "error": str(exc)}]
         )
         return Analysis(report, None)
 
@@ -196,7 +220,8 @@ def analyze_full(
     proto_parts: dict[str, list[AnalyzedPart]] = {}
     warnings = list(model.warnings)
     errors: list[dict[str, object]] = []
-    done_parts = _analyse_bodies(bodies, faces, p.name, opts, tracker, errors)
+    source_of = {k: pr.source_file for k, pr in model.protos.items() if pr.source_file}
+    done_parts = _analyse_bodies(bodies, faces, p.name, opts, tracker, errors, source_of)
     for key, geom, part in done_parts:
         part.name_cleaned = model.protos[key].name_cleaned
         ap = AnalyzedPart(part, geom)
@@ -205,10 +230,11 @@ def analyze_full(
     assign_part_ids([ap.part for ap in parts])
     parts.sort(key=lambda ap: ap.part.id)
     report = Report(
-        meta=_meta([p.name], model.original_unit, opts),
+        meta=_meta([s.name for s in model.sources] or [p.name], model.original_unit, opts),
         parts=[ap.part for ap in parts],
         warnings=warnings,
         errors=errors,
+        sources=[SourceFile(**asdict(s)) for s in model.sources],
     )
     analysis = Analysis(
         report, model, parts, {k: [ap.part.id for ap in v] for k, v in proto_parts.items()}
@@ -217,6 +243,8 @@ def analyze_full(
 
     tracker.stage("assembly", "building assembly relationships")
     report.assembly = build_assembly(analysis, opts, tracker)
+    if combined and report.assembly is not None:
+        _mark_sources(report)
     if opts.understanding:
         from stepscribe.understanding import build_understanding
 
@@ -225,6 +253,20 @@ def analyze_full(
         except Exception as exc:  # noqa: BLE001 - the measured report must survive
             report.warnings.append(f"understanding layer failed: {type(exc).__name__}: {exc}")
     return analysis
+
+
+def _mark_sources(report: Report) -> None:
+    """Tag each instance with its file and say so when the files do not share a frame."""
+    from stepscribe.assembly.file_frames import check_shared_frame
+
+    assert report.assembly is not None
+    file_of = {p.id: p.source_file for p in report.parts}
+    for inst in report.assembly.instances:
+        inst.source_file = file_of.get(inst.part_id)
+    placed = all(s.placement == "designer-supplied" for s in report.sources)
+    problem = None if placed else check_shared_frame(report.assembly)
+    if problem:
+        report.warnings.append(problem[0].upper() + problem[1:])
 
 
 def restore_analysis(

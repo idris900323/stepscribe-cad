@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from stepscribe.assembly.file_frames import FRAME_WARNING
 from stepscribe.describe.budget import rank_parts
 from stepscribe.describe.part_describer import shape_label
 from stepscribe.describe.phrases import fmt, join_and, plural
@@ -89,6 +90,13 @@ def level0_context(
     shopping = report.assembly.fastener_shopping_list if report.assembly else []
     return {
         "root_name": root_name,
+        "sources_sentence": (
+            f" It was combined from {len(report.sources)} files (listed with their hashes in "
+            "`00_READ_ME_FIRST.md`); each keeps its own coordinates."
+            if report.sources
+            else ""
+        ),
+        "frame_warning": next((w for w in report.warnings if FRAME_WARNING in w), None),
         "n_parts": len(parts),
         "n_instances": sum(qty.values()),
         "n_fabricated": len(parts) - hardware,

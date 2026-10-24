@@ -28,6 +28,8 @@ class Job:
     budget_tokens: int = 12000
     images: bool = False
     export: dict[str, Any] = field(default_factory=dict)  # extra export() parameters
+    paths: list[str] | None = None  # several files combined into one pack (path is the first)
+    name: str | None = None  # name of the combined model
 
 
 def options_from_dict(d: dict[str, Any]) -> AnalyzeOptions:
@@ -74,7 +76,7 @@ def process_file(job: Job, callback: ProgressFn | None = None) -> dict[str, Any]
         tracker.images_wanted = job.images and job.mode == "pack"
         if job.mode == "export":
             return _export_file(job, opts, tracker, start)
-        analysis = analyze_full(job.path, opts, tracker)
+        analysis = analyze_full(job.paths if job.paths else job.path, opts, tracker, job.name)
         out = Path(job.out_dir)
         pack_dir: str | None = None
         if analysis.report.errors and not analysis.report.parts:

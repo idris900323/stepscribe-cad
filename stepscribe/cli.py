@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -22,6 +23,7 @@ from stepscribe.batch import Job, options_dict, run_jobs, write_index
 from stepscribe.errors import FriendlyGroup
 from stepscribe.geometry.occ_utils import occt_version
 from stepscribe.io.discovery import find_step_files
+from stepscribe.io.multi import InputError, InputLimits, expand_inputs
 from stepscribe.progress import Progress as Progress_
 from stepscribe.progress import format_eta
 
@@ -97,14 +99,29 @@ def _options(
 
 
 def _run(
-    files: list[Path], jobs_tpl: dict[str, Any], jobs: int, timeout_s: int
+    files: list[Path],
+    jobs_tpl: dict[str, Any],
+    jobs: int,
+    timeout_s: int,
+    combine: str | None = None,
 ) -> list[dict[str, Any]]:
     envcheck.check_occt()  # one clear line if OpenCASCADE is the wrong version
     for f in files:
         warning = limits.large_file_warning(f.stat().st_size)
         if warning:
             typer.echo(f"warning: {f.name}: {warning}", err=True)
-    todo = [Job(path=str(f), **jobs_tpl) for f in files]
+    if combine is not None:  # one job for all the files: they become one assembly
+        todo = [
+            Job(
+                path=str(files[0].parent / f"{combine or 'combined'} ({len(files)} files)"),
+                paths=[str(f) for f in files],
+                name=combine or None,
+                **jobs_tpl,
+            )
+        ]
+        timeout_s *= len(files)
+    else:
+        todo = [Job(path=str(f), **jobs_tpl) for f in files]
     results: list[dict[str, Any]] = []
     if len(todo) > 1:
         with Progress(
@@ -161,7 +178,13 @@ def _summary(results: list[dict[str, Any]]) -> None:
 
 @app.command()
 def pack(
-    path: Path_,
+    paths: Annotated[
+        list[Path],
+        typer.Argument(
+            exists=True,
+            help="STEP files, folders or zips of them. Several files are combined into one pack.",
+        ),
+    ],
     out: Out = Path("out"),
     context: Annotated[Path | None, typer.Option("--context", help="design_context.yaml")] = None,
     material: Annotated[
@@ -221,47 +244,80 @@ def pack(
     precision: Annotated[
         int, typer.Option(help="Decimals in report.json")
     ] = config.FLOAT_PRECISION,
+    combine: Annotated[
+        bool,
+        typer.Option(
+            "--combine",
+            help="Combine the STEP files of a folder into one pack (one pack per file otherwise).",
+        ),
+    ] = False,
     no_timestamp: Annotated[bool, typer.Option("--no-timestamp")] = False,
     verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
 ) -> None:
-    """Build a context pack for a STEP file or a folder of STEP files."""
-    files = find_step_files(path)
+    """Build a context pack for a STEP file, a folder of them, or several files combined.
+
+    Several files, or a zip, become one assembly in one pack; each file keeps its own coordinates.
+    A folder alone gives one pack per file unless --combine is given.
+    """
+    work = tempfile.TemporaryDirectory(prefix="stepscribe_in_")
+    try:
+        files, combined, folder_alone = _pack_inputs(paths, combine, Path(work.name))
+        opts = _options(
+            material,
+            density,
+            up,
+            front,
+            check_interference,
+            precision,
+            no_timestamp,
+            understanding=understanding,
+            check_motion=check_motion,
+            motion_budget_s=motion_budget_s,
+            debug_graphs=debug_graphs,
+            debug_kinematics=debug_kinematics,
+            pivot_min_diameter=pivot_min_diameter,
+            pivot_min_length_ratio=pivot_min_length_ratio,
+        )
+        tpl = {
+            "out_dir": str(out),
+            "mode": "pack",
+            "options": options_dict(opts),
+            "context_file": str(context) if context else None,
+            "budget_tokens": budget_tokens,
+            "images": not no_images,
+        }
+        results = _run(files, tpl, jobs, timeout_s, combined)
+        if folder_alone:
+            write_index(results, out)
+        _summary(results)
+        for r in results:
+            if r["pack"] and verbose or (r["pack"] and len(results) == 1):
+                console.print(f"Pack written to {r['pack']}")
+        if any(r["status"] != "ok" for r in results):
+            raise typer.Exit(1)
+    finally:
+        work.cleanup()
+
+
+def _pack_inputs(
+    paths: list[Path], combine: bool, work: Path
+) -> tuple[list[Path], str | None, bool]:
+    """The STEP files to process, the name of the combined model (None: one pack per file) and
+    whether the input was a single folder of independent files."""
+    folder_alone = len(paths) == 1 and paths[0].is_dir() and not combine
+    try:
+        files = (
+            find_step_files(paths[0]) if folder_alone else expand_inputs(paths, InputLimits(), work)
+        )
+    except InputError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(1) from exc
     if not files:
         console.print("[red]No .step/.stp files found.[/red]")
         raise typer.Exit(1)
-    opts = _options(
-        material,
-        density,
-        up,
-        front,
-        check_interference,
-        precision,
-        no_timestamp,
-        understanding=understanding,
-        check_motion=check_motion,
-        motion_budget_s=motion_budget_s,
-        debug_graphs=debug_graphs,
-        debug_kinematics=debug_kinematics,
-        pivot_min_diameter=pivot_min_diameter,
-        pivot_min_length_ratio=pivot_min_length_ratio,
-    )
-    tpl = {
-        "out_dir": str(out),
-        "mode": "pack",
-        "options": options_dict(opts),
-        "context_file": str(context) if context else None,
-        "budget_tokens": budget_tokens,
-        "images": not no_images,
-    }
-    results = _run(files, tpl, jobs, timeout_s)
-    if path.is_dir():
-        write_index(results, out)
-    _summary(results)
-    for r in results:
-        if r["pack"] and verbose or (r["pack"] and len(results) == 1):
-            console.print(f"Pack written to {r['pack']}")
-    if any(r["status"] != "ok" for r in results):
-        raise typer.Exit(1)
+    if folder_alone or len(files) == 1:
+        return files, None, folder_alone
+    return files, (paths[0].stem if len(paths) == 1 else ""), False
 
 
 @app.command()
