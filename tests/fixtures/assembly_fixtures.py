@@ -267,6 +267,11 @@ def generate_assemblies(out: Path = FIXTURE_DIR) -> dict[str, Path]:
     out_map["arm_axis_disagree"] = arm_axis_disagree(out)
     out_map["named_links_resting"] = named_links_resting(out)
     out_map["named_two_links"] = named_two_links(out)
+    from shell_fixtures import bossed_plate, freeform_housing, ribbed_housing
+
+    out_map["freeform_housing"] = freeform_housing(out)
+    out_map["bossed_plate"] = bossed_plate(out)
+    out_map["ribbed_housing"] = ribbed_housing(out)
     return out_map
 
 

@@ -39,7 +39,8 @@ def test_the_header_says_it_is_a_draft_that_needs_verification(arm) -> None:  # 
     assert text.startswith('<?xml version="1.0"?>')
     first_comment = text.split("<!--", 1)[1].split("-->", 1)[0]
     assert HEADER in first_comment
-    assert "shell" in first_comment and "not reliable" in first_comment
+    assert "outer skins" in first_comment and "not reliable" in first_comment
+    assert "vendor" not in first_comment.lower()
     assert "estimate" in first_comment
 
 

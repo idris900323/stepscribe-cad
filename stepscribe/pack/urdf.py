@@ -50,7 +50,7 @@ def _header(robot: dict[str, Any]) -> list[str]:
         "Units: metres, kilograms, radians (the source numbers are mm, g, degrees).",
         "There is no visual or collision geometry in this file.",
         "Mass and inertia are estimates from CAD volume and an assumed density, not measurements.",
-        "Vendor robot models are often hollow or simplified shells: mass taken from them is not reliable.",
+        "Models of this kind are often hollow or simplified outer skins: mass taken from them is not reliable.",
         "A revolute joint needs a lower/upper limit in URDF (they default to 0, which locks it). Where",
         "none is known the joint is written as type continuous, with no limit element, and a comment;",
         "change it to revolute and add the real limit (design_context.yaml: kinematics: joints: range).",

@@ -33,10 +33,12 @@ from stepscribe.understanding.kinematics import (
     KinContext,
     axis_label,
     axis_vector,
+    description_extras,
     hardware_kind,
     wheel_joint_ids,
 )
 from stepscribe.understanding.ml_roles import RoleModel, load_role_models, role_scores
+from stepscribe.understanding.process import is_complex_guess
 
 if TYPE_CHECKING:
     from stepscribe.api import Analysis
@@ -656,6 +658,9 @@ def design_summary(
             bits.append(
                 f"It looks {proc.label.replace('_', ' ')} (confidence {proc.confidence:.2f})"
             )
+        elif p.understanding and is_complex_guess(p.understanding.process):
+            text = p.understanding.process.ranked[0].evidence[0].text
+            bits.append(text[0].upper() + text[1:])
         return ". ".join(bits + _risk_sentence(spots)) + "."
     wheels = wheel_joint_ids(model, ctx)
     driven = {
@@ -721,6 +726,14 @@ def design_summary(
             sentences.append(
                 f"Fabricated parts are a mix, mostly {label.replace('_', ' ')} ({n} of {len(fab)})"
             )
+    complex_parts = [
+        p for p in fab if p.understanding and is_complex_guess(p.understanding.process)
+    ]
+    if complex_parts:
+        sentences.append(
+            f"No process guess for {len(complex_parts)} part{'s' if len(complex_parts) > 1 else ''} "
+            "with complex or free-form geometry (see the part notes for the numbers)"
+        )
     total = sum(int(r["qty"]) for r in asm.fastener_shopping_list)
     if total:
         sizes: dict[str, int] = defaultdict(int)
@@ -760,13 +773,17 @@ def _apply_headline(
     if ctx is None:
         return None
     up = axis_vector(ctx.asm.up_axis)
-    hl = arm_headline(model, arm_joints, up) or undetermined_headline(model, ctx.insts)
+    hl = arm_headline(
+        model, arm_joints, up, description_extras(model, ctx.soft_used)
+    ) or undetermined_headline(model, ctx.insts)
     if hl is None:
         return None
     model.headline, model.headline_confidence = hl.text, hl.confidence
     model.headline_evidence, model.statement = hl.evidence, hl.statement
     model.axis_pattern = hl.axis_pattern
-    if not model.description.startswith(hl.statement):
+    if hl.is_arm:  # the statement already says everything the plain description said
+        model.description = hl.statement
+    elif not model.description.startswith(hl.statement):
         model.description = hl.statement + " " + model.description
     return hl
 

@@ -1,6 +1,6 @@
 # How stepscribe finds links and joints in a robot file
 
-Vendor robot files (an ABB arm, for example) name their solids `<model>_<revision>_LINK3_body2`
+Robot files from manufacturers (an ABB arm, for example) name their solids `<model>_<revision>_LINK3_body2`
 and join them with large bores and flange faces rather than screws. This page describes the rules
 that read such a file, the numbers they use and how to change them. Every result is a guess
 (`Likely:`), carries a confidence and cites its evidence.
@@ -125,8 +125,9 @@ joint axes and origins, a DH-style table, and per-link mass, centre of mass and 
 volume and a density. All of it is marked as a draft needing human verification:
 
 - masses are estimates, and absent when no material is set (pass `--material`);
-- masses of simplified vendor shell models are not reliable (bodies whose volume is far below their
-  bounding box are listed);
+- masses of models that are hollow or simplified outer skins are not reliable; bodies with complex or
+  free-form geometry (section 9) are listed in the warnings;
+
 - a joint limit is written only when `range` is given in design_context.yaml; otherwise it is
   "unknown" in robot.json. In URDF a revolute joint needs a lower/upper limit (they default to 0,
   which would lock it), so a revolute joint with no known limit is written as `type="continuous"`
@@ -136,3 +137,30 @@ volume and a density. All of it is marked as a draft needing human verification:
 - lengths in the URDF are metres (a joint at z = 125.7 mm is written 0.1257), masses kilograms,
   inertia kg m^2 and angles radians;
 - there is no visual or collision geometry, and the URDF is in metres, kilograms and radians.
+
+## 9. Complex or free-form geometry: no process guess
+
+Cast housings and sculpted skins only *look* printed or moulded, and the process rules would answer
+with confidence. For such a part the process reads "unknown", with the evidence
+`no process guess: complex or free-form geometry (135 faces, 47% free-form)`: the numbers are what was
+measured. A part qualifies when it has **at least 100 faces** and **either**
+
+- it is not a closed solid (the evidence adds ", not a closed solid"), **or**
+- **15 % or more** of its faces are free-form (B-spline); the limit is inclusive.
+
+The limits are `complex_geometry` in `stepscribe/knowledge/process_rules.yaml`. A part with fewer
+than 100 faces is never affected. A thin or ribbed part made of planes and cylinders is not affected
+either, however little of its bounding box it fills: thinness alone does not qualify, and the
+real-robot data gave no support for such a trigger.
+
+What changes for such a part:
+
+- the process question skips it, and the summary and part description say there is no guess;
+- rules that need a process do not run: the minimum wall rule has a sourced floor per process and
+  there is none to apply, so no wall finding is made;
+- measured facts are still reported. Edge distance (and the web beside a cut-out) is checked with the
+  generic guideline used whenever the process is unknown (1.5 x the hole diameter), and the finding
+  says so: "the generic guideline (process unknown) is 1.5 x diameter = 4.5 mm", with the assumption
+  "process unknown: the generic guideline (metal factor) is used";
+- a process the designer gives in design_context.yaml (`parts: <name>: process: ...`) always wins;
+- `robot.json` lists these bodies in its mass warning, using the same rule.

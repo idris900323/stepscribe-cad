@@ -65,7 +65,10 @@ def test_masses_are_labelled_estimates_and_add_up(arm) -> None:  # type: ignore[
     assert total == pytest.approx(sum(p.mass.mass_g for p in arm.parts), rel=1e-9)
     assert all(link["mass_is_estimate"] for link in r["links"])
     assert any("estimate" in w and "density" in w for w in r["warnings"])
-    assert any("hollow" in w or "shell" in w for w in r["warnings"])
+    assert any(
+        "hollow or simplified outer skins" in w and "not reliable" in w for w in r["warnings"]
+    )
+    assert not any("vendor" in w.lower() for w in r["warnings"])
 
 
 def test_link_inertia_matches_the_box_formula(arm) -> None:  # type: ignore[no-untyped-def]

@@ -1337,6 +1337,14 @@ def describe_kinematics(
     ground = next((g for g in model.links if g.is_ground), None)
     if ground:
         bits.append(f"ground link {ground.id} ({ground.description})")
+    bits += description_extras(model, soft_used)
+    del by_id
+    return "; ".join(bits)
+
+
+def description_extras(model: KinematicModel, soft_used: list[Conn]) -> list[str]:
+    """Parts of the description about links that float or hang on a planar rest (often none)."""
+    bits: list[str] = []
     if model.floating_groups:
         bits.append(f"floating (not connected to ground): {', '.join(model.floating_groups)}")
     if soft_used:
@@ -1344,8 +1352,7 @@ def describe_kinematics(
             "attached only by a planar rest (no fasteners): "
             + ", ".join(f"{c.a}-{c.b}" for c in soft_used)
         )
-    del by_id
-    return "; ".join(bits)
+    return bits
 
 
 def mermaid(model: KinematicModel) -> str:

@@ -123,7 +123,9 @@ def is_serial(joints: list[KinJoint], ground: str) -> bool:
     return all(joints[i].child_link == joints[i + 1].parent_link for i in range(len(joints) - 1))
 
 
-def arm_headline(model: KinematicModel, arm_joints: list[KinJoint], up: Vec) -> Headline | None:
+def arm_headline(
+    model: KinematicModel, arm_joints: list[KinJoint], up: Vec, extras: list[str] | None = None
+) -> Headline | None:
     """The headline for a serial chain of revolute joints from the ground link, else None."""
     if len(arm_joints) < 2 or any(j.kind != "revolute" for j in arm_joints):
         return None
@@ -166,10 +168,14 @@ def arm_headline(model: KinematicModel, arm_joints: list[KinJoint], up: Vec) -> 
         conf -= float(cfg["per_mismatch"]) * misses
     conf = max(float(cfg["min_confidence"]), min(float(cfg["max_confidence"]), conf))
     text = f"Likely: {n}-axis serial arm (confidence {conf:.2f}; evidence {', '.join(evidence)})"
+    ground_link = next(g for g in model.links if g.id == ground)
     chain = (
-        f"{len(order)} links, {n} revolute joints; serial order confirmed: "
+        f"{len(order)} links and {n} revolute joints ({model.dof} degrees of freedom) in a serial "
+        f"chain from ground link {ground} ({ground_link.description}); serial order confirmed: "
         + " -> ".join(order)
-        + " (each joint's child link is the next joint's parent)."
+        + ", each joint's child link being the next joint's parent"
+        + "".join(f"; {x}" for x in extras or [])
+        + "."
     )
     if capped:
         pattern += (

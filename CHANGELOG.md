@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Robot files from vendors (an ABB arm, for example): links, joints and a robot description.
+Robot files from manufacturers (an ABB arm, for example): links, joints and a robot description.
 
 - **Names.** An instance labelled only with an assembly-tree occurrence id (`NAUO4`) now takes the product name (`LINK3`).
 - **Links from names.** `BASE`, `LINK<n>` and `AXIS<n>` are found anywhere in a part name, with any prefix and a `_body<k>` suffix. With three or more numbered groups in a chain, bodies of one group are one link and different groups are never merged because they rest on each other.
@@ -14,6 +14,7 @@ Robot files from vendors (an ABB arm, for example): links, joints and a robot de
 - **Interview.** For a robot the base link, the axis of flange-only joints, the sign of positive motion and the ranges come first. Answers are also written to the `kinematics:` section, and undo removes them.
 - **Joint origins** lie on their axis (common perpendicular from the previous axis); the raw point is kept as `evidence_point_mm`.
 - **`robot.urdf`** next to `robot.json`: a draft in SI units with no invented limits or masses.
+- **Complex or free-form geometry.** A part with at least 100 faces that is not a closed solid, or has 15 % or more free-form faces, gets no process guess instead of a confident "3D printed" or "injection moulded"; its measured edge distances are still reported against the generic guideline, labelled as such. See `docs/kinematics.md`.
 - Report schema 0.6.0 (new optional fields).
 
 ## 0.1.4

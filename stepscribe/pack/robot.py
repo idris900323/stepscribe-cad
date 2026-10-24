@@ -17,10 +17,10 @@ from typing import Any
 import numpy as np
 
 from stepscribe.models.schema import AxisLabel, KinJoint, Part, Report
+from stepscribe.understanding.process import complex_geometry_reason
 
 FORMAT = "stepscribe-robot"
 FORMAT_VERSION = "0.1"
-LOW_FILL = 0.1  # volume / bounding-box volume below this looks like a shell, not a solid body
 PARALLEL = 1e-6
 
 
@@ -164,10 +164,9 @@ def _limits(j: KinJoint) -> dict[str, Any]:
     return {"lower": None, "upper": None, "unit": unit, "source": "unknown"}
 
 
-def _shell_like(part: Part) -> bool:
-    box = part.bbox
-    vol = (box.max.x - box.min.x) * (box.max.y - box.min.y) * (box.max.z - box.min.z)
-    return (not part.is_valid_solid) or (vol > 0 and part.mass.volume_mm3 / vol < LOW_FILL)
+def _complex_geometry(part: Part) -> bool:
+    """The rule that also withholds a process guess (process_rules.yaml, complex_geometry)."""
+    return complex_geometry_reason(part) is not None
 
 
 def build_robot(report: Report) -> dict[str, Any] | None:
@@ -185,7 +184,7 @@ def build_robot(report: Report) -> dict[str, Any] | None:
     inst_part = {i.id: i.part_id for i in asm.instances}
 
     links: list[dict[str, Any]] = []
-    shells: list[str] = []
+    complex_bodies: list[str] = []
     for g in kin.links:
         row: dict[str, Any] = {
             "id": g.id,
@@ -196,11 +195,15 @@ def build_robot(report: Report) -> dict[str, Any] | None:
         row.update(_link_mass(report, g.instance_ids))
         row["mass_is_estimate"] = True
         low = sorted(
-            {parts[inst_part[i]].name for i in g.instance_ids if _shell_like(parts[inst_part[i]])}
+            {
+                parts[inst_part[i]].name
+                for i in g.instance_ids
+                if _complex_geometry(parts[inst_part[i]])
+            }
         )
         if low:
-            row["mass_reliability"] = "low: some bodies look like hollow shells"
-            shells += low
+            row["mass_reliability"] = "low: some bodies have complex or free-form geometry"
+            complex_bodies += low
         links.append(row)
 
     origins, dh_rows = joint_frames(movers, base, _up(asm.up_axis))
@@ -236,7 +239,7 @@ def build_robot(report: Report) -> dict[str, Any] | None:
     )
     warnings = [
         "Masses and inertias are estimates from CAD volume and an assumed density, not measured.",
-        "Vendor robot models are often hollow or simplified shells: link masses and inertias "
+        "Models of this kind are often hollow or simplified outer skins: link masses and inertias "
         "taken from them are not reliable. Check them against the datasheet before use.",
     ]
     if any(link["mass_g"] is None for link in links):
@@ -245,10 +248,10 @@ def build_robot(report: Report) -> dict[str, Any] | None:
             "No material is set, so link masses, centres of mass and inertias are unknown: pass "
             "--material or set `material:` in design_context.yaml.",
         )
-    if shells:
+    if complex_bodies:
         warnings.append(
-            "These bodies look like hollow shells (volume far below their bounding box): "
-            + ", ".join(sorted(set(shells)))
+            "These bodies have complex or free-form geometry, so their volume may not be that of a real "
+            "solid and their mass is doubtful: " + ", ".join(sorted(set(complex_bodies)))
         )
     single = [j["id"] for j in joints if not j["declared_by_designer"] and j["confidence"] < 0.6]
     if single:

@@ -17,6 +17,7 @@ from typing import Any
 from stepscribe import config
 from stepscribe.models.schema import AnswerOption, Question, Report
 from stepscribe.understanding.arm_check import is_robot
+from stepscribe.understanding.process import is_complex_guess
 
 MAX_QUESTIONS = 10
 GLOBAL_KINDS = ("purpose", "material", "process", "payload")
@@ -140,6 +141,7 @@ def generate_questions(
         for p in fab
         if p.understanding
         and p.understanding.process.source != "user"
+        and not is_complex_guess(p.understanding.process)  # nothing to confirm: no guess was made
         and p.understanding.process.ranked[0].confidence < 0.7
     ]
     if weak:

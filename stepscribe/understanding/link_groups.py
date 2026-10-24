@@ -2,7 +2,7 @@
 # Copyright (C) 2026 idris sadiq
 """Link groups from part names: BASE, LINK<n>, AXIS<n>, with any prefix and a _body<k> suffix.
 
-Robot files from vendors name their solids ``<model>_<rev>_LINK3_body2``. When at least three
+Robot files from manufacturers name their solids ``<model>_<rev>_LINK3_body2``. When at least three
 distinct numbered groups exist and they touch in order, the names are a stronger signal than
 contact geometry, so same-group bodies are one link and different groups are never merged just
 because they rest on each other.

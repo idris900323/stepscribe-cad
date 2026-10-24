@@ -3,6 +3,7 @@ reads the same in 01_overview.md, 05_understanding.md and context_pack.md."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -28,16 +29,24 @@ def test_a_six_axis_arm_is_headlined_with_confidence_and_evidence(analyses) -> N
     assert u.summary.startswith(k.headline)
 
 
-def test_the_chain_facts_and_the_pattern_check_are_stated_in_words(analyses) -> None:  # type: ignore[no-untyped-def]
+def test_the_chain_facts_are_one_sentence(analyses) -> None:  # type: ignore[no-untyped-def]
     k = kin(analyses, "arm_6_axis").kinematics
-    assert "7 links, 6 revolute joints" in k.statement
-    assert (
-        "serial order confirmed" in k.statement
-        and "L0 -> L1 -> L2 -> L3 -> L4 -> L5 -> L6" in k.statement
-    )
+    sentences = [x for x in re.split(r"(?<=[.])\s+(?=[A-Z])", k.statement) if x]
+    chain = [x for x in sentences if "serial order confirmed" in x]
+    assert len(chain) == 1, sentences  # one sentence, not two that say the same
+    only = chain[0]
+    assert "7 links and 6 revolute joints" in only and "6 degrees of freedom" in only
+    assert "ground link L0" in only and "L0 -> L1 -> L2 -> L3 -> L4 -> L5 -> L6" in only
+    # the old second sentence is gone
+    assert "rigid link(s)" not in k.statement and "topology serial chain" not in k.statement
+    assert k.statement.count("ground link") == 1 and k.statement.count("serial order") == 1
+
+
+def test_the_pattern_check_is_stated_in_words(analyses) -> None:  # type: ignore[no-untyped-def]
+    k = kin(analyses, "arm_6_axis").kinematics
     assert len(k.axis_pattern) == 6 and all(line.startswith("OK:") for line in k.axis_pattern)
     assert "matches the usual 6-axis arm layout" in k.statement
-    assert k.description.startswith(k.statement)
+    assert k.description == k.statement  # the whole Kinematics text is the one statement
 
 
 def write(tmp_path: Path, text: str) -> dict:  # type: ignore[type-arg]
