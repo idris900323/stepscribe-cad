@@ -15,16 +15,17 @@ def _u(analyses, name):  # type: ignore[no-untyped-def]
 
 def test_the_rule_is_a_share_threshold_not_a_top_n_cap(analyses) -> None:  # type: ignore[no-untyped-def]
     """Every non-ground part at or above the share has a path; none is dropped by a count."""
-    _r, u = _u(analyses, "arm_6_axis")
+    _r, u = _u(analyses, "plates_with_clip_assembly")
     traced = {lp.load_source for lp in u.load_paths}
     assert traced, "the arm fixture has heavy links"
+    assert "Not traced:" in u.load_path_note
     note = u.load_path_note
     assert re.search(r"at least \d+(\.\d+)?%", note), note
     assert "heaviest" not in note and "top" not in note.lower()
 
 
 def test_the_note_names_every_part_without_a_path(analyses) -> None:  # type: ignore[no-untyped-def]
-    report, u = _u(analyses, "arm_6_axis")
+    report, u = _u(analyses, "plates_with_clip_assembly")
     assert report.assembly is not None
     traced = {lp.load_source for lp in u.load_paths}
     on_a_path = {i for lp in u.load_paths for i in lp.path}
@@ -39,7 +40,7 @@ def test_the_note_names_every_part_without_a_path(analyses) -> None:  # type: ig
 
 
 def test_a_traced_part_is_not_listed_as_left_out(analyses) -> None:  # type: ignore[no-untyped-def]
-    report, u = _u(analyses, "arm_6_axis")
+    report, u = _u(analyses, "plates_with_clip_assembly")
     assert report.assembly is not None
     names = {p.id: p.name for p in report.parts}
     by_id = {i.id: names[i.part_id] for i in report.assembly.instances}
@@ -49,13 +50,20 @@ def test_a_traced_part_is_not_listed_as_left_out(analyses) -> None:  # type: ign
 
 
 def test_the_markdown_prints_the_note_under_load_paths(analyses) -> None:  # type: ignore[no-untyped-def]
-    report, u = _u(analyses, "arm_6_axis")
+    report, u = _u(analyses, "plates_with_clip_assembly")
     text = understanding_markdown(report)
     section = text.split("## Load paths", 1)[1].split("## Weak spots", 1)[0]
     assert u.load_path_note and u.load_path_note in section
 
 
-def test_no_note_without_load_paths(analyses) -> None:  # type: ignore[no-untyped-def]
-    _r, u = _u(analyses, "two_plates_assembly")
-    if not u.load_paths:
-        assert u.load_path_note == ""
+def test_the_note_lists_names_and_shares_when_parts_are_omitted(analyses) -> None:  # type: ignore[no-untyped-def]
+    _r, u = _u(analyses, "plates_with_clip_assembly")
+    left = u.load_path_note.split("Not traced:", 1)[1]
+    assert re.findall(r"\(\d+(\.\d+)?%\)", left), left
+
+
+def test_no_note_when_nothing_is_omitted(analyses) -> None:  # type: ignore[no-untyped-def]
+    report, u = _u(analyses, "two_plates_assembly")
+    assert u.load_paths and u.load_path_note == ""
+    assert "Paths are traced from" not in understanding_markdown(report)
+    assert "load_path_note" not in u.model_dump(mode="json")

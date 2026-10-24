@@ -228,11 +228,13 @@ def _scope_note(
         for i in ctx.insts
         if i.id not in covered and total
     ]
+    if not left:
+        return ""  # every part is on a path or a source: nothing to explain
     text = (
         f"Paths are traced from every part with at least {fmt(100 * frac, 0)}% of the total {basis}, "
         "and from every motor"
     )
-    return text + (f". Not traced: {', '.join(left)}." if left else ".")
+    return f"{text}. Not traced: {', '.join(left)}."
 
 
 def _edge_word(e: Edge) -> str:

@@ -83,6 +83,21 @@ def two_plates_assembly(out: Path = FIXTURE_DIR) -> Path:
     return write_assembly(out / "two_plates_assembly.step", {"Plate": _plate()}, root)
 
 
+def plates_with_clip_assembly(out: Path = FIXTURE_DIR) -> Path:
+    """The two plates with a 6 x 6 x 3 clip resting on the top plate: far under 5 % of the volume."""
+    root = Node(
+        "PlatesAndClip",
+        children=[
+            Node("BasePlate", "Plate", Location()),
+            Node("TopPlate", "Plate", Location((0, 0, 5))),
+            Node("Clip", "Clip", Location((0, 0, 11.5))),
+        ],
+    )
+    return write_assembly(
+        out / "plates_with_clip_assembly.step", {"Plate": _plate(), "Clip": Box(6, 6, 3)}, root
+    )
+
+
 def tapped_assembly(out: Path = FIXTURE_DIR) -> Path:
     """Clearance plate (Ø3.4 x4, 5 thick) on a block with four blind Ø2.5 x 8 tapped holes."""
     block = Box(60, 60, 12)
@@ -256,6 +271,7 @@ def generate_assemblies(out: Path = FIXTURE_DIR) -> dict[str, Path]:
     """Write all assembly fixtures; returns name -> path."""
     builders = (
         two_plates_assembly,
+        plates_with_clip_assembly,
         tapped_assembly,
         blind_clearance_assembly,
         blind_thin_stack_assembly,
