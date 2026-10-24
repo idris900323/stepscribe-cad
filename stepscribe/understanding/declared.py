@@ -8,7 +8,7 @@
         - between: [LINK1, LINK2]     # the two links the joint connects
           type: revolute              # revolute | prismatic | cylindrical
           axis: "+Y"                  # +X..-Z or [x, y, z] in the file's frame
-          origin: [150, 0, 486.5]     # optional, mm; a point on the axis
+          origin: [150, 0, 480]       # optional, mm; a point on the axis
           range: [-90, 110]           # degrees (revolute) or mm (prismatic)
           positive: cw                # ccw | cw for revolute, "+" | "-" for prismatic
 

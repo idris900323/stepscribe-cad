@@ -1,6 +1,6 @@
 # How stepscribe finds links and joints in a robot file
 
-Robot files from manufacturers (an ABB arm, for example) name their solids `<model>_<revision>_LINK3_body2`
+Robot files from manufacturers (a six-axis industrial arm, for example) name their solids `<model>_<revision>_LINK3_body2`
 and join them with large bores and flange faces rather than screws. This page describes the rules
 that read such a file, the numbers they use and how to change them. Every result is a guess
 (`Likely:`), carries a confidence and cites its evidence.
@@ -8,7 +8,7 @@ that read such a file, the numbers they use and how to change them. Every result
 ## 1. Links from names
 
 A name is searched, case-insensitively and anywhere in it, for `LINK<n>` or `AXIS<n>` (a number),
-and otherwise for `BASE`. A prefix such as `IRB1660ID_4-155_IRC5_rev0_` and a suffix such as
+and otherwise for `BASE`. A prefix such as `MODEL12_rev0_` and a suffix such as
 `_body2` or `_NB` do not matter. Instance labels that are only assembly-tree occurrence ids
 (`NAUO4`) are replaced by the product name before this step.
 
@@ -83,7 +83,7 @@ kinematics:
     - between: [LINK1, LINK2] # the two links the joint connects
       type: revolute          # revolute | prismatic | cylindrical
       axis: "+Y"              # +X..-Z or [x, y, z] in the file's frame
-      origin: [150, 0, 486.5] # optional, mm; any point on the axis
+      origin: [150, 0, 480] # optional, mm; any point on the axis
       range: [-90, 110]       # degrees (revolute) or mm (prismatic)
       positive: cw            # ccw | cw (revolute), "+" | "-" (prismatic)
 ```
@@ -134,7 +134,7 @@ volume and a density. All of it is marked as a draft needing human verification:
   with the comment "limits unknown; change to revolute and add a limit"; one with a designer range
   stays `revolute` with lower, upper, effort 0 and velocity 0 (effort and velocity are not known).
   A prismatic joint has no unlimited form in URDF, so it stays prismatic with a comment;
-- lengths in the URDF are metres (a joint at z = 125.7 mm is written 0.1257), masses kilograms,
+- lengths in the URDF are metres (a joint at z = 120 mm is written 0.12), masses kilograms,
   inertia kg m^2 and angles radians;
 - there is no visual or collision geometry, and the URDF is in metres, kilograms and radians.
 

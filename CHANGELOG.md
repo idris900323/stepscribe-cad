@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Robot files from manufacturers (an ABB arm, for example): links, joints and a robot description.
+Robot files from manufacturers (a six-axis industrial arm, for example): links, joints and a robot description.
 
 - **Names.** An instance labelled only with an assembly-tree occurrence id (`NAUO4`) now takes the product name (`LINK3`).
 - **Links from names.** `BASE`, `LINK<n>` and `AXIS<n>` are found anywhere in a part name, with any prefix and a `_body<k>` suffix. With three or more numbered groups in a chain, bodies of one group are one link and different groups are never merged because they rest on each other.

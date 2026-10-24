@@ -67,10 +67,10 @@ def test_any_joint_turns_its_descendants_about_its_own_axis(arm) -> None:  # typ
                 assert np.allclose(turned[link], zero[link]), (spec["id"], link)
 
 
-def test_an_irb_style_joint_one_is_in_metres() -> None:
-    """Joint 1 at z = 125.7 mm in robot.json is z = 0.1257 m in the URDF."""
+def test_a_joint_one_in_millimetres_is_in_metres() -> None:
+    """Joint 1 at z = 120.0 mm in robot.json is z = 0.12 m in the URDF."""
     robot = {
-        "source": "irb_style",
+        "source": "millimetre_scale",
         "base_link": "L0",
         "warnings": [],
         "dh_style": {"rows": []},
@@ -85,8 +85,8 @@ def test_an_irb_style_joint_one_is_in_metres() -> None:
                 "parent": "L0",
                 "child": "L1",
                 "axis": [0.0, 0.0, 1.0],
-                "origin_mm": [0.0, 0.0, 125.7],
-                "origin_in_parent_mm": [0.0, 0.0, 125.7],
+                "origin_mm": [0.0, 0.0, 120.0],
+                "origin_in_parent_mm": [0.0, 0.0, 120.0],
                 "limits": {"lower": None, "upper": None, "unit": "deg", "source": "unknown"},
                 "positive_direction": None,
                 "confidence": 0.55,
@@ -94,8 +94,8 @@ def test_an_irb_style_joint_one_is_in_metres() -> None:
         ],
     }
     text = build_urdf(robot)
-    assert '<origin xyz="0 0 0.1257" rpy="0 0 0"/>' in text
+    assert '<origin xyz="0 0 0.12" rpy="0 0 0"/>' in text
     (j,) = parse_joints(text)
     assert j.xyz[2] * 1000.0 == pytest.approx(robot["joints"][0]["origin_mm"][2])
     frames = world_frames([j], "L0", {j.name: math.pi / 2})
-    assert frames["L1"][:3, 3] == pytest.approx([0.0, 0.0, 0.1257])
+    assert frames["L1"][:3, 3] == pytest.approx([0.0, 0.0, 0.12])

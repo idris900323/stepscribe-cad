@@ -49,7 +49,7 @@ def arm_6_axis(
     link1, link2 = _bore(link1, "Y", (-26, 0, 40)), _bore(link2, "Y", (-26, 0, 40))
     link2, link3 = _bore(link2, "Y", (26, 0, 40)), _bore(link3, "Y", (26, 0, 40))
     # joint 4 about X (LINK3 | LINK4); joint 5 about Y (LINK4 | LINK5) has only a short Ø30 recess in
-    # each face (20 mm in all, shorter than its diameter), like the real ABB wrist; joint 6 about X
+    # each face (20 mm in all, shorter than its diameter), like a typical industrial wrist; joint 6 about X
     link3, link4 = _bore(link3, "X", (0, 160, 60)), _bore(link4, "X", (0, 160, 60))
     link4, link5 = _bore(link4, "Y", (90, 195, 20), 10.0), _bore(link5, "Y", (90, 205, 20), 10.0)
     link5, link6 = _bore(link5, "X", (0, 240, 60)), _bore(link6, "X", (0, 240, 60))
