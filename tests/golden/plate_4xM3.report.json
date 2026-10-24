@@ -1,6 +1,6 @@
 {
   "meta": {
-    "schema_version": "0.5.0",
+    "schema_version": "0.6.0",
     "tool_version": "0.1.4",
     "generated_at": null,
     "source_files": [
@@ -884,7 +884,7 @@
     ],
     "conflicts": [],
     "answers": [],
-    "summary": "Likely a single plate (60.0 x 60.0 x 5.0 mm), 4 hole(s), probably a base plate. It looks laser or waterjet (confidence 0.64)."
+    "summary": "Likely: a single plate (confidence 0.90; evidence PRT001), 60.0 x 60.0 x 5.0 mm, 4 hole(s). It looks laser or waterjet (confidence 0.64)."
   },
   "warnings": [],
   "errors": []

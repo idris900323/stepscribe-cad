@@ -233,6 +233,25 @@ def write_pack_build(
         from stepscribe.understanding.describe import understanding_markdown
 
         put("05_understanding.md", understanding_markdown(report))
+    if (
+        report.meta.options.get("debug_kinematics")
+        and report.understanding is not None
+        and report.understanding.kinematics_debug is not None
+    ):
+        from stepscribe.understanding.kin_debug import debug_markdown
+
+        (folder / "data").mkdir(parents=True, exist_ok=True)
+        put("data/kinematics_debug.md", debug_markdown(report.understanding.kinematics_debug))
+    from stepscribe.pack.robot import robot_json
+
+    robot = robot_json(report)
+    if robot is not None:
+        put("robot.json", robot)
+        from stepscribe.pack.urdf import urdf_text
+
+        urdf = urdf_text(report)
+        if urdf is not None:
+            put("robot.urdf", urdf)
     if report.meta.options.get("debug_graphs"):
         import json
 

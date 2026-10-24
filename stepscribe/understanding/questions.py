@@ -16,6 +16,8 @@ from typing import Any
 
 from stepscribe import config
 from stepscribe.models.schema import AnswerOption, Question, Report
+from stepscribe.understanding.arm_check import is_robot
+from stepscribe.understanding.process import is_complex_guess
 
 MAX_QUESTIONS = 10
 GLOBAL_KINDS = ("purpose", "material", "process", "payload")
@@ -139,6 +141,7 @@ def generate_questions(
         for p in fab
         if p.understanding
         and p.understanding.process.source != "user"
+        and not is_complex_guess(p.understanding.process)  # nothing to confirm: no guess was made
         and p.understanding.process.ranked[0].confidence < 0.7
     ]
     if weak:
@@ -173,6 +176,22 @@ def generate_questions(
             3.0,
             1.0,
         )
+    if len(u.kinematics.joints) >= 2 and not (ctx.get("kinematics") or {}).get("base"):
+        ground = next((g for g in u.kinematics.links if g.is_ground), None)
+        if ground is not None and not any(e.code == "designer" for e in ground.ground_evidence):
+            add(
+                _q(
+                    "kin_base",
+                    "Which link is the fixed base of the mechanism?",
+                    "The base decides which way every joint is read (parent and child) and what the chain is.",
+                    "single_choice",
+                    options=[(g.id, f"{g.id}: {g.description}") for g in u.kinematics.links],
+                    guess=ground.id,
+                    applies=["summary"],
+                ),
+                3.0,
+                0.5,
+            )
     # ---- per-part and per-joint questions
     gap = 0.1
     for p in fab:
@@ -198,7 +217,11 @@ def generate_questions(
             )
     if asm is not None:
         for rel in asm.relations:
-            if rel.predicate == "rests_on" and not _fastened(report, rel.subject, rel.object):
+            if (
+                rel.predicate == "rests_on"
+                and not _fastened(report, rel.subject, rel.object)
+                and not _jointed(report, rel.subject, rel.object)
+            ):
                 add(
                     _q(
                         "connection_type",
@@ -283,7 +306,19 @@ def generate_questions(
                     1.5,
                     1.0,
                 )
-            if j.range_deg_or_mm is None and j.kind in ("revolute", "prismatic"):
+            if (
+                j.positive_direction is None
+                and j.kind in ("revolute", "prismatic")
+                and not is_robot(u.kinematics)  # a robot gets one question below
+            ):
+                add(_direction_question(j), 0.8, 1.0)
+            if _flange_only(j) and not j.declared_by_designer:
+                add(_axis_question(j), 2.0, 0.6)
+            if (
+                j.range_deg_or_mm is None
+                and j.kind in ("revolute", "prismatic")
+                and not is_robot(u.kinematics)  # a robot gets one question below
+            ):
                 add(
                     _q(
                         "joint_range",
@@ -296,6 +331,52 @@ def generate_questions(
                     1.0,
                     1.0,
                 )
+    if is_robot(u.kinematics):
+        unsigned = [
+            j
+            for j in u.kinematics.joints
+            if j.kind in ("revolute", "prismatic") and j.positive_direction is None
+        ]
+        if unsigned:
+            add(
+                _q(
+                    "joint_directions",
+                    "Which way is positive motion of each joint? Positive rotation is "
+                    "counter-clockwise looking along the axis arrow toward its origin "
+                    "(right-hand rule). Answer one line per joint: 'KJ1: ccw' if that matches, "
+                    "'KJ1: cw' if the joint turns the other way (the axis is then reversed); for a "
+                    "slide '+' (along the arrow) or '-' (against it). Axis arrows: "
+                    + "; ".join(f"{j.id} axis arrow {_arrow(j)}" for j in unsigned)
+                    + ".",
+                    "A robot model needs the sign convention of each joint to match the controller.",
+                    "text",
+                    refs=[j.id for j in unsigned],
+                    applies=["summary"],
+                ),
+                1.0,
+                1.0,
+            )
+        missing = [
+            j
+            for j in u.kinematics.joints
+            if j.kind in ("revolute", "prismatic") and j.range_source != "designer"
+        ]
+        if missing:
+            listing = "; ".join(f"{j.id} about {_axis_name(j)}" for j in missing)
+            add(
+                _q(
+                    "joint_ranges",
+                    "What is the allowed range of each joint? One line per joint, for example "
+                    "'KJ1: -170 to 170' (degrees; mm for a slide). Joints: " + listing + ".",
+                    "The ranges tell which poses to check for collisions and set the joint limits "
+                    "in robot.urdf; none are invented.",
+                    "text",
+                    refs=[j.id for j in missing],
+                    applies=["weak_spots"],
+                ),
+                1.0,
+                1.0,
+            )
     add(
         _q(
             "load",
@@ -318,22 +399,119 @@ def generate_questions(
         0.8,
         1.0,
     )
-    return _rank(scored, answers, limit)
+    return _rank(scored, answers, limit, _robot_boost(u, [q for _s, q in scored]))
 
 
 def _fastened(report: Report, a: str, b: str) -> bool:
     asm = report.assembly
     if asm is None:
         return False
-    return any(a in j.instance_ids and b in j.instance_ids for j in asm.fastener_joints)
+    return any(a in j.instance_ids and b in j.instance_ids for j in asm.fasteners)
+
+
+def _jointed(report: Report, a: str, b: str) -> bool:
+    """True when the two instances meet at a designed joint: a pivot stack, or a kinematic joint
+    between their links. Asking whether fasteners are missing there would be the wrong question."""
+    asm, u = report.assembly, report.understanding
+    if asm is not None and any(a in j.instance_ids and b in j.instance_ids for j in asm.pivots):
+        return True
+    if u is None:
+        return False
+    link_of = {i: g.id for g in u.kinematics.links for i in g.instance_ids}
+    la, lb = link_of.get(a), link_of.get(b)
+    if la is None or lb is None or la == lb:
+        return False
+    return any({j.parent_link, j.child_link} == {la, lb} for j in u.kinematics.joints)
+
+
+def _arrow(j) -> str:  # type: ignore[no-untyped-def]
+    d = j.axis.direction
+    parts = [f"{round(v, 2) + 0.0:g}" for v in (d.x, d.y, d.z)]
+    return "(" + ", ".join(parts) + ")"
+
+
+def _axis_name(j) -> str:  # type: ignore[no-untyped-def]
+    d = j.axis.direction
+    k = max(range(3), key=lambda i: abs((d.x, d.y, d.z)[i]))
+    return "XYZ"[k]
+
+
+def _flange_only(j) -> bool:  # type: ignore[no-untyped-def]
+    """A revolute joint whose axis rests on a flange normal alone (no pivot bore confirms it)."""
+    codes = {e.code for e in j.evidence}
+    return (
+        j.kind == "revolute"
+        and bool(codes & {"flange", "flange_disagree"})
+        and "pivot_bore" not in codes
+    )
+
+
+def _direction_question(j) -> Question:  # type: ignore[no-untyped-def]
+    if j.kind == "prismatic":
+        options = [("+", "along the axis"), ("-", "against the axis")]
+        text = f"Which way is positive motion of {j.id}?"
+    else:
+        options = [
+            ("ccw", "counter-clockwise looking from the axis tip toward the joint"),
+            ("cw", "clockwise looking from the axis tip toward the joint"),
+        ]
+        text = f"Which way is positive rotation of {j.id}?"
+    return _q(
+        "joint_direction",
+        text,
+        "A robot model needs the sign convention of each joint to match the controller.",
+        "single_choice",
+        refs=[j.id],
+        options=options,
+        applies=["summary"],
+    )
+
+
+def _axis_question(j) -> Question:  # type: ignore[no-untyped-def]
+    d = j.axis.direction
+    k = max(range(3), key=lambda i: abs((d.x, d.y, d.z)[i]))
+    here = "XYZ"[k]
+    return _q(
+        "joint_axis",
+        f"Does {j.id} ({j.parent_link} to {j.child_link}) turn about the {here} axis?",
+        "Only the face where the two links meet suggests this axis; no bore confirms it.",
+        "single_choice",
+        refs=[j.id],
+        options=[("yes", f"yes, about {here}")]
+        + [(a, f"no, about {a}") for a in "XYZ" if a != here],
+        guess="yes",
+        applies=["summary"],
+    )
 
 
 def _is_input(u, joint_id: str) -> bool:  # type: ignore[no-untyped-def]
     return any(m.parameters.get("input_joint") == joint_id for m in u.kinematics.mechanisms)
 
 
+ROBOT_ORDER = ("kin_base", "joint_axis", "joint_directions", "joint_ranges")
+ROBOT_BOOST = (
+    5000.0  # above the global questions (1000): a robot is asked about its kinematics first
+)
+
+
+def _robot_boost(u, questions: list[Question]) -> dict[str, float]:  # type: ignore[no-untyped-def]
+    """Rank boosts for a detected robot: base, then flange-only axes, signs, ranges, joint by joint."""
+    if not is_robot(u.kinematics):
+        return {}
+    index = {j.id: i for i, j in enumerate(u.kinematics.joints)}
+    out: dict[str, float] = {}
+    for q in questions:
+        if q.kind in ROBOT_ORDER:
+            tier = len(ROBOT_ORDER) - ROBOT_ORDER.index(q.kind)
+            out[q.id] = ROBOT_BOOST + 100.0 * tier - 0.5 * index.get(q.refs[0] if q.refs else "", 0)
+    return out
+
+
 def _rank(
-    scored: list[tuple[float, Question]], answers: dict[str, dict[str, Any]], limit: int | None
+    scored: list[tuple[float, Question]],
+    answers: dict[str, dict[str, Any]],
+    limit: int | None,
+    robot: dict[str, float] | None = None,
 ) -> list[Question]:
     """Rank by value; with ``limit=None`` every question is returned, answered ones included."""
     out: list[tuple[float, Question]] = []
@@ -349,6 +527,8 @@ def _rank(
             s *= 0.1  # a lower priority, permanently
         unsure = bool(a and a.get("status") == "not_sure")
         boost = 1000.0 if q.kind in GLOBAL_KINDS and not unsure else 0.0
+        if not unsure and robot and q.id in robot:
+            boost = robot[q.id] - s  # the robot order replaces the value score entirely
         out.append((s + boost, q))
     out.sort(key=lambda t: (-t[0], t[1].id))
     ranked = [q for _s, q in (out if limit is None else out[:limit])]

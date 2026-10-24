@@ -519,8 +519,8 @@ def diff(path_a: str, path_b: str) -> str:
     for name in sorted(qa.keys() & qb.keys()):
         if qa[name] != qb[name]:
             lines.append(f"- Quantity of {name} changed from {qa[name]} to {qb[name]}.")
-    ja = len(ra.assembly.fastener_joints) if ra.assembly else 0
-    jb = len(rb.assembly.fastener_joints) if rb.assembly else 0
+    ja = len(ra.assembly.fasteners) if ra.assembly else 0
+    jb = len(rb.assembly.fasteners) if rb.assembly else 0
     if ja != jb:
         lines.append(f"- Fastener joints changed from {ja} to {jb}.")
     return "\n".join(lines) or "No differences found in parts, quantities or joints."

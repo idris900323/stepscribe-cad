@@ -9,6 +9,7 @@ from collections import Counter
 
 from stepscribe.describe.phrases import fmt
 from stepscribe.models.schema import Part, Report, Understanding, WeakSpot
+from stepscribe.understanding.process import is_complex_guess
 
 MAX_CORE_SPOTS = 8
 MAX_CORE_QUESTIONS = 5
@@ -31,6 +32,12 @@ def understanding_sentences(part: Part) -> list[str]:
     if u.roles and u.roles[0].label != "unknown" and u.roles[0].confidence >= 0.3:
         r = u.roles[0]
         out.append(f"Likely: {_role_text(r.label)} ({r.confidence:.2f}).")
+    if is_complex_guess(u.process):
+        out.append(
+            u.process.ranked[0].evidence[0].text[0].upper()
+            + u.process.ranked[0].evidence[0].text[1:]
+            + "."
+        )
     if u.process.ranked and u.process.ranked[0].label != "unknown":
         p = u.process.ranked[0]
         src = "given by the designer" if u.process.source == "user" else f"{p.confidence:.2f}"
@@ -119,6 +126,14 @@ def understanding_core(report: Report) -> str:
         lines += [f"{q.priority}. {q.text}" for q in u.questions[:MAX_CORE_QUESTIONS]]
     lines += [""] + answers_section(u, level=3)
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _process_cell(guess, proc) -> str:  # type: ignore[no-untyped-def]
+    if proc is None:
+        return ""
+    if is_complex_guess(guess):
+        return "no guess (complex or free-form geometry)"
+    return f"{_role_text(proc.label)} ({proc.confidence:.2f})"
 
 
 def understanding_markdown(report: Report) -> str:
@@ -220,13 +235,15 @@ def understanding_markdown(report: Report) -> str:
         lines.append(
             f"| {p.id} | {_cell(p.name)} | {_role_text(r.label) if r else ''} | "
             f"{f'{r.confidence:.2f}' if r else ''} | {_cell(ev)} | "
-            f"{_role_text(proc.label) + f' ({proc.confidence:.2f})' if proc else ''} | {struct} | "
+            f"{_process_cell(pu.process, proc)} | {struct} | "
             f"{_cell(pu.symmetry.description)} |"
         )
     lines.append("")
     if u.load_paths:
         lines += ["## Load paths", ""]
         lines += [f"- {lp.id}: {lp.description}" for lp in u.load_paths]
+        if u.load_path_note:
+            lines += ["", u.load_path_note]
         lines.append("")
     lines += ["## Weak spots", ""]
     lines += spots_table(u.weak_spots) if u.weak_spots else ["No rule fired."]

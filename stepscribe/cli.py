@@ -73,6 +73,9 @@ def _options(
     check_motion: bool = False,
     motion_budget_s: int = 120,
     debug_graphs: bool = False,
+    debug_kinematics: bool = False,
+    pivot_min_diameter: float | None = None,
+    pivot_min_length_ratio: float | None = None,
 ) -> AnalyzeOptions:
     return AnalyzeOptions(
         density=density,
@@ -87,6 +90,9 @@ def _options(
         check_motion=check_motion,
         motion_budget_s=motion_budget_s,
         debug_graphs=debug_graphs,
+        debug_kinematics=debug_kinematics,
+        pivot_min_diameter_mm=pivot_min_diameter,
+        pivot_min_length_ratio=pivot_min_length_ratio,
     )
 
 
@@ -187,6 +193,27 @@ def pack(
     debug_graphs: Annotated[
         bool, typer.Option("--debug-graphs", help="Also write data/aag_<part>.json.")
     ] = False,
+    debug_kinematics: Annotated[
+        bool,
+        typer.Option(
+            "--debug-kinematics",
+            help="Also write data/kinematics_debug.md: why each contact was merged or kept apart.",
+        ),
+    ] = False,
+    pivot_min_diameter: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-diameter",
+            help="Smallest hole stack (mm) with no screw size that counts as a pivot. Default 20.",
+        ),
+    ] = None,
+    pivot_min_length_ratio: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-length-ratio",
+            help="Shortest such stack, in diameters, that counts as a pivot. Default 1.",
+        ),
+    ] = None,
     jobs: Annotated[int, typer.Option(help="Parallel workers for folders.")] = 1,
     timeout_s: Annotated[
         int, typer.Option(help="Per-file timeout in seconds.")
@@ -214,6 +241,9 @@ def pack(
         check_motion=check_motion,
         motion_budget_s=motion_budget_s,
         debug_graphs=debug_graphs,
+        debug_kinematics=debug_kinematics,
+        pivot_min_diameter=pivot_min_diameter,
+        pivot_min_length_ratio=pivot_min_length_ratio,
     )
     tpl = {
         "out_dir": str(out),
@@ -261,6 +291,27 @@ def export(
     check_interference: Annotated[bool, typer.Option("--check-interference")] = False,
     understanding: Annotated[bool, typer.Option("--understanding/--no-understanding")] = True,
     check_motion: Annotated[bool, typer.Option("--check-motion")] = False,
+    debug_kinematics: Annotated[
+        bool,
+        typer.Option(
+            "--debug-kinematics",
+            help="Also write data/kinematics_debug.md: why each contact was merged or kept apart.",
+        ),
+    ] = False,
+    pivot_min_diameter: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-diameter",
+            help="Smallest hole stack (mm) with no screw size that counts as a pivot. Default 20.",
+        ),
+    ] = None,
+    pivot_min_length_ratio: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-length-ratio",
+            help="Shortest such stack, in diameters, that counts as a pivot. Default 1.",
+        ),
+    ] = None,
     jobs: Annotated[int, typer.Option(help="Parallel workers for folders.")] = 1,
     timeout_s: Annotated[
         int, typer.Option(help="Per-file timeout in seconds.")
@@ -286,6 +337,9 @@ def export(
         no_timestamp,
         understanding=understanding,
         check_motion=check_motion,
+        debug_kinematics=debug_kinematics,
+        pivot_min_diameter=pivot_min_diameter,
+        pivot_min_length_ratio=pivot_min_length_ratio,
     )
     tpl = {
         "out_dir": str(out),
@@ -612,7 +666,13 @@ def answer(
     parsed: Any = value
     if status == "answered" and q.answer_type == "multi_choice" and value is not None:
         parsed = [v.strip() for v in value.split(",") if v.strip()]
-    change = session.answer(question_id, status, parsed if status == "answered" else None, note)
+    from stepscribe.understanding.answers import AnswerError
+
+    try:
+        change = session.answer(question_id, status, parsed if status == "answered" else None, note)
+    except AnswerError as exc:
+        console.print(f"Not saved. {exc}", markup=False)
+        raise typer.Exit(2) from exc
     session.save(context)
     console.print(f"{question_id}: {status}. {change.text}", markup=False)
     if session.questions:

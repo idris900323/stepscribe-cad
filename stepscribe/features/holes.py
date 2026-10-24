@@ -494,6 +494,17 @@ def compute_edge_distances(part: PartGeom, holes: list[Hole]) -> None:
     for h in holes:
         mine = hole_faces[h.id]
         adjacent = set().union(*(table.faces[i].neighbors for i in mine)) if mine else set()
+        # The wall left around a hole is measured from its side walls. A drill-point tip reaches
+        # further than the wall; its gap to whatever lies below is not an edge distance.
+        tip = {
+            int(fid[1:]) - 1
+            for seg in h.segments
+            if seg.kind == "cone"
+            and seg.diameter_small_mm is not None
+            and seg.diameter_small_mm < 1e-6
+            for fid in seg.face_ids
+        }
+        measured = (mine - tip) or mine
         outer = [
             table.faces[i].face
             for i in range(len(table.faces))
@@ -502,7 +513,7 @@ def compute_edge_distances(part: PartGeom, holes: list[Hole]) -> None:
         if not outer:
             continue
         dss = BRepExtrema_DistShapeShape(
-            _compound([table.faces[i].face for i in sorted(mine)]), _compound(outer)
+            _compound([table.faces[i].face for i in sorted(measured)]), _compound(outer)
         )
         if dss.IsDone():
             h.edge_distance_mm = float(dss.Value())

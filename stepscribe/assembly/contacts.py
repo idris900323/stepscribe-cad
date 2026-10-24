@@ -133,21 +133,23 @@ def part_faces(geom: PartGeom) -> PartFaces:
     return pf
 
 
-def _overlap_area(a: InstanceData, b: InstanceData, fa: int, fb: int) -> float:
+def _overlap(a: InstanceData, b: InstanceData, fa: int, fb: int) -> tuple[float, Vec]:
+    """(area, centroid) of the overlap of two planar faces, in the assembly frame."""
     face_a = transform_shape(a.ap.geom.table.faces[fa].face, to_trsf(a.matrix))
     face_b = transform_shape(b.ap.geom.table.faces[fb].face, to_trsf(b.matrix))
     common = BRepAlgoAPI_Common(face_a, face_b)
     if not common.IsDone():
-        return 0.0
+        return 0.0, np.zeros(3)
     props = GProp_GProps()
     BRepGProp.SurfaceProperties_s(common.Shape(), props)
-    return float(props.Mass())
+    area = float(props.Mass())
+    return area, (to_np(props.CentreOfMass()) if area > 0.0 else np.zeros(3))
 
 
-def planar_contact(
+def planar_contact_detail(
     a: InstanceData, b: InstanceData, fa: PartFaces, fb: PartFaces
-) -> tuple[float, Vec] | None:
-    """(total overlap area, normal from A to B) of opposing coplanar faces, or None."""
+) -> tuple[float, Vec, Vec] | None:
+    """(total overlap area, normal from A to B, area-weighted centroid) of opposing coplanar faces."""
     if not fa.planes or not fb.planes:
         return None
     na = np.array([a.rotation @ p.normal for p in fa.planes])
@@ -162,16 +164,26 @@ def planar_contact(
         return None
     pairs = sorted(cand.tolist(), key=lambda ij: -min(fa.planes[ij[0]].area, fb.planes[ij[1]].area))
     total = 0.0
+    weighted = np.zeros(3)
     best: tuple[float, Vec] | None = None
     for i, j in pairs[:MAX_FACE_PAIRS]:
-        area = _overlap_area(a, b, fa.planes[i].index, fb.planes[j].index)
+        area, centre = _overlap(a, b, fa.planes[i].index, fb.planes[j].index)
         if area > MIN_CONTACT_AREA:
             total += area
+            weighted += area * centre
             if best is None or area > best[0]:
                 best = (area, na[i])
     if best is None:
         return None
-    return total, best[1]
+    return total, best[1], weighted / total
+
+
+def planar_contact(
+    a: InstanceData, b: InstanceData, fa: PartFaces, fb: PartFaces
+) -> tuple[float, Vec] | None:
+    """(total overlap area, normal from A to B) of opposing coplanar faces, or None."""
+    found = planar_contact_detail(a, b, fa, fb)
+    return None if found is None else (found[0], found[1])
 
 
 def _global_cyl(inst: InstanceData, c: CylFace) -> tuple[Vec, Vec]:

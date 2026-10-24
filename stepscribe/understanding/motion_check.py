@@ -156,6 +156,7 @@ def check_motion(
             continue
         low, high, blockers = got
         joint.range_deg_or_mm = (low, high)
+        joint.range_source = "motion_check"
         joint.blocked_by = blockers
         unit = "mm" if joint.kind == "prismatic" else "deg"
         full = MAX_ANGLE_DEG if joint.kind == "revolute" else min(travel, MAX_TRAVEL_MM)

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,74 @@ def load_context(path: str | Path) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError("design context must be a YAML mapping")
     return {k: v for k, v in raw.items() if v not in (None, "", [], {})}
+
+
+KINEMATICS_KEY = "kinematics"
+
+
+def _block_bounds(lines: list[str], key: str) -> tuple[int, int] | None:
+    """Line range of the top-level ``key:`` block (the key line to the next top-level key)."""
+    start = next((i for i, ln in enumerate(lines) if ln.startswith(key + ":")), None)
+    if start is None:
+        return None
+    end = next(
+        (i for i in range(start + 1, len(lines)) if re.match(r"^[A-Za-z_]", lines[i])), len(lines)
+    )
+    return start, end
+
+
+def read_kinematics_block(head: str) -> dict[str, Any]:
+    """The ``kinematics:`` mapping of a context text (empty when absent or unreadable)."""
+    lines = head.split("\n")
+    bounds = _block_bounds(lines, KINEMATICS_KEY)
+    if bounds is None:
+        return {}
+    try:
+        data = yaml.safe_load("\n".join(lines[bounds[0] : bounds[1]])) or {}
+    except yaml.YAMLError:
+        return {}
+    block = data.get(KINEMATICS_KEY) if isinstance(data, dict) else None
+    return dict(block) if isinstance(block, dict) else {}
+
+
+def write_kinematics_block(head: str, data: dict[str, Any]) -> str:
+    """*head* with its ``kinematics:`` block replaced (or added); an empty mapping removes it."""
+    lines = head.split("\n")
+    bounds = _block_bounds(lines, KINEMATICS_KEY)
+    block = (
+        yaml.safe_dump(
+            {KINEMATICS_KEY: data},
+            sort_keys=False,
+            default_flow_style=None,
+            allow_unicode=True,
+            width=2**31 - 1,
+        ).rstrip("\n")
+        if data
+        else ""
+    )
+    if bounds is None:
+        return (head.rstrip("\n") + "\n" + block + "\n") if block else head
+    before, after = lines[: bounds[0]], lines[bounds[1] :]
+    new = before + ([block] if block else []) + after
+    return "\n".join(new)
+
+
+def without_answer_sources(data: dict[str, Any], qids: set[str]) -> dict[str, Any]:
+    """Drop what the given answers wrote into a kinematics mapping; the designer's own stays."""
+    out = dict(data)
+    if out.get("base_source") in qids:
+        out.pop("base", None)
+        out.pop("base_source", None)
+    joints = [
+        j
+        for j in (out.get("joints") or [])
+        if not (isinstance(j, dict) and set(j.get("source") or []) & qids)
+    ]
+    if joints:
+        out["joints"] = joints
+    else:
+        out.pop("joints", None)
+    return out
 
 
 def default_material(ctx: dict[str, Any]) -> str | None:

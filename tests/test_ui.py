@@ -123,7 +123,7 @@ def test_interview_over_http(server: str, step_files) -> None:  # type: ignore[n
     state = json.loads(get(f"{server}/api/questions/next?id={job}"))
     q = state["question"]
     assert q["kind"] in ("material", "process", "purpose") and state["remaining"] >= 1
-    assert state["understanding"]["summary"].startswith("Likely a 2-DOF serial arm")
+    assert state["understanding"]["summary"].startswith("Likely: 2-axis serial arm (confidence ")
     mat = next(x for x in state["understanding"]["questions"] if x["kind"] == "material")
     done = post(
         f"{server}/api/answers?id={job}",
