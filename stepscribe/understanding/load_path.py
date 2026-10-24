@@ -48,6 +48,7 @@ class LoadInfo:
     sources: list[str]
     total_mass: float | None
     ground: set[str] = field(default_factory=set)
+    note: str = ""  # which parts are traced and which are not
 
 
 def floor_instances(ctx: KinContext, model: KinematicModel, asm: AssemblyInfo) -> set[str]:
@@ -205,7 +206,33 @@ def load_paths(asm: AssemblyInfo, model: KinematicModel, ctx: KinContext) -> Loa
                 ),
             )
         )
-    return LoadInfo(paths, used, through, sources, total, ground_ids)
+    note = _scope_note(ctx, sources, paths, frac, masses if known else None, volumes, total_vol)
+    return LoadInfo(paths, used, through, sources, total, ground_ids, note)
+
+
+def _scope_note(
+    ctx: KinContext,
+    sources: list[str],
+    paths: list[LoadPath],
+    frac: float,
+    masses: dict[str, float | None] | None,
+    volumes: dict[str, float],
+    total_vol: float,
+) -> str:
+    """The tracing rule in words, and the parts it left out (not a top-N cap: a share threshold)."""
+    basis = "mass" if masses else "volume (mass is unknown)"
+    covered = set(sources) | {i for lp in paths for i in lp.path}
+    total = sum(m or 0.0 for m in masses.values()) if masses else total_vol
+    left = [
+        f"{i.name} ({fmt(100 * ((masses[i.id] or 0.0) if masses else volumes[i.id]) / total, 2)}%)"
+        for i in ctx.insts
+        if i.id not in covered and total
+    ]
+    text = (
+        f"Paths are traced from every part with at least {fmt(100 * frac, 0)}% of the total {basis}, "
+        "and from every motor"
+    )
+    return text + (f". Not traced: {', '.join(left)}." if left else ".")
 
 
 def _edge_word(e: Edge) -> str:

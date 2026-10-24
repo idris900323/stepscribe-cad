@@ -242,6 +242,8 @@ def understanding_markdown(report: Report) -> str:
     if u.load_paths:
         lines += ["## Load paths", ""]
         lines += [f"- {lp.id}: {lp.description}" for lp in u.load_paths]
+        if u.load_path_note:
+            lines += ["", u.load_path_note]
         lines.append("")
     lines += ["## Weak spots", ""]
     lines += spots_table(u.weak_spots) if u.weak_spots else ["No rule fired."]

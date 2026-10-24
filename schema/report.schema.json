@@ -3582,6 +3582,11 @@
           "title": "Load Paths",
           "type": "array"
         },
+        "load_path_note": {
+          "default": "",
+          "title": "Load Path Note",
+          "type": "string"
+        },
         "weak_spots": {
           "items": {
             "$ref": "#/$defs/WeakSpot"

@@ -350,6 +350,7 @@ class UnderstandingPipeline:
         und = Understanding(
             kinematics=kin,
             load_paths=load.paths if load else [],
+            load_path_note=load.note if load and load.paths else "",
             weak_spots=spots,
             stability=stab,
             subassembly_roles=sub_roles,

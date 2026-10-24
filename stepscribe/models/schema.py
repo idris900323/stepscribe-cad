@@ -569,9 +569,12 @@ class Understanding(_M):
         data: dict[str, Any] = handler(self)
         if data.get("kinematics_debug") is None:
             data.pop("kinematics_debug", None)
+        if not data.get("load_path_note"):
+            data.pop("load_path_note", None)
         return data
 
     load_paths: list[LoadPath] = Field(default_factory=list)
+    load_path_note: str = ""  # the tracing rule and the parts it left out; empty without load paths
     weak_spots: list[WeakSpot] = Field(default_factory=list)
     stability: StabilityInfo | None = None
     subassembly_roles: list[SubassemblyRole] = Field(default_factory=list)
