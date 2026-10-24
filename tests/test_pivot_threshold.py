@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from typer.testing import CliRunner
+import typer.main
 
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.api import analyze_full
@@ -42,6 +42,8 @@ def test_the_options_reach_the_joint_detection(step_files: dict[str, Path]) -> N
 
 
 def test_the_cli_lists_both_options() -> None:
-    env = {"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "200"}
-    out = CliRunner().invoke(app, ["export", "--help"], env=env).output
-    assert "--pivot-min-diameter" in out and "--pivot-min-length-ratio" in out
+    """Read the option names from the command, not from help text that wraps at the terminal width."""
+    command = typer.main.get_command(app)
+    export = command.commands["export"]  # type: ignore[attr-defined]
+    names = {opt for param in export.params for opt in getattr(param, "opts", [])}
+    assert {"--pivot-min-diameter", "--pivot-min-length-ratio"} <= names
