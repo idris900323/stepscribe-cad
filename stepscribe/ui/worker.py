@@ -338,6 +338,7 @@ def summarise_pack(folder: Path) -> dict[str, Any]:
         "joints": [
             f"{j['id']}: {j['suggested_fastener'] or 'fastener unknown'}, grip {j['stack_thickness_mm']:.1f} mm"
             for j in asm["fastener_joints"]
+            if not j.get("pivot_candidate") and not j.get("bore_pair")
         ]
         if asm
         else [],

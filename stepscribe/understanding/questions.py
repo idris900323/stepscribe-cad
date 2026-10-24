@@ -217,7 +217,11 @@ def generate_questions(
             )
     if asm is not None:
         for rel in asm.relations:
-            if rel.predicate == "rests_on" and not _fastened(report, rel.subject, rel.object):
+            if (
+                rel.predicate == "rests_on"
+                and not _fastened(report, rel.subject, rel.object)
+                and not _jointed(report, rel.subject, rel.object)
+            ):
                 add(
                     _q(
                         "connection_type",
@@ -402,7 +406,22 @@ def _fastened(report: Report, a: str, b: str) -> bool:
     asm = report.assembly
     if asm is None:
         return False
-    return any(a in j.instance_ids and b in j.instance_ids for j in asm.fastener_joints)
+    return any(a in j.instance_ids and b in j.instance_ids for j in asm.fasteners)
+
+
+def _jointed(report: Report, a: str, b: str) -> bool:
+    """True when the two instances meet at a designed joint: a pivot stack, or a kinematic joint
+    between their links. Asking whether fasteners are missing there would be the wrong question."""
+    asm, u = report.assembly, report.understanding
+    if asm is not None and any(a in j.instance_ids and b in j.instance_ids for j in asm.pivots):
+        return True
+    if u is None:
+        return False
+    link_of = {i: g.id for g in u.kinematics.links for i in g.instance_ids}
+    la, lb = link_of.get(a), link_of.get(b)
+    if la is None or lb is None or la == lb:
+        return False
+    return any({j.parent_link, j.child_link} == {la, lb} for j in u.kinematics.joints)
 
 
 def _arrow(j) -> str:  # type: ignore[no-untyped-def]

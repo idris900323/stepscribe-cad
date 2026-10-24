@@ -210,6 +210,18 @@ def pivot_pair_assembly(out: Path = FIXTURE_DIR) -> Path:
     return write_assembly(out / "pivot_pair_assembly.step", {"A": a, "B": b}, root)
 
 
+def bore_pair_assembly(out: Path = FIXTURE_DIR) -> Path:
+    """The pivot pair with 10 mm Ø50 recesses instead of through bores: a 20 mm coaxial stack, shorter
+    than its diameter (a locating feature or bearing seat, not a pivot)."""
+    a = Box(40, 80, 80) - Pos(15, 0, 0) * Cylinder(25, 10).rotate(Axis.Y, 90)
+    b = Box(20, 80, 80) - Pos(-5, 0, 0) * Cylinder(25, 10).rotate(Axis.Y, 90)
+    root = Node(
+        "BorePair",
+        children=[Node("LINK1", "A", Pos(0, 0, 0)), Node("LINK2", "B", Pos(30, 0, 0))],
+    )
+    return write_assembly(out / "bore_pair_assembly.step", {"A": a, "B": b}, root)
+
+
 def shaft_in_bearing_assembly(out: Path = FIXTURE_DIR) -> Path:
     """Ø8 shaft in a Ø8.06 bore (diametral clearance 0.06)."""
     block = Box(30, 30, 20) - Cylinder(4.03, 22)
@@ -249,6 +261,7 @@ def generate_assemblies(out: Path = FIXTURE_DIR) -> dict[str, Path]:
         blind_thin_stack_assembly,
         occurrence_label_assembly,
         pivot_pair_assembly,
+        bore_pair_assembly,
         pilot_over_blind_assembly,
         pilot_thin_assembly,
         shaft_in_bearing_assembly,
@@ -267,11 +280,19 @@ def generate_assemblies(out: Path = FIXTURE_DIR) -> dict[str, Path]:
     out_map["arm_axis_disagree"] = arm_axis_disagree(out)
     out_map["named_links_resting"] = named_links_resting(out)
     out_map["named_two_links"] = named_two_links(out)
-    from shell_fixtures import bossed_plate, freeform_housing, ribbed_housing
+    from shell_fixtures import (
+        bossed_plate,
+        freeform_housing,
+        ribbed_housing,
+        ribbed_sculpted,
+        tip_over_cavity,
+    )
 
     out_map["freeform_housing"] = freeform_housing(out)
     out_map["bossed_plate"] = bossed_plate(out)
     out_map["ribbed_housing"] = ribbed_housing(out)
+    out_map["tip_over_cavity"] = tip_over_cavity(out)
+    out_map["ribbed_sculpted"] = ribbed_sculpted(out)
     return out_map
 
 

@@ -135,6 +135,24 @@ def _joint_line(j: FastenerJoint) -> str:
     return f"{j.id}: Ø{fmt(j.common_diameter_mm)} {where}, grip {fmt(j.stack_thickness_mm)} mm, {fastener}"
 
 
+def _pivot_line(j: FastenerJoint) -> str:
+    """'J001: a Ø50 bore across 2 parts, 282 mm long: pivot candidate, not a fastener (confidence 0.50)'."""
+    return (
+        f"{j.id}: a Ø{fmt(j.common_diameter_mm)} bore across {len(j.instance_ids)} parts, "
+        f"{fmt(j.stack_thickness_mm)} mm long, no screw size: pivot candidate, not a fastener "
+        f"(confidence {j.confidence:.2f})"
+    )
+
+
+def _bore_pair_line(j: FastenerJoint) -> str:
+    """'J002: a Ø50 bore pair across 2 parts, 20 mm deep: large coaxial bore pair (...), not a fastener'."""
+    return (
+        f"{j.id}: a Ø{fmt(j.common_diameter_mm)} bore pair across {len(j.instance_ids)} parts, "
+        f"{fmt(j.stack_thickness_mm)} mm deep, no screw size: large coaxial bore pair (locating feature "
+        f"or bearing seat), not a fastener (confidence {j.confidence:.2f})"
+    )
+
+
 def assembly_core_context(report: Report) -> dict[str, Any]:
     """Relations, joints and shopping list that always appear in the single-file pack."""
     a = report.assembly
@@ -143,7 +161,9 @@ def assembly_core_context(report: Report) -> dict[str, Any]:
     return {
         "has_assembly": True,
         "relations": [f"{r.id}: {r.sentence}" for r in a.relations],
-        "joints": [_joint_line(j) for j in a.fastener_joints],
+        "joints": [_joint_line(j) for j in a.fasteners],
+        "pivots": [_pivot_line(j) for j in a.pivots],
+        "bore_pairs": [_bore_pair_line(j) for j in a.bore_pairs],
         "shopping": [f"{row['qty']} × {row['item']}" for row in a.fastener_shopping_list],
         "subassemblies": [f"{s.name}: {s.summary}" for s in a.subassemblies],
         "bom": [

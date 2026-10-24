@@ -185,3 +185,25 @@ Every `Likely:` headline carries a confidence and the IDs it rests on, not only 
   is printed is what is compared): **0.60 or more** reads "probably a <role> (confidence X)",
   **0.30 up to 0.60** reads "possibly a <role> (confidence X)", and **below 0.30 the phrase is left
   out**. The limits are `role_phrase` in `roles.yaml`.
+
+## 11. Pivots are not fasteners, edge distance, and process wording
+
+- **A pivot candidate is never a fastener.** Relations ("bolted to"), the shopping list, load paths
+  (a pivot is a joint edge, not a fastened one), the single-fastener and cantilever findings, the
+  "fasteners missing?" question and the fastener counts leave it out. `02_assembly.md` lists it under
+  "Pivot candidates (not fasteners)".
+- **A large coaxial bore pair is not a fastener either.** An unmatched coaxial stack at or above the
+  pivot minimum diameter (20 mm, inclusive) is never a fastener joint. Long enough (at least one
+  diameter) and it is a pivot candidate; too short (a 20 mm pair of Ø50 recesses) and it is a *large
+  coaxial bore pair (locating feature or bearing seat)*, listed in `02_assembly.md` under "Large
+  coaxial bore pairs", with confidence 0.5. It gives no "bolted" relation, no fastened load-path
+  edge, no shopping-list or fastener-count entry, and no clamp in the kinematic model (the parts stay
+  joined only by whatever contact they have). Below the minimum diameter an unmatched stack is left
+  as it was, an unmatched fastener record with confidence 0.
+- **Edge distance is the wall left around a hole's sides.** It is measured from the bore's side walls to
+  every other face (outer boundary and internal steps alike). A drill-point tip is not counted: it
+  reaches past the wall, and its gap to whatever lies below is not a lateral margin. A flat bottom is
+  unchanged, since its rim sits at the floor level.
+- **Weak-spot text names a process only when one is known.** The sentence that printed layers split
+  along sharp internal corners appears only for a printed process; with no process guess, or a
+  machined one, the finding states the geometry only.

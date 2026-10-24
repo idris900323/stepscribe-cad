@@ -656,6 +656,9 @@ class FastenerJoint(Inference):
     has_threaded_end: bool = False
     existing_fastener_instance_id: str | None = None
     pivot_candidate: bool = False  # a wide, long bore with no screw size: more likely a pivot
+    bore_pair: bool = (
+        False  # a wide but short coaxial bore pair: a locating feature or bearing seat
+    )
 
 
 class Relation(_M):
@@ -710,6 +713,21 @@ class AssemblyInfo(_M):
     spatial_facts: list[SpatialFact] = Field(default_factory=list)
     interferences: list[dict[str, Any]] = Field(default_factory=list)
     fastener_shopping_list: list[dict[str, Any]] = Field(default_factory=list)
+
+    @property
+    def fasteners(self) -> list[FastenerJoint]:
+        """Fastener joints proper: not a pivot candidate and not a large bore pair."""
+        return [j for j in self.fastener_joints if not j.pivot_candidate and not j.bore_pair]
+
+    @property
+    def pivots(self) -> list[FastenerJoint]:
+        """Wide, long bores with no screw size: more likely a pivot or press fit than a screw."""
+        return [j for j in self.fastener_joints if j.pivot_candidate]
+
+    @property
+    def bore_pairs(self) -> list[FastenerJoint]:
+        """Large coaxial bore pairs too short to be a pivot: a locating feature or bearing seat."""
+        return [j for j in self.fastener_joints if j.bore_pair]
 
 
 class Meta(_M):

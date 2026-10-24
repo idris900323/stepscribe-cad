@@ -29,6 +29,20 @@ This file contains a single part, so there are no assembly relationships.
 - none found
 {% endfor %}
 
+{% if a.pivots %}
+## Pivot candidates (not fasteners)
+{% for j in a.pivots %}
+- {{ j }}
+{% endfor %}
+
+{% endif %}
+{% if a.bore_pairs %}
+## Large coaxial bore pairs (locating feature or bearing seat, not fasteners)
+{% for j in a.bore_pairs %}
+- {{ j }}
+{% endfor %}
+
+{% endif %}
 ## Fastener shopping list
 {% for s in a.shopping %}
 - {{ s }}

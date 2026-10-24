@@ -47,7 +47,7 @@ def _summarise(
         "status": status,
         "parts": len(report.parts),
         "holes": sum(len(p.holes) for p in report.parts),
-        "joints": len(a.fastener_joints) if a else 0,
+        "joints": len(a.fasteners) if a else 0,
         "relations": len(a.relations) if a else 0,
         "mass_g": None if mass is None else round(mass, 2),
         "warnings": len(report.warnings) + sum(len(p.warnings) for p in report.parts),

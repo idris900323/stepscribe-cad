@@ -272,6 +272,8 @@ def classify_connections(
         )
         if existing is not None and hardware_kind(existing) != "fastener":
             continue  # a pin that is not a screw/bolt: judged by its fit below (pivot or press)
+        if j.bore_pair and existing is None:
+            continue  # a locating feature or bearing seat: neither a clamp nor a joint
         if j.pivot_candidate and existing is None:
             pivots.append(j)  # a wide bore with no screw size: a pivot candidate, not a fastener
             continue

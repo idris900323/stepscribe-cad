@@ -16,6 +16,10 @@ Robot files from manufacturers (an ABB arm, for example): links, joints and a ro
 - **`robot.urdf`** next to `robot.json`: a draft in SI units with no invented limits or masses.
 - **Complex or free-form geometry.** A part with at least 100 faces that is not a closed solid, or has 15 % or more free-form faces, gets no process guess instead of a confident "3D printed" or "injection moulded"; its measured edge distances are still reported against the generic guideline, labelled as such. See `docs/kinematics.md`.
 - **Every `Likely:` headline carries a confidence and evidence.** The static-structure, single-part and general assembly headlines now read `Likely: ... (confidence X; evidence ...)`; a single part's role phrase says "probably" from 0.60, "possibly" from 0.30 and is left out below that.
+- **Pivot candidates are not fasteners.** They no longer appear as "bolted to" relations, fastened load-path edges, single-fastener findings, "fasteners missing?" questions or fastener counts; `02_assembly.md` lists them under "Pivot candidates (not fasteners)".
+- **Large coaxial bore pairs are not fasteners.** An unmatched coaxial stack at or above the pivot minimum diameter is never a fastener joint: long enough it is a pivot candidate, too short it is a "large coaxial bore pair (locating feature or bearing seat)" in its own section of `02_assembly.md`, with no bolted relation, fastened load-path edge, shopping-list entry or clamp.
+- **Measurement change: hole edge distance.** It is now measured from the hole's side walls to the other faces. The tip of a drill point is no longer counted, because it reaches past the wall and its gap to whatever lies below is not a lateral margin. A flat-bottomed hole is unchanged. Blind drilled holes whose point was the nearest feature now read a larger distance, so some "hole too close to an edge" findings change value or disappear.
+- Weak-spot wording about printed layers appears only when the process is a printed one.
 - Report schema 0.6.0 (new optional fields).
 
 ## 0.1.4

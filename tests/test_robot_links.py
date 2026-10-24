@@ -113,14 +113,14 @@ def test_the_debug_view_says_the_name_pattern_made_the_links(step_files) -> None
 def test_a_short_unmatched_recess_pair_does_not_clamp_two_link_groups_together(analyses) -> None:  # type: ignore[no-untyped-def]
     """Joint 5 has Ø30 recesses 20 mm long in all: no screw size, shorter than the diameter.
 
-    It stays a fastener record (confidence 0) but is not a clamp between named links, so the
-    flange on the same pair decides the joint: a revolute about the +Y/-Y normal.
+    It is a large coaxial bore pair (a locating feature or bearing seat): not a fastener, not a
+    pivot and not a clamp between named links, so the flange on the same pair decides the joint:
+    a revolute about the +Y/-Y normal.
     """
     asm = analyses("arm_6_axis").report.assembly
     assert asm is not None
-    short = [
-        j for j in asm.fastener_joints if not j.pivot_candidate and j.suggested_fastener is None
-    ]
-    assert len(short) == 1 and short[0].confidence == 0
+    (pair,) = asm.bore_pairs
+    assert pair.suggested_fastener is None and pair.confidence > 0 and not pair.pivot_candidate
+    assert pair not in asm.fasteners and asm.fasteners == []
     k = kin(analyses, "arm_6_axis")
     assert axis_letter(k.joints[4]) == "Y" and k.joints[4].parent_link == "L4"

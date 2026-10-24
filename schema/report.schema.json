@@ -1006,6 +1006,11 @@
           "default": false,
           "title": "Pivot Candidate",
           "type": "boolean"
+        },
+        "bore_pair": {
+          "default": false,
+          "title": "Bore Pair",
+          "type": "boolean"
         }
       },
       "required": [

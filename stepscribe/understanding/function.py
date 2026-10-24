@@ -330,7 +330,7 @@ def score_instances(
                     [other, body_motor],
                     f"{other} carries motor {body_motor}",
                 )
-    for fj in asm.fastener_joints:
+    for fj in asm.fasteners:
         mot = next((i for i in fj.instance_ids if hardware_kind(by_id[i]) == "motor"), None)
         if mot:
             for other in fj.instance_ids:

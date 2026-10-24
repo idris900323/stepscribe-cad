@@ -97,7 +97,7 @@ def build_edges(asm: AssemblyInfo, ctx: KinContext) -> list[Edge]:
             cur.kind = "fastened" if e.kind == "fastened" or cur.kind == "fastened" else cur.kind
             cur.diameter = max(cur.diameter, e.diameter)
 
-    for j in asm.fastener_joints:
+    for j in asm.fasteners:  # a pivot is a joint (added below), not a fastened connection
         ids = list(j.instance_ids) + (
             [j.existing_fastener_instance_id] if j.existing_fastener_instance_id else []
         )

@@ -237,7 +237,8 @@ def sharp_corners(part: Part, geom, label: str, load_bearing: bool) -> list[Weak
             cat,
             [part.id, *ids[:4]],
             f"{label} has {len(edges)} sharp internal corner(s) {where} (longest {fmt(longest, 1)} mm, faces "
-            f"{', '.join(ids[:4])}); stress concentrates there and printed layers split along them",
+            f"{', '.join(ids[:4])}); stress concentrates there"
+            + (" and printed layers split along them" if plastic else ""),
             "add a fillet of about 2 mm (or a gusset) at the corner",
             float(len(edges)),
             0.0,
@@ -353,7 +354,7 @@ def single_fasteners(load: LoadInfo, ctx: KinContext) -> list[WeakSpot]:
 
 def cantilevers(load: LoadInfo, ctx: KinContext, asm) -> list[WeakSpot]:  # type: ignore[no-untyped-def]
     cfg = rules()["cantilever"]
-    by_joint = {j.id: j for j in asm.fastener_joints}
+    by_joint = {j.id: j for j in asm.fasteners}
     out = []
     seen: set[str] = set()
     for ref, e in sorted(load.edges.items()):
@@ -428,7 +429,7 @@ def short_screws(asm, ctx: KinContext) -> list[WeakSpot]:  # type: ignore[no-unt
     cfg = rules()["short_screw"]
     sizes = load_table("screws_iso_metric.yaml")["sizes"]
     out = []
-    for j in asm.fastener_joints:
+    for j in asm.fasteners:
         if not j.existing_fastener_instance_id:
             continue
         inst = ctx.by_id.get(j.existing_fastener_instance_id)
