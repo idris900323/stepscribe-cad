@@ -15,6 +15,7 @@ Robot files from manufacturers (an ABB arm, for example): links, joints and a ro
 - **Joint origins** lie on their axis (common perpendicular from the previous axis); the raw point is kept as `evidence_point_mm`.
 - **`robot.urdf`** next to `robot.json`: a draft in SI units with no invented limits or masses.
 - **Complex or free-form geometry.** A part with at least 100 faces that is not a closed solid, or has 15 % or more free-form faces, gets no process guess instead of a confident "3D printed" or "injection moulded"; its measured edge distances are still reported against the generic guideline, labelled as such. See `docs/kinematics.md`.
+- **Every `Likely:` headline carries a confidence and evidence.** The static-structure, single-part and general assembly headlines now read `Likely: ... (confidence X; evidence ...)`; a single part's role phrase says "probably" from 0.60, "possibly" from 0.30 and is left out below that.
 - Report schema 0.6.0 (new optional fields).
 
 ## 0.1.4

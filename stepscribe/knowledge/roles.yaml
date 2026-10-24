@@ -12,6 +12,14 @@ ground:
   lowest_plane_tolerance_mm: 1.0
   keywords: [base, chassis, frame, stand, foundation, bracket_base, baseplate, base_plate, mount, body]
 
+# The role phrase in a single part's headline follows the role's confidence (rounded to the two
+# decimals that are shown): at or above probably_min it reads "probably a <role>", from possibly_min
+# up to that "possibly a <role>", below possibly_min the phrase is left out. Heuristic limits.
+role_phrase:
+  source: "heuristic limits chosen for this tool (not domain data)"
+  probably_min: 0.60
+  possibly_min: 0.30
+
 kinematics:
   source: "heuristic thresholds chosen for this tool (not domain data)"
   coaxial_tol_mm: 0.1            # axes closer than this are the same axis
@@ -47,6 +55,8 @@ kinematics:
     other_axis_count_confidence: 0.55   # an arm with a number of axes other than six: not checked
     weakest_joint_headroom: 0.15   # the headline is never above (weakest joint confidence + this)
     robot_min_joints: 3            # an arm with fewer joints is asked the ordinary questions
+    static_confidence: 0.6         # HEURISTIC CONSTANT, not derived from evidence: "Likely: a static structure" claims that
+                                   # no joint was found, an absence there is nothing to average over
   name_groups:
     min_numbered_groups: 3         # BASE does not count; LINK1..LINK3 or more
     confidence: 0.8

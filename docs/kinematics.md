@@ -164,3 +164,24 @@ What changes for such a part:
   "process unknown: the generic guideline (metal factor) is used";
 - a process the designer gives in design_context.yaml (`parts: <name>: process: ...`) always wins;
 - `robot.json` lists these bodies in its mass warning, using the same rule.
+
+## 10. The other headlines, and the role phrase
+
+Every `Likely:` headline carries a confidence and the IDs it rests on, not only the arm one.
+
+- **General assembly headlines** (mobile base or manipulator, linear slide, single joint, closed
+  loop, other mechanism): `Likely: a mobile manipulator, a 4-wheel base (...) carrying a 2-DOF serial
+  arm (confidence 0.90; evidence KJ1, KJ2, ..., L0..L7): KJ5 revolute about +X, ...`. The confidence
+  is the mean of the joints the headline rests on, never above the weakest of them plus 0.15 (the
+  arm headline's cap), and between 0.1 and 0.95. The evidence is those joint IDs and the link IDs.
+- **A static structure** (no joint found): `Likely: a static structure with no moving joints
+  (confidence 0.60; evidence L0..L4)`. **The 0.60 is a heuristic constant**
+  (`kinematics.arm_headline.static_confidence` in `roles.yaml`), not derived from evidence: the claim
+  is an absence, so there is nothing to average. Parts named `LINK<n>` get "joint structure not
+  determined" instead (section 4).
+- **A single part**: `Likely: a single plate (confidence 0.90; evidence PRT001), 60.0 x 60.0 x 5.0
+  mm, 4 hole(s), probably a base plate (confidence 0.72).` The first confidence is the shape class's.
+- **The role phrase** follows the role's own confidence, rounded to the two decimals shown (so what
+  is printed is what is compared): **0.60 or more** reads "probably a <role> (confidence X)",
+  **0.30 up to 0.60** reads "possibly a <role> (confidence X)", and **below 0.30 the phrase is left
+  out**. The limits are `role_phrase` in `roles.yaml`.

@@ -28,7 +28,12 @@ from stepscribe.models.schema import (
     SubassemblyRole,
     WeakSpot,
 )
-from stepscribe.understanding.arm_check import Headline, arm_headline, undetermined_headline
+from stepscribe.understanding.arm_check import (
+    Headline,
+    arm_headline,
+    id_range,
+    undetermined_headline,
+)
 from stepscribe.understanding.kinematics import (
     KinContext,
     axis_label,
@@ -648,12 +653,16 @@ def design_summary(
         role = p.understanding.roles[0] if p.understanding and p.understanding.roles else None
         proc = p.understanding.process.ranked[0] if p.understanding else None
         bits = [
-            f"Likely a single {p.shape_class.label.replace('_', ' ')} "
-            f"({' x '.join(fmt(v) for v in sorted(p.obb.size_sorted, reverse=True))} mm), "
+            f"Likely: a single {p.shape_class.label.replace('_', ' ')} "
+            f"(confidence {p.shape_class.confidence:.2f}; evidence {p.id}), "
+            f"{' x '.join(fmt(v) for v in sorted(p.obb.size_sorted, reverse=True))} mm, "
             f"{len(p.holes)} hole(s)"
         ]
-        if role and role.label != "unknown":
-            bits[0] += f", probably a {role.label.replace('_', ' ')}"
+        phrase = (
+            role_phrase(role.label, role.confidence) if role and role.label != "unknown" else None
+        )
+        if phrase:
+            bits[0] += ", " + phrase
         if proc and proc.label != "unknown":
             bits.append(
                 f"It looks {proc.label.replace('_', ' ')} (confidence {proc.confidence:.2f})"
@@ -678,7 +687,7 @@ def design_summary(
     if topo == "mobile_manipulator":
         n_driven = sum(w in driven for w in wheels)
         drive = f"{n_driven} motor-driven" if n_driven else "none motor-driven"
-        head = f"a mobile manipulator: a {len(wheels)}-wheel base ({drive}) carrying a {len(arm_joints)}-DOF serial arm"
+        head = f"a mobile manipulator, a {len(wheels)}-wheel base ({drive}) carrying a {len(arm_joints)}-DOF serial arm"
     elif topo == "mobile_base":
         head = (
             f"a mobile base with {len(wheels)} wheels ({sum(w in driven for w in wheels)} driven)"
@@ -695,7 +704,8 @@ def design_summary(
         head = "a static structure with no moving joints"
     else:
         head = f"a mechanism with {len(model.joints)} joints ({topo.replace('_', ' ')})"
-    sentences = [f"Likely {head}"]
+    support = _support(model, _headline_joints(model, topo, wheels, arm_joints, movers))
+    sentences = [f"Likely: {head} ({support})"]
     headline = _apply_headline(model, ctx, arm_joints if topo == "serial_chain" else [])
     listed = arm_joints or (movers if len(movers) <= 4 else [])
     if headline is not None:
@@ -703,7 +713,7 @@ def design_summary(
         if headline.is_arm and listed:
             sentences[0] += ": " + ", ".join(_joint_phrases(model, listed))
     elif listed:
-        sentences[0] += " (" + ", ".join(_joint_phrases(model, listed)) + ")"
+        sentences[0] += ": " + ", ".join(_joint_phrases(model, listed))
     for m in model.mechanisms:
         if m.kind == "lead_screw":
             lead = m.parameters.get("lead_mm")
@@ -745,6 +755,50 @@ def design_summary(
         sentences.append(f"{total} fastener pieces to buy (screws, nuts, washers){mostly}")
     sentences += _risk_sentence(spots)
     return ". ".join(sentences) + "."
+
+
+def role_phrase(label: str, confidence: float) -> str | None:
+    """'probably a base plate (confidence 0.72)', 'possibly a ...' or None, by the role's confidence.
+
+    The confidence is rounded to the two decimals that are printed, so what is shown is what was
+    compared. Limits: ``role_phrase`` in roles.yaml.
+    """
+    cfg = load_table("roles.yaml")["role_phrase"]
+    shown = round(confidence, 2)
+    if shown >= float(cfg["probably_min"]):
+        word = "probably"
+    elif shown >= float(cfg["possibly_min"]):
+        word = "possibly"
+    else:
+        return None
+    return f"{word} a {label.replace('_', ' ')} (confidence {shown:.2f})"
+
+
+def _headline_joints(
+    model: KinematicModel,
+    topo: str,
+    wheels: set[str],
+    arm_joints: list[KinJoint],
+    movers: list[KinJoint],
+) -> list[KinJoint]:
+    """The joints a general headline rests on."""
+    if topo == "mobile_manipulator":
+        return [j for j in model.joints if j.id in wheels or j in arm_joints]
+    if topo == "mobile_base":
+        return [j for j in model.joints if j.id in wheels]
+    return movers or list(model.joints)
+
+
+def _support(model: KinematicModel, joints: list[KinJoint]) -> str:
+    """'confidence 0.60; evidence KJ1..KJ4, L0..L4': never above the weakest joint plus the headroom."""
+    cfg = load_table("roles.yaml")["kinematics"]["arm_headline"]
+    links = id_range([g.id for g in model.links])
+    if not joints:
+        return f"confidence {float(cfg['static_confidence']):.2f}; evidence {links}"
+    mean = sum(j.confidence for j in joints) / len(joints)
+    cap = min(j.confidence for j in joints) + float(cfg["weakest_joint_headroom"])
+    conf = max(float(cfg["min_confidence"]), min(float(cfg["max_confidence"]), mean, cap))
+    return f"confidence {conf:.2f}; evidence {id_range([j.id for j in joints])}, {links}"
 
 
 def _joint_phrases(model: KinematicModel, joints: list[KinJoint]) -> list[str]:

@@ -60,7 +60,7 @@ Part and assembly names come from the STEP file and are labels only. They are no
 `TwoPlates` has 2 parts (1 different): 1 fabricated and 0 purchased hardware.
 
 ### Design summary
-Likely a static structure with no moving joints. Most fabricated parts look laser or waterjet. 8 fastener pieces to buy (screws, nuts, washers), mostly M3.
+Likely: a static structure with no moving joints (confidence 0.60; evidence L0). Most fabricated parts look laser or waterjet. 8 fastener pieces to buy (screws, nuts, washers), mostly M3.
 
 ### Key facts
 - Overall size: 60.0 (width) × 60.0 (depth) × 10.0 (height) mm (up +Z, front -Y)
@@ -88,7 +88,7 @@ No design context or designer answers were supplied.
 ## Kinematics, mechanisms and roles
 
 ### Design summary (2)
-Likely a static structure with no moving joints. Most fabricated parts look laser or waterjet. 8 fastener pieces to buy (screws, nuts, washers), mostly M3.
+Likely: a static structure with no moving joints (confidence 0.60; evidence L0). Most fabricated parts look laser or waterjet. 8 fastener pieces to buy (screws, nuts, washers), mostly M3.
 
 ### Kinematics
 1 rigid link(s), 0 joint(s) (0 revolute, 0 prismatic), estimated 0 degree(s) of freedom, topology static; ground link L0 (BasePlate + TopPlate (2 part(s)))

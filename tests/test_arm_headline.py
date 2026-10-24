@@ -89,9 +89,11 @@ def test_named_links_without_joints_are_never_called_static(analyses) -> None:  
         assert "LINK" in u.kinematics.headline and "no pivot bore" in u.kinematics.headline
 
 
-def test_unnamed_assemblies_keep_their_existing_wording(analyses) -> None:  # type: ignore[no-untyped-def]
+def test_unnamed_assemblies_keep_the_static_wording_with_a_confidence(analyses) -> None:  # type: ignore[no-untyped-def]
     u = kin(analyses, "two_plates_assembly")
-    assert u.summary.startswith("Likely a static structure with no moving joints")
+    assert u.summary.startswith(
+        "Likely: a static structure with no moving joints (confidence 0.60; evidence L0)"
+    )
     assert u.kinematics.headline == ""
 
 
