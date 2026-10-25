@@ -25,7 +25,7 @@ Robot files from manufacturers (a six-axis industrial arm, for example): links, 
 - **Speed: contact distances are computed once.** The distance between two parts was computed twice (OpenCASCADE's constructor already does it, then `Perform()` repeated it). It now runs once, on all threads. The distance, the closest points and every contact are unchanged (tests at the contact tolerance, just inside and just outside it); large assemblies spend far less time in the contact stage.
 - **Speed: bore faces are found once.** The part analysis already finds the concave cylinder and cone faces of every part (the expensive step of hole detection); the contact stage found them all again on a second copy of the shape. It now reuses them. The faces are the same, so holes, contacts and every other result are unchanged; on a robot arm the contact stage drops by several minutes.
 - Weak-spot wording about printed layers appears only when the process is a printed one.
-- Build tests run hermetically (`--no-isolation`, pinned hatchling) with one isolated CI job.
+- Build tests run hermetically (`--no-isolation`, pinned hatchling) with one isolated CI job, and wait up to 30 minutes for a build (a heavily loaded machine once timed one out at 10 minutes).
 - Report schema 0.6.0 (new optional fields: `FastenerJoint.bore_pair`, the `KinematicModel` headline fields, `KinJoint` designer fields, `Understanding.kinematics_debug` and `load_path_note`, new question kinds).
 
 ## 0.1.4
