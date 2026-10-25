@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from stepscribe import timings
 from stepscribe.assembly.bom import build_bom
 from stepscribe.assembly.contacts import detect_contacts
 from stepscribe.assembly.interference import find_interferences
@@ -64,11 +65,14 @@ def build_assembly(
     if len(instances) < 2:
         return None
     gbox = union_bounds(instances)
-    contacts = detect_contacts(instances, tracker)
-    joints = detect_joints(instances, opts.pivot_min_diameter_mm, opts.pivot_min_length_ratio)
+    with timings.stage("assembly.contacts"):
+        contacts = detect_contacts(instances, tracker)
+    with timings.stage("assembly.joints"):
+        joints = detect_joints(instances, opts.pivot_min_diameter_mm, opts.pivot_min_length_ratio)
     # a pivot or a large bore pair is not a bolted joint
     fasteners = [j for j in joints if not j.pivot_candidate and not j.bore_pair]
-    relations = build_relations(instances, contacts, fasteners, opts.up)
+    with timings.stage("assembly.relations"):
+        relations = build_relations(instances, contacts, fasteners, opts.up)
     masses = [i.ap.part.mass.mass_g for i in instances]
     known = all(m is not None for m in masses)
     total = float(sum(m for m in masses if m is not None)) if known else None

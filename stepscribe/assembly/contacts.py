@@ -17,7 +17,7 @@ from OCP.BRepGProp import BRepGProp
 from OCP.GProp import GProp_GProps
 from OCP.TopoDS import TopoDS_Compound, TopoDS_Shape
 
-from stepscribe import config
+from stepscribe import config, timings
 from stepscribe.assembly.tree import InstanceData, to_trsf
 from stepscribe.features.bosses import _is_convex_full_cylinder
 from stepscribe.features.holes import find_bore_faces
@@ -229,7 +229,8 @@ def detect_contacts(instances: list[InstanceData], tracker: Tracker | None = Non
     """All contacts and near misses between instance pairs."""
     if len(instances) < 2:
         return []
-    cache = {i.part_id: part_faces(i.ap.geom) for i in instances}
+    with timings.stage("assembly.contacts.part_faces"):
+        cache = {i.part_id: part_faces(i.ap.geom) for i in instances}
     lo = np.array([i.bounds[0] for i in instances]) - config.NEAR_MISS_MAX
     hi = np.array([i.bounds[1] for i in instances]) + config.NEAR_MISS_MAX
     candidates = [
@@ -240,15 +241,18 @@ def detect_contacts(instances: list[InstanceData], tracker: Tracker | None = Non
     ]
     if tracker is not None:
         tracker.plan_pairs(len(candidates))
+    timings.count("contact_pairs_all", len(instances) * (len(instances) - 1) // 2)
+    timings.count("contact_pairs_tested", len(candidates))
     raw: list[tuple[str, str, Contact]] = []
-    for i, j in candidates:
-        started = time.time()
-        raw.extend(
-            (instances[i].id, instances[j].id, c)
-            for c in _pair_contacts(instances[i], instances[j], cache)
-        )
-        if tracker is not None:
-            tracker.pair_done(time.time() - started)
+    with timings.stage("assembly.contacts.pairs"):
+        for i, j in candidates:
+            started = time.time()
+            raw.extend(
+                (instances[i].id, instances[j].id, c)
+                for c in _pair_contacts(instances[i], instances[j], cache)
+            )
+            if tracker is not None:
+                tracker.pair_done(time.time() - started)
     raw.sort(key=lambda t: (t[0], t[1], t[2].kind))
     contacts = []
     for n, (_a, _b, c) in enumerate(raw, 1):

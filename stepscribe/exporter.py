@@ -22,7 +22,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from stepscribe import __version__, cache, config
+from stepscribe import __version__, cache, config, timings
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.api import Analysis, analyze_full
 from stepscribe.describe.budget import estimate_tokens
@@ -195,6 +195,8 @@ def export(
         shutil.rmtree(folder)
     folder.mkdir(parents=True)
 
+    if timings.enabled():
+        timings.reset()
     tracker = tracker or Tracker()
     tracker.images_wanted = images
     if analysis is None:
@@ -204,15 +206,16 @@ def export(
         errors = "; ".join(str(e.get("error")) for e in report.errors)
         raise ValueError(f"nothing could be analysed: {errors or 'no parts found'}")
     tracker.stage("export", "writing the export")
-    build = write_pack_build(
-        analysis,
-        root,
-        compact_budget_tokens,
-        context_file,
-        images,
-        tracker,
-        folder=folder / "pack",
-    )
+    with timings.stage("export.pack"):
+        build = write_pack_build(
+            analysis,
+            root,
+            compact_budget_tokens,
+            context_file,
+            images,
+            tracker,
+            folder=folder / "pack",
+        )
     pack = build.folder
     warnings: list[str] = []
     no_ts = bool(report.meta.options.get("no_timestamp"))
@@ -247,6 +250,8 @@ def export(
     if context_file and Path(context_file).is_file():
         shutil.copyfile(context_file, folder / "data" / "design_context.yaml")
 
+    if timings.enabled():
+        timings.write(folder / "data" / "timings.json")
     bundle, dropped = _chat_bundle(folder, name, img_rels, report, chat_max_images, chat_max_mb)
     files = _list_files(folder, name, bundle, dropped)
     manifest_md = _manifest_md(name, files, dropped, small_budget_tokens, compact_budget_tokens)

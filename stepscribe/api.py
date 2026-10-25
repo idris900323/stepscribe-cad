@@ -12,7 +12,7 @@ from typing import Any
 from OCP.TopAbs import TopAbs_FACE
 from OCP.TopoDS import TopoDS_Shape
 
-from stepscribe import __version__, config
+from stepscribe import __version__, config, timings
 from stepscribe.analysis import (
     AnalyzedPart,
     AnalyzeOptions,
@@ -121,6 +121,7 @@ def _analyse_bodies(
                 except Exception as exc:  # noqa: BLE001
                     failed(i, exc)
                     continue
+                timings.add_part(bodies[i][1], faces[id(bodies[i][2])], secs)
                 tracker.part_done(bodies[i][1], faces[id(bodies[i][2])], secs)
         else:
             order = sorted(range(len(bodies)), key=lambda i: -faces[id(bodies[i][2])])  # big first
@@ -140,6 +141,7 @@ def _analyse_bodies(
                             failed(i, exc)
                             continue
                         results[i] = part
+                        timings.add_part(bodies[i][1], faces[id(bodies[i][2])], secs)
                         # wall-clock share, so the ETA (faces per second) reflects the parallel speed
                         tracker.part_done(bodies[i][1], faces[id(bodies[i][2])], secs / workers)
             except (BrokenProcessPool, RuntimeError, OSError):
@@ -157,6 +159,7 @@ def _analyse_bodies(
                 except Exception as exc:  # noqa: BLE001
                     failed(i, exc)
                     continue
+                timings.add_part(bodies[i][1], faces[id(bodies[i][2])], secs)
                 tracker.part_done(bodies[i][1], faces[id(bodies[i][2])], secs)
     return [
         (bodies[i][0], PartGeom(bodies[i][1], bodies[i][2]), results[i]) for i in sorted(results)
@@ -173,7 +176,8 @@ def analyze_full(
     opts = options or AnalyzeOptions()
     p = Path(path)
     try:
-        model = read_step(p)
+        with timings.stage("load"):
+            model = read_step(p)
     except StepReadError as exc:
         report = Report(
             meta=_meta([p.name], "mm", opts), parts=[], errors=[{"file": p.name, "error": str(exc)}]
@@ -196,7 +200,8 @@ def analyze_full(
     proto_parts: dict[str, list[AnalyzedPart]] = {}
     warnings = list(model.warnings)
     errors: list[dict[str, object]] = []
-    done_parts = _analyse_bodies(bodies, faces, p.name, opts, tracker, errors)
+    with timings.stage("parts"):
+        done_parts = _analyse_bodies(bodies, faces, p.name, opts, tracker, errors)
     for key, geom, part in done_parts:
         part.name_cleaned = model.protos[key].name_cleaned
         ap = AnalyzedPart(part, geom)
@@ -216,12 +221,14 @@ def analyze_full(
     from stepscribe.assembly import build_assembly
 
     tracker.stage("assembly", "building assembly relationships")
-    report.assembly = build_assembly(analysis, opts, tracker)
+    with timings.stage("assembly"):
+        report.assembly = build_assembly(analysis, opts, tracker)
     if opts.understanding:
         from stepscribe.understanding import build_understanding
 
         try:
-            report.understanding = build_understanding(analysis, opts, tracker)
+            with timings.stage("understanding"):
+                report.understanding = build_understanding(analysis, opts, tracker)
         except Exception as exc:  # noqa: BLE001 - the measured report must survive
             report.warnings.append(f"understanding layer failed: {type(exc).__name__}: {exc}")
     return analysis
