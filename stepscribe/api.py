@@ -97,6 +97,7 @@ def _analyse_bodies(
     if len(bodies) < PARALLEL_MIN_PARTS or sum(faces.values()) < PARALLEL_MIN_FACES:
         workers = 1
     results: dict[int, Part] = {}
+    bores: dict[int, list[Any] | None] = {}
 
     def failed(i: int, exc: Exception) -> None:
         name = bodies[i][1]
@@ -117,7 +118,7 @@ def _analyse_bodies(
         if workers == 1:
             for i in range(len(bodies)):
                 try:
-                    results[i], secs = analyze_brep_file(*args(i))
+                    results[i], secs, bores[i] = analyze_brep_file(*args(i))
                 except Exception as exc:  # noqa: BLE001
                     failed(i, exc)
                     continue
@@ -133,7 +134,7 @@ def _analyse_bodies(
                     for fut in as_completed(futures):
                         i = futures[fut]
                         try:
-                            part, secs = fut.result()
+                            part, secs, found = fut.result()
                         except BrokenProcessPool:
                             retry.append(i)  # e.g. the caller is a script without a main guard
                             continue
@@ -141,6 +142,7 @@ def _analyse_bodies(
                             failed(i, exc)
                             continue
                         results[i] = part
+                        bores[i] = found
                         timings.add_part(bodies[i][1], faces[id(bodies[i][2])], secs)
                         # wall-clock share, so the ETA (faces per second) reflects the parallel speed
                         tracker.part_done(bodies[i][1], faces[id(bodies[i][2])], secs / workers)
@@ -155,15 +157,18 @@ def _analyse_bodies(
                 if i in results:
                     continue
                 try:
-                    results[i], secs = analyze_brep_file(*args(i))
+                    results[i], secs, bores[i] = analyze_brep_file(*args(i))
                 except Exception as exc:  # noqa: BLE001
                     failed(i, exc)
                     continue
                 timings.add_part(bodies[i][1], faces[id(bodies[i][2])], secs)
                 tracker.part_done(bodies[i][1], faces[id(bodies[i][2])], secs)
-    return [
-        (bodies[i][0], PartGeom(bodies[i][1], bodies[i][2]), results[i]) for i in sorted(results)
-    ]
+    out = []
+    for i in sorted(results):
+        geom = PartGeom(bodies[i][1], bodies[i][2])
+        geom.bores_cache = bores.get(i)  # already found by the part analysis
+        out.append((bodies[i][0], geom, results[i]))
+    return out
 
 
 def analyze_full(

@@ -211,8 +211,12 @@ def analyze_brep_file(
     source_file: str,
     opts: AnalyzeOptions,
     color: list[float] | None,
-) -> tuple[Part, float]:
-    """Process-pool entry point: load a solid saved as BREP and analyse it (returns Part, seconds)."""
+) -> tuple[Part, float, list[Any] | None]:
+    """Process-pool entry point: load a solid saved as BREP and analyse it.
+
+    Returns the Part, the seconds taken and the bore faces found on the way, which the contact
+    stage reuses instead of finding them again on its own copy of the shape.
+    """
     import time
 
     from OCP.BRep import BRep_Builder
@@ -224,8 +228,9 @@ def analyze_brep_file(
     shape = TopoDS_Shape()
     if not BRepTools.Read_s(shape, brep_path, BRep_Builder()):
         raise RuntimeError(f"could not reload part '{name}' for parallel analysis")
-    part = analyze_geom(PartGeom(name, shape), source_file, opts, color, run_semantics)
-    return part, time.time() - started
+    geom = PartGeom(name, shape)
+    part = analyze_geom(geom, source_file, opts, color, run_semantics)
+    return part, time.time() - started, geom.bores_cache
 
 
 WORKER_BASE_MB = 340.0  # interpreter + OCC + numpy, measured 341 MB at 10 faces
