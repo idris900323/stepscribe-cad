@@ -333,13 +333,27 @@ def _line_or_point(dss: BRepExtrema_DistShapeShape) -> str:
     return "line" if spread > config.CONTACT_TOL else "point"
 
 
+def _distance(a: TopoDS_Shape, b: TopoDS_Shape) -> BRepExtrema_DistShapeShape:
+    """Minimum distance between two shapes, computed once.
+
+    ``BRepExtrema_DistShapeShape(a, b)`` already runs the computation (single-threaded), so calling
+    ``Perform()`` after it repeated all of it. Loading the shapes into a default object and
+    performing once, with the thread setting in place first, gives the same value, solution count
+    and closest points (tests/test_contact_distance.py) in a fraction of the time.
+    """
+    dss = BRepExtrema_DistShapeShape()
+    dss.LoadS1(a)
+    dss.LoadS2(b)
+    dss.SetMultiThread(MULTITHREAD)
+    dss.Perform()
+    return dss
+
+
 def _pair_contacts(a: InstanceData, b: InstanceData, cache: dict[str, PartFaces]) -> list[Contact]:
     shapes = _candidate_shapes(a, b, cache[a.part_id], cache[b.part_id])
     if shapes is None:
         return []
-    dss = BRepExtrema_DistShapeShape(*shapes)
-    dss.SetMultiThread(MULTITHREAD)
-    dss.Perform()
+    dss = _distance(*shapes)
     if not dss.IsDone():
         return []
     dist = float(dss.Value())
