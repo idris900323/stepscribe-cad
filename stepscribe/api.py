@@ -18,9 +18,11 @@ from stepscribe.analysis import (
     AnalyzeOptions,
     analyze_brep_file,
     assign_part_ids,
+    bore_chunk,
     split_bodies,
     worker_count,
 )
+from stepscribe.features.holes import assemble_bores
 from stepscribe.geometry.occ_utils import unique_subshapes
 from stepscribe.geometry.part_geom import PartGeom
 from stepscribe.io.step_reader import StepModel, StepReadError, read_step
@@ -29,6 +31,10 @@ from stepscribe.progress import Tracker
 
 PARALLEL_MIN_PARTS = 3
 PARALLEL_MIN_FACES = 300  # below this, starting processes costs more than it saves
+HEAVY_BORE_FACES = (
+    300  # a part with this many faces has its hole-detection ray casts split over the pool
+)
+MIN_CHUNK_FACES = 40  # faces per ray-cast task, at least
 
 
 @dataclass
@@ -88,7 +94,7 @@ def _analyse_bodies(
     """
     import multiprocessing as mp
     import tempfile
-    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
     from concurrent.futures.process import BrokenProcessPool
 
     from OCP.BRepTools import BRepTools
@@ -115,6 +121,9 @@ def _analyse_bodies(
         def args(i: int) -> tuple[str, str, str, AnalyzeOptions, list[float] | None]:
             return paths[i], bodies[i][1], source_file, opts, bodies[i][3]
 
+        def n_faces(i: int) -> int:
+            return faces[id(bodies[i][2])]
+
         if workers == 1:
             for i in range(len(bodies)):
                 try:
@@ -130,22 +139,64 @@ def _analyse_bodies(
             retry: list[int] = []
             try:
                 with ProcessPoolExecutor(workers, mp_context=mp.get_context("spawn")) as pool:
-                    futures = {pool.submit(analyze_brep_file, *args(i)): i for i in order}
-                    for fut in as_completed(futures):
-                        i = futures[fut]
-                        try:
-                            part, secs, found = fut.result()
-                        except BrokenProcessPool:
-                            retry.append(i)  # e.g. the caller is a script without a main guard
-                            continue
-                        except Exception as exc:  # noqa: BLE001
-                            failed(i, exc)
-                            continue
-                        results[i] = part
-                        bores[i] = found
-                        timings.add_part(bodies[i][1], faces[id(bodies[i][2])], secs)
-                        # wall-clock share, so the ETA (faces per second) reflects the parallel speed
-                        tracker.part_done(bodies[i][1], faces[id(bodies[i][2])], secs / workers)
+                    pending: dict[Future[Any], tuple[str, int]] = {}
+                    chunks: dict[int, list[Future[Any]]] = {}
+                    left: dict[int, int] = {}
+                    # The ray casts of hole detection are independent per face. For a big part they
+                    # go to the pool first, in chunks, so the whole pool works on the part that
+                    # would otherwise be the slowest; its analysis then starts with the bores found.
+                    for i in (i for i in order if n_faces(i) >= HEAVY_BORE_FACES):
+                        total = n_faces(i)
+                        step = max(MIN_CHUNK_FACES, -(-total // (workers * 3)))
+                        futs = [
+                            pool.submit(
+                                bore_chunk, paths[i], bodies[i][1], lo, min(lo + step, total)
+                            )
+                            for lo in range(0, total, step)
+                        ]
+                        chunks[i], left[i] = futs, len(futs)
+                        pending.update({f: ("chunk", i) for f in futs})
+                        timings.count("bore_chunks", len(futs))
+                        tracker.stage(
+                            "parts",
+                            f"hole detection of {bodies[i][1]} split into {len(futs)} tasks",
+                        )
+                    for i in order:
+                        if i not in chunks:
+                            pending[pool.submit(analyze_brep_file, *args(i))] = ("part", i)
+                    while pending:
+                        done, _not_done = wait(pending, return_when=FIRST_COMPLETED)
+                        for fut in done:
+                            kind, i = pending.pop(fut)
+                            if kind == "chunk":
+                                left[i] -= 1
+                                if left[i] == 0:
+                                    try:
+                                        found = assemble_bores(
+                                            r for f in chunks[i] for r in f.result()
+                                        )
+                                    except BrokenProcessPool:
+                                        raise
+                                    except Exception:  # noqa: BLE001
+                                        found = None  # the part's own worker finds its bores
+                                    pending[pool.submit(analyze_brep_file, *args(i), found)] = (
+                                        "part",
+                                        i,
+                                    )
+                                continue
+                            try:
+                                part, secs, bores_found = fut.result()
+                            except BrokenProcessPool:
+                                retry.append(i)  # e.g. the caller is a script without a main guard
+                                continue
+                            except Exception as exc:  # noqa: BLE001
+                                failed(i, exc)
+                                continue
+                            results[i] = part
+                            bores[i] = bores_found
+                            timings.add_part(bodies[i][1], n_faces(i), secs)
+                            # wall-clock share, so the ETA (faces per second) reflects the parallel speed
+                            tracker.part_done(bodies[i][1], n_faces(i), secs / workers)
             except (BrokenProcessPool, RuntimeError, OSError):
                 retry = [i for i in order if i not in results]
             if retry:

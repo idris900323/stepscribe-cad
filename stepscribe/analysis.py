@@ -22,7 +22,7 @@ from OCP.TopoDS import TopoDS_Shape
 from stepscribe.features.bosses import detect_bosses
 from stepscribe.features.cutouts import detect_cutouts
 from stepscribe.features.fillets_chamfers import detect_chamfers, detect_fillets
-from stepscribe.features.holes import detect_holes
+from stepscribe.features.holes import BoreResult, detect_holes
 from stepscribe.features.patterns import detect_patterns
 from stepscribe.features.shape_class import classify_shape
 from stepscribe.features.slots_pockets import detect_pockets, detect_slots
@@ -205,30 +205,58 @@ def analyze_geom(
     return part
 
 
+_chunk_part: list[tuple[str, PartGeom]] = []  # the one part this worker last cast rays for
+
+
+def _load_geom(brep_path: str, name: str) -> PartGeom:
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepTools import BRepTools
+
+    shape = TopoDS_Shape()
+    if not BRepTools.Read_s(shape, brep_path, BRep_Builder()):
+        raise RuntimeError(f"could not reload part '{name}' for parallel analysis")
+    return PartGeom(name, shape)
+
+
+def bore_chunk(brep_path: str, name: str, lo: int, hi: int) -> list[BoreResult]:
+    """Pool entry point: the bore results of faces ``lo..hi-1`` of a part saved as BREP.
+
+    The ray casts of hole detection are independent per face, so the pool spreads the faces of a
+    big part over its workers; :func:`stepscribe.features.holes.assemble_bores` puts them back.
+    A worker keeps the part it loaded for its next chunk of the same part.
+    """
+    from stepscribe.features.holes import bore_candidate
+
+    if not _chunk_part or _chunk_part[0][0] != brep_path:
+        _chunk_part[:] = [(brep_path, _load_geom(brep_path, name))]
+    geom = _chunk_part[0][1]
+    hi = min(hi, len(geom.table.faces))
+    return [r for idx in range(lo, hi) if (r := bore_candidate(geom, idx)) is not None]
+
+
 def analyze_brep_file(
     brep_path: str,
     name: str,
     source_file: str,
     opts: AnalyzeOptions,
     color: list[float] | None,
+    bores: tuple[list[Any], list[str]] | None = None,
 ) -> tuple[Part, float, list[Any] | None]:
     """Process-pool entry point: load a solid saved as BREP and analyse it.
 
     Returns the Part, the seconds taken and the bore faces found on the way, which the contact
-    stage reuses instead of finding them again on its own copy of the shape.
+    stage reuses instead of finding them again on its own copy of the shape. *bores* are the bore
+    faces and warnings other workers already found for this part (see :func:`bore_chunk`).
     """
     import time
-
-    from OCP.BRep import BRep_Builder
-    from OCP.BRepTools import BRepTools
 
     from stepscribe.semantics import run_semantics
 
     started = time.time()
-    shape = TopoDS_Shape()
-    if not BRepTools.Read_s(shape, brep_path, BRep_Builder()):
-        raise RuntimeError(f"could not reload part '{name}' for parallel analysis")
-    geom = PartGeom(name, shape)
+    _chunk_part.clear()  # this worker is about to analyse; give the memory back
+    geom = _load_geom(brep_path, name)
+    if bores is not None:
+        geom.bores_cache, geom.bores_warnings = bores
     part = analyze_geom(geom, source_file, opts, color, run_semantics)
     return part, time.time() - started, geom.bores_cache
 
@@ -318,6 +346,7 @@ __all__ = [
     "AnalyzeOptions",
     "AnalyzedPart",
     "analyze_brep_file",
+    "bore_chunk",
     "analyze_geom",
     "assign_part_ids",
     "np",

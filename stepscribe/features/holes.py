@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -88,36 +89,73 @@ def is_concave(part: PartGeom, idx: int, kind: str, origin: Vec, direction: Vec)
     return by_classifier
 
 
-def find_bore_faces(part: PartGeom) -> list[BoreFace]:
-    """All concave cylindrical / conical faces (7.1 + 7.2); cached on the part."""
-    if part.bores_cache is not None:
-        cached: list[BoreFace] = part.bores_cache
-        return cached
+BoreResult = tuple[int, str, BoreFace | None, list[str]]
+"""(face index, 'sliver' | 'face', the bore if the face is concave, warnings the face raised)."""
+
+
+def bore_candidate(part: PartGeom, idx: int) -> BoreResult | None:
+    """One face of :func:`find_bore_faces`; None for a face that is not a cylinder or cone.
+
+    The warnings the face raises (the orientation test and the solid classifier disagree) are
+    returned, not left on the part, so the result can be computed anywhere and put back in order.
+    """
+    fi = part.table.faces[idx]
+    if fi.kind not in ("cylinder", "cone"):
+        return None
+    if fi.area < config.MIN_FEATURE_SIZE**2:
+        return (idx, "sliver", None, [])
+    before = len(part.warnings)
+    u0, u1, v0, v1, _um, _vm = _uv_mid(fi.face)
+    if fi.kind == "cylinder":
+        cp = cylinder_params(fi.face)
+        origin, direction, radius, semi = cp.origin, cp.direction, cp.radius, 0.0
+    else:
+        cn = cone_params(fi.face)
+        origin, direction, radius, semi = cn.origin, cn.direction, cn.ref_radius, cn.semi_angle
+    bore = None
+    if is_concave(part, idx, fi.kind, origin, direction):
+        bore = BoreFace(
+            idx, fi.kind, origin, direction, math.degrees(u1 - u0), v0, v1, radius, semi
+        )
+    raised = part.warnings[before:]
+    del part.warnings[before:]
+    return (idx, "face", bore, raised)
+
+
+def assemble_bores(results: Iterable[BoreResult]) -> tuple[list[BoreFace], list[str]]:
+    """The bores and the warnings of a part from the results of its faces, in face order."""
     out: list[BoreFace] = []
+    warnings: list[str] = []
     slivers = 0
-    for idx, fi in enumerate(part.table.faces):
-        if fi.kind not in ("cylinder", "cone"):
-            continue
-        if fi.area < config.MIN_FEATURE_SIZE**2:
+    for _idx, status, bore, raised in sorted(results, key=lambda r: r[0]):
+        warnings.extend(raised)
+        if status == "sliver":
             slivers += 1
-            continue
-        u0, u1, v0, v1, _um, _vm = _uv_mid(fi.face)
-        if fi.kind == "cylinder":
-            cp = cylinder_params(fi.face)
-            origin, direction, radius, semi = cp.origin, cp.direction, cp.radius, 0.0
-        else:
-            cn = cone_params(fi.face)
-            origin, direction, radius, semi = cn.origin, cn.direction, cn.ref_radius, cn.semi_angle
-        if is_concave(part, idx, fi.kind, origin, direction):
-            out.append(
-                BoreFace(
-                    idx, fi.kind, origin, direction, math.degrees(u1 - u0), v0, v1, radius, semi
-                )
-            )
+        elif bore is not None:
+            out.append(bore)
     if slivers:
-        part.warnings.append(
+        warnings.append(
             f"{slivers} cylindrical/conical face(s) smaller than {config.MIN_FEATURE_SIZE} mm ignored"
         )
+    return out, warnings
+
+
+def find_bore_faces(part: PartGeom) -> list[BoreFace]:
+    """All concave cylindrical / conical faces (7.1 + 7.2); cached on the part.
+
+    A part analysed on a pool may arrive with its bores already found by other workers
+    (``bores_cache``) and the warnings they raised (``bores_warnings``, added here, at the point
+    this would have raised them).
+    """
+    if part.bores_cache is not None:
+        cached: list[BoreFace] = part.bores_cache
+        if part.bores_warnings:
+            part.warnings.extend(part.bores_warnings)
+            part.bores_warnings = []
+        return cached
+    results = [r for idx in range(len(part.table.faces)) if (r := bore_candidate(part, idx))]
+    out, warnings = assemble_bores(results)
+    part.warnings.extend(warnings)
     part.bores_cache = out
     return out
 
