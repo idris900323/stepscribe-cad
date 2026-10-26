@@ -85,7 +85,7 @@ def export_key(
     if context_file:
         h.update(cache.file_digest(context_file).encode())
     h.update(json.dumps(params, sort_keys=True).encode())
-    h.update(__version__.encode())
+    h.update(f"{__version__}|{SCHEMA_VERSION}".encode())
     return h.hexdigest()
 
 

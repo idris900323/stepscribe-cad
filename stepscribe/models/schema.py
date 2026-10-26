@@ -4,9 +4,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 SCHEMA_VERSION = "0.6.0"
 
@@ -636,6 +637,9 @@ class BOMLine(_M):
     category: Literal["fabricated", "purchased_hardware", "unknown"]
 
 
+_OLD_TOUCH = re.compile(r"touches (?:at a point|along a line)")
+
+
 class Contact(_M):
     id: str
     instance_a: str
@@ -646,6 +650,12 @@ class Contact(_M):
     normal: Vec3 | None = None
     fit: Literal["clearance", "line_to_line", "interference"] | None = None
     fit_value_mm: float | None = None
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _old_kinds(cls, value: Any) -> Any:
+        """Reports and cache entries written before 3571f9a say "point" or "line"."""
+        return "edge_or_point" if value in ("point", "line") else value
 
 
 class FastenerJoint(Inference):
@@ -680,6 +690,14 @@ class Relation(_M):
     via: list[str]
     sentence: str
     confidence: float
+
+    @field_validator("sentence", mode="before")
+    @classmethod
+    def _old_wording(cls, value: Any) -> Any:
+        """The sentence the older reports carry for a touch that is now one kind."""
+        if isinstance(value, str):
+            return _OLD_TOUCH.sub("touches at an edge or point", value)
+        return value
 
 
 class SpatialFact(_M):
