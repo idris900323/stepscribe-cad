@@ -640,7 +640,7 @@ class Contact(_M):
     id: str
     instance_a: str
     instance_b: str
-    kind: Literal["planar_face", "cylindrical_fit", "line", "point", "near_miss"]
+    kind: Literal["planar_face", "cylindrical_fit", "edge_or_point", "near_miss"]
     min_distance_mm: float
     contact_area_mm2: float | None = None
     normal: Vec3 | None = None

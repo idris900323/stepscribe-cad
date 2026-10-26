@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 idris sadiq
-"""Contacts between instances: planar faces, cylindrical fits, line/point, near misses (10.2)."""
+"""Contacts between instances: planar faces, cylindrical fits, edge or point, near misses (10.2)."""
 
 from __future__ import annotations
 
@@ -320,19 +320,6 @@ def _sub_shape(inst: InstanceData, indices: np.ndarray) -> TopoDS_Shape:
     return transform_shape(comp, to_trsf(inst.matrix))
 
 
-def _line_or_point(dss: BRepExtrema_DistShapeShape) -> str:
-    """'line' if the closest points spread over more than the contact tolerance, else 'point'.
-
-    Geometric and deterministic: it does not depend on how many extrema solutions OCCT reports,
-    which varies with how much geometry is passed in.
-    """
-    pts = np.array([to_np(dss.PointOnShape1(i)) for i in range(1, dss.NbSolution() + 1)])
-    if len(pts) < 2:
-        return "point"
-    spread = float(np.max(np.linalg.norm(pts[:, None, :] - pts[None, :, :], axis=2)))
-    return "line" if spread > config.CONTACT_TOL else "point"
-
-
 def _distance(a: TopoDS_Shape, b: TopoDS_Shape) -> BRepExtrema_DistShapeShape:
     """Minimum distance between two shapes, computed once.
 
@@ -400,9 +387,18 @@ def _pair_contacts(a: InstanceData, b: InstanceData, cache: dict[str, PartFaces]
                 )
             )
         else:
-            kind = _line_or_point(dss)
+            # Touching, but not over a face and not as a shaft in a bore: along an edge or at a
+            # point. Telling the two apart took the number of closest-point solutions the solver
+            # returned, which depends on the thread count, so the same input gave different
+            # reports. One kind is the same every time.
             found.append(
-                Contact(id="", instance_a=a.id, instance_b=b.id, kind=kind, min_distance_mm=dist)
+                Contact(
+                    id="",
+                    instance_a=a.id,
+                    instance_b=b.id,
+                    kind="edge_or_point",
+                    min_distance_mm=dist,
+                )
             )
     return found
 

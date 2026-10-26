@@ -207,3 +207,15 @@ Every `Likely:` headline carries a confidence and the IDs it rests on, not only 
 - **Weak-spot text names a process only when one is known.** The sentence that printed layers split
   along sharp internal corners appears only for a printed process; with no process guess, or a
   machined one, the finding states the geometry only.
+
+## 12. Why there is no point/line split
+
+Two parts that touch, but not over a flat face (planar contact) and not as a shaft in a bore
+(cylindrical fit), are reported with one contact kind, `edge_or_point` ("A touches at an edge or
+point B."). An earlier version told a line from a point by counting the closest-point solutions the
+distance solver returned. That count depends on how many threads the solver uses, and a solver
+returns a single point even for a whole line of contact, so the same file was reported both ways from
+one run to the next. A reliable split needs the extent of the region where the parts are closer than
+the contact tolerance, which costs seconds per contact and does not scale to large parts, and nothing
+in the analysis depends on the difference (links, joints, load paths and weak spots treat both alike),
+so the report says only what is certain.
