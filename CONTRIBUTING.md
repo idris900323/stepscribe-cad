@@ -17,6 +17,8 @@ ruff check .
 mypy
 ```
 
+The full suite takes about 25 minutes. For a fast local run use `pytest -m "not slow"`: it skips the 40 slowest tests (listed in `tests/slow_tests.txt`, over half of a full run's time). CI and releases run everything; `tests/test_slow_list.py` fails if a listed test is renamed or removed.
+
 The agent skill lives in `skills/stepscribe/`. After changing it run `python scripts/sync_skills.py` to update the copies in `plugins/` and `.github/skills/` and the skill zip (CI fails if they differ). `python scripts/check_release.py` checks that the package, plugin and marketplace share one version.
 
 Rules the code follows: no network or LLM calls in the core, deterministic output, every number sourced from the STEP file, tests for new behaviour, full typing (mypy strict). Third-party STEP files stay out of the repository (`robot_steps/` is gitignored).
