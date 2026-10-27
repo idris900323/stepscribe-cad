@@ -11,7 +11,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from stepscribe import config
+from stepscribe import config, timings
 from stepscribe.api import Analysis
 from stepscribe.describe.assembly_describer import assembly_core_context, level0_context
 from stepscribe.describe.budget import PackSections, compose_budgeted, rank_parts
@@ -206,7 +206,8 @@ def write_pack_build(
     if images:
         from stepscribe.render import render_pack_images
 
-        images_written = render_pack_images(analysis, folder, tracker)
+        with timings.stage("images"):
+            images_written = render_pack_images(analysis, folder, tracker)
     else:  # reuse images rendered earlier (the interview rebuilds the text only)
         existing = folder / "images"
         images_written = (

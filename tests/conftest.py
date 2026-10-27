@@ -27,6 +27,11 @@ from stepscribe.api import Analysis, analyze_full  # noqa: E402
 GOLDEN_DIR = ROOT / "golden"
 
 
+def _slow_ids() -> set[str]:
+    listed = (ROOT / "slow_tests.txt").read_text(encoding="utf-8").splitlines()
+    return {line.strip() for line in listed if line.strip() and not line.startswith("#")}
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--update-golden", action="store_true", help="rewrite golden files")
 
@@ -107,9 +112,14 @@ RENDER_TESTS = {
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Skip the image tests on machines where off-screen OpenGL does not work (bare CI VMs)."""
+    """Mark the slowest tests `slow` (``pytest -m "not slow"`` is the fast local run); skip the
+    image tests on machines where off-screen OpenGL does not work (bare CI VMs)."""
     from stepscribe.render.raster import rendering_available
 
+    slow = _slow_ids()
+    for item in items:
+        if item.nodeid in slow:
+            item.add_marker(pytest.mark.slow)
     if rendering_available():
         return
     skip = pytest.mark.skip(reason="off-screen rendering is not available on this machine")

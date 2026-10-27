@@ -22,7 +22,7 @@ from OCP.TopoDS import TopoDS_Shape
 from stepscribe.features.bosses import detect_bosses
 from stepscribe.features.cutouts import detect_cutouts
 from stepscribe.features.fillets_chamfers import detect_chamfers, detect_fillets
-from stepscribe.features.holes import detect_holes
+from stepscribe.features.holes import BoreResult, detect_holes
 from stepscribe.features.patterns import detect_patterns
 from stepscribe.features.shape_class import classify_shape
 from stepscribe.features.slots_pockets import detect_pockets, detect_slots
@@ -205,27 +205,60 @@ def analyze_geom(
     return part
 
 
+_chunk_part: list[tuple[str, PartGeom]] = []  # the one part this worker last cast rays for
+
+
+def _load_geom(brep_path: str, name: str) -> PartGeom:
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepTools import BRepTools
+
+    shape = TopoDS_Shape()
+    if not BRepTools.Read_s(shape, brep_path, BRep_Builder()):
+        raise RuntimeError(f"could not reload part '{name}' for parallel analysis")
+    return PartGeom(name, shape)
+
+
+def bore_chunk(brep_path: str, name: str, lo: int, hi: int) -> list[BoreResult]:
+    """Pool entry point: the bore results of faces ``lo..hi-1`` of a part saved as BREP.
+
+    The ray casts of hole detection are independent per face, so the pool spreads the faces of a
+    big part over its workers; :func:`stepscribe.features.holes.assemble_bores` puts them back.
+    A worker keeps the part it loaded for its next chunk of the same part.
+    """
+    from stepscribe.features.holes import bore_candidate
+
+    if not _chunk_part or _chunk_part[0][0] != brep_path:
+        _chunk_part[:] = [(brep_path, _load_geom(brep_path, name))]
+    geom = _chunk_part[0][1]
+    hi = min(hi, len(geom.table.faces))
+    return [r for idx in range(lo, hi) if (r := bore_candidate(geom, idx)) is not None]
+
+
 def analyze_brep_file(
     brep_path: str,
     name: str,
     source_file: str,
     opts: AnalyzeOptions,
     color: list[float] | None,
-) -> tuple[Part, float]:
-    """Process-pool entry point: load a solid saved as BREP and analyse it (returns Part, seconds)."""
-    import time
+    bores: tuple[list[Any], list[str]] | None = None,
+) -> tuple[Part, float, list[Any] | None]:
+    """Process-pool entry point: load a solid saved as BREP and analyse it.
 
-    from OCP.BRep import BRep_Builder
-    from OCP.BRepTools import BRepTools
+    Returns the Part, the seconds taken and the bore faces found on the way, which the contact
+    stage reuses instead of finding them again on its own copy of the shape. *bores* are the bore
+    faces and warnings other workers already found for this part (see :func:`bore_chunk`).
+    """
+    import time
 
     from stepscribe.semantics import run_semantics
 
     started = time.time()
-    shape = TopoDS_Shape()
-    if not BRepTools.Read_s(shape, brep_path, BRep_Builder()):
-        raise RuntimeError(f"could not reload part '{name}' for parallel analysis")
-    part = analyze_geom(PartGeom(name, shape), source_file, opts, color, run_semantics)
-    return part, time.time() - started
+    _chunk_part.clear()  # this worker is about to analyse; give the memory back
+    geom = _load_geom(brep_path, name)
+    if bores is not None:
+        geom.bores_cache, geom.bores_warnings = bores
+    part = analyze_geom(geom, source_file, opts, color, run_semantics)
+    return part, time.time() - started, geom.bores_cache
 
 
 WORKER_BASE_MB = 340.0  # interpreter + OCC + numpy, measured 341 MB at 10 faces
@@ -302,6 +335,36 @@ def worker_count(
     return n
 
 
+UNKNOWN_RAM_SPLIT_WORKERS = 4  # when the OS does not say how much memory is free (macOS)
+
+
+def may_split_bores(
+    workers: int,
+    max_faces: int,
+    available_bytes: int | None = _UNSET,
+    jobs: int | None = None,
+) -> bool:
+    """Whether the ray casts of a big part may be spread over the whole pool.
+
+    Every worker that casts rays holds its own copy of the part, so the split puts the largest
+    part into all `workers` processes at once, not into one. That is allowed when the same memory
+    rule as `worker_count` (`estimate_worker_mb` for the largest part, RAM_SHARE of the free
+    memory, shared between the jobs) holds for all of them. When the OS does not report free
+    memory the split is used only on a pool of at most UNKNOWN_RAM_SPLIT_WORKERS processes. The
+    report is the same either way: no split just means the part's own worker does all the casts.
+    """
+    from stepscribe.runner import RUNNER
+
+    if workers <= 1:
+        return False
+    free = available_ram_bytes() if available_bytes is _UNSET else available_bytes
+    if free is None:
+        return workers <= UNKNOWN_RAM_SPLIT_WORKERS
+    n_jobs = max(1, jobs if jobs is not None else RUNNER.max_jobs)
+    per_worker = estimate_worker_mb(max_faces) * 1024**2
+    return workers * per_worker * n_jobs <= RAM_SHARE * free
+
+
 def assign_part_ids(parts: list[Part]) -> None:
     """PRT001... sorted by (name, content hash): Rule 6.4."""
     ordered = sorted(parts, key=lambda p: (p.name, p.content_hash))
@@ -313,8 +376,10 @@ __all__ = [
     "AnalyzeOptions",
     "AnalyzedPart",
     "analyze_brep_file",
+    "bore_chunk",
     "analyze_geom",
     "assign_part_ids",
+    "may_split_bores",
     "np",
     "split_bodies",
 ]

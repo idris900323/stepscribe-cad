@@ -462,8 +462,7 @@
           "enum": [
             "planar_face",
             "cylindrical_fit",
-            "line",
-            "point",
+            "edge_or_point",
             "near_miss"
           ],
           "title": "Kind",

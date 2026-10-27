@@ -15,7 +15,7 @@ from rich.markup import escape
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from stepscribe import __version__, config, envcheck, limits
+from stepscribe import __version__, config, envcheck, limits, timings
 from stepscribe import cache as cache_mod
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.batch import Job, options_dict, run_jobs, write_index
@@ -312,6 +312,13 @@ def export(
             help="Shortest such stack, in diameters, that counts as a pivot. Default 1.",
         ),
     ] = None,
+    timings_flag: Annotated[
+        bool,
+        typer.Option(
+            "--timings",
+            help="Also write data/timings.json: time per stage and per part (not when the export is reused). Results are unchanged.",
+        ),
+    ] = False,
     jobs: Annotated[int, typer.Option(help="Parallel workers for folders.")] = 1,
     timeout_s: Annotated[
         int, typer.Option(help="Per-file timeout in seconds.")
@@ -323,6 +330,8 @@ def export(
     from stepscribe.exporter import load_result
     from stepscribe.exporter import write_index as write_export_index
 
+    if timings_flag:
+        timings.enable()
     files = find_step_files(path)
     if not files:
         console.print("[red]No .step/.stp files found.[/red]")

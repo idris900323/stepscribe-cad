@@ -76,4 +76,5 @@ follow_imports = "skip"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["slow: the slowest tests, listed in tests/slow_tests.txt; skip them with -m 'not slow'"]
 filterwarnings = ["ignore:Setting the shape on a NumPy array:DeprecationWarning"]

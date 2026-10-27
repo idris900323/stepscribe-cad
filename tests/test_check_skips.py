@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import xml.etree.ElementTree as ET  # noqa: S405 - pytest's own output
 from pathlib import Path
 from types import ModuleType
 
@@ -74,3 +75,44 @@ def test_ci_runs_the_guard_and_provides_node_and_psutil() -> None:
     assert "--junitxml=junit.xml" in ci and "scripts/check_skips.py junit.xml" in ci
     assert "actions/setup-node" in ci
     assert "psutil" in (root / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_ci_and_release_run_the_whole_suite_not_the_fast_subset() -> None:
+    """`-m "not slow"` is for local runs only: nothing may deselect tests by default or in CI."""
+    root = Path(__file__).parent.parent
+    for flow in ("ci.yml", "release.yml"):
+        text = (root / ".github" / "workflows" / flow).read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if "pytest" in line:
+                assert "-m " not in line and "slow" not in line, f"{flow}: {line.strip()}"
+    options = (
+        (root / "pyproject.toml").read_text(encoding="utf-8").split("[tool.pytest.ini_options]")[1]
+    )
+    options = options.split("\n[", 1)[0]
+    addopts = [line for line in options.splitlines() if line.startswith("addopts")]
+    assert addopts == ['addopts = "-q"'], addopts
+
+
+def test_deselected_tests_are_not_counted_as_skips(tmp_path: Path) -> None:
+    """A deselected test is absent from the junit file, so it is neither a skip nor a failure."""
+    import subprocess
+    import sys
+
+    mod = _load()
+    (tmp_path / "test_two.py").write_text(
+        "import pytest\n\n@pytest.mark.slow\ndef test_slow(): pass\n\ndef test_fast(): pass\n",
+        encoding="utf-8",
+    )
+    junit = tmp_path / "junit.xml"
+    subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-m", "not slow",
+         f"--junitxml={junit}", "-o", "markers=slow: x", str(tmp_path / "test_two.py")],
+        check=True, capture_output=True, cwd=tmp_path,
+    )  # fmt: skip
+    names = [
+        c.get("name")
+        for c in ET.parse(junit).iter("testcase")  # noqa: S314 - pytest's own output
+    ]
+    assert names == ["test_fast"]
+    assert mod.unexpected_skips(str(junit), "linux") == []
+    assert mod.main(["check_skips.py", str(junit)]) == 0
