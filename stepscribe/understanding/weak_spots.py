@@ -87,8 +87,13 @@ def _edge_assumption(proc: str | None, why: str) -> str | None:
     if proc in PLASTIC:
         return why or None
     if proc is None:
-        return "no process known: metal factor used"
+        return "process unknown: the generic guideline (metal factor) is used"
     return f"{why}; metal factor used" if why else None
+
+
+def _guideline_name(proc: str | None) -> str:
+    """'the guideline', or 'the generic guideline (process unknown)' when no process is known."""
+    return "the guideline" if proc else "the generic guideline (process unknown)"
 
 
 def edge_distance(part: Part, label: str) -> list[WeakSpot]:
@@ -119,7 +124,7 @@ def edge_distance(part: Part, label: str) -> list[WeakSpot]:
                 "edge_distance",
                 [part.id, *[h.id for h in holes]],
                 f"{many if len(holes) > 1 else one} is {fmt(worst.edge_distance_mm, 2)} mm from "
-                f"the nearest edge; the guideline is {fmt(factor, 1)} x diameter = {fmt(need, 1)} mm",
+                f"the nearest edge; {_guideline_name(proc)} is {fmt(factor, 1)} x diameter = {fmt(need, 1)} mm",
                 f"increase the edge distance to at least {fmt(need, 1)} mm "
                 f"(move the hole {fmt(need - worst.edge_distance_mm, 1)} mm inward)",
                 worst.edge_distance_mm,
@@ -164,7 +169,7 @@ def cutout_web(part: Part, label: str) -> list[WeakSpot]:
             "cutout_web",
             [part.id, *[c.id for c in thin]],
             f"{many if len(thin) > 1 else one} leaves a {fmt(dist, 2)} mm web to the nearest edge or "
-            f"opening; the guideline is {fmt(need, 1)} mm",
+            f"opening; {_guideline_name(proc)} is {fmt(need, 1)} mm",
             f"widen the web to at least {fmt(need, 1)} mm (move the cut-out {fmt(need - dist, 1)} mm "
             f"or shrink it)",
             dist,
@@ -232,7 +237,8 @@ def sharp_corners(part: Part, geom, label: str, load_bearing: bool) -> list[Weak
             cat,
             [part.id, *ids[:4]],
             f"{label} has {len(edges)} sharp internal corner(s) {where} (longest {fmt(longest, 1)} mm, faces "
-            f"{', '.join(ids[:4])}); stress concentrates there and printed layers split along them",
+            f"{', '.join(ids[:4])}); stress concentrates there"
+            + (" and printed layers split along them" if plastic else ""),
             "add a fillet of about 2 mm (or a gusset) at the corner",
             float(len(edges)),
             0.0,
@@ -348,7 +354,7 @@ def single_fasteners(load: LoadInfo, ctx: KinContext) -> list[WeakSpot]:
 
 def cantilevers(load: LoadInfo, ctx: KinContext, asm) -> list[WeakSpot]:  # type: ignore[no-untyped-def]
     cfg = rules()["cantilever"]
-    by_joint = {j.id: j for j in asm.fastener_joints}
+    by_joint = {j.id: j for j in asm.fasteners}
     out = []
     seen: set[str] = set()
     for ref, e in sorted(load.edges.items()):
@@ -423,7 +429,7 @@ def short_screws(asm, ctx: KinContext) -> list[WeakSpot]:  # type: ignore[no-unt
     cfg = rules()["short_screw"]
     sizes = load_table("screws_iso_metric.yaml")["sizes"]
     out = []
-    for j in asm.fastener_joints:
+    for j in asm.fasteners:
         if not j.existing_fastener_instance_id:
             continue
         inst = ctx.by_id.get(j.existing_fastener_instance_id)

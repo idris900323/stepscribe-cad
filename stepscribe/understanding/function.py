@@ -23,17 +23,27 @@ from stepscribe.models.schema import (
     Evidence,
     Hypothesis,
     KinematicModel,
+    KinJoint,
     Part,
     SubassemblyRole,
     WeakSpot,
 )
+from stepscribe.understanding.arm_check import (
+    Headline,
+    arm_headline,
+    id_range,
+    undetermined_headline,
+)
 from stepscribe.understanding.kinematics import (
     KinContext,
     axis_label,
+    axis_vector,
+    description_extras,
     hardware_kind,
     wheel_joint_ids,
 )
 from stepscribe.understanding.ml_roles import RoleModel, load_role_models, role_scores
+from stepscribe.understanding.process import is_complex_guess
 
 if TYPE_CHECKING:
     from stepscribe.api import Analysis
@@ -320,7 +330,7 @@ def score_instances(
                     [other, body_motor],
                     f"{other} carries motor {body_motor}",
                 )
-    for fj in asm.fastener_joints:
+    for fj in asm.fasteners:
         mot = next((i for i in fj.instance_ids if hardware_kind(by_id[i]) == "motor"), None)
         if mot:
             for other in fj.instance_ids:
@@ -643,16 +653,23 @@ def design_summary(
         role = p.understanding.roles[0] if p.understanding and p.understanding.roles else None
         proc = p.understanding.process.ranked[0] if p.understanding else None
         bits = [
-            f"Likely a single {p.shape_class.label.replace('_', ' ')} "
-            f"({' x '.join(fmt(v) for v in sorted(p.obb.size_sorted, reverse=True))} mm), "
+            f"Likely: a single {p.shape_class.label.replace('_', ' ')} "
+            f"(confidence {p.shape_class.confidence:.2f}; evidence {p.id}), "
+            f"{' x '.join(fmt(v) for v in sorted(p.obb.size_sorted, reverse=True))} mm, "
             f"{len(p.holes)} hole(s)"
         ]
-        if role and role.label != "unknown":
-            bits[0] += f", probably a {role.label.replace('_', ' ')}"
+        phrase = (
+            role_phrase(role.label, role.confidence) if role and role.label != "unknown" else None
+        )
+        if phrase:
+            bits[0] += ", " + phrase
         if proc and proc.label != "unknown":
             bits.append(
                 f"It looks {proc.label.replace('_', ' ')} (confidence {proc.confidence:.2f})"
             )
+        elif p.understanding and is_complex_guess(p.understanding.process):
+            text = p.understanding.process.ranked[0].evidence[0].text
+            bits.append(text[0].upper() + text[1:])
         return ". ".join(bits + _risk_sentence(spots)) + "."
     wheels = wheel_joint_ids(model, ctx)
     driven = {
@@ -670,7 +687,7 @@ def design_summary(
     if topo == "mobile_manipulator":
         n_driven = sum(w in driven for w in wheels)
         drive = f"{n_driven} motor-driven" if n_driven else "none motor-driven"
-        head = f"a mobile manipulator: a {len(wheels)}-wheel base ({drive}) carrying a {len(arm_joints)}-DOF serial arm"
+        head = f"a mobile manipulator, a {len(wheels)}-wheel base ({drive}) carrying a {len(arm_joints)}-DOF serial arm"
     elif topo == "mobile_base":
         head = (
             f"a mobile base with {len(wheels)} wheels ({sum(w in driven for w in wheels)} driven)"
@@ -687,21 +704,16 @@ def design_summary(
         head = "a static structure with no moving joints"
     else:
         head = f"a mechanism with {len(model.joints)} joints ({topo.replace('_', ' ')})"
-    sentences = [f"Likely {head}"]
+    support = _support(model, _headline_joints(model, topo, wheels, arm_joints, movers))
+    sentences = [f"Likely: {head} ({support})"]
+    headline = _apply_headline(model, ctx, arm_joints if topo == "serial_chain" else [])
     listed = arm_joints or (movers if len(movers) <= 4 else [])
-    if listed:
-        parts_txt = []
-        for j in listed:
-            t = f"{j.id} {j.kind} about {axis_label(np.array([j.axis.direction.x, j.axis.direction.y, j.axis.direction.z]))}"
-            mech = next((m for m in model.mechanisms if m.id == j.driven_by), None)
-            if mech and mech.kind == "belt_drive":
-                t += f" via a {fmt(mech.ratio or 0, 1)}:1 {mech.parameters.get('profile', 'belt')} belt"
-            elif mech and mech.kind == "gear_pair":
-                t += f" via a {fmt(mech.ratio or 0, 1)}:1 gear pair"
-            elif mech and mech.kind == "direct_drive":
-                t += " direct drive"
-            parts_txt.append(t)
-        sentences[0] += " (" + ", ".join(parts_txt) + ")"
+    if headline is not None:
+        sentences = [headline.text]
+        if headline.is_arm and listed:
+            sentences[0] += ": " + ", ".join(_joint_phrases(model, listed))
+    elif listed:
+        sentences[0] += ": " + ", ".join(_joint_phrases(model, listed))
     for m in model.mechanisms:
         if m.kind == "lead_screw":
             lead = m.parameters.get("lead_mm")
@@ -724,6 +736,14 @@ def design_summary(
             sentences.append(
                 f"Fabricated parts are a mix, mostly {label.replace('_', ' ')} ({n} of {len(fab)})"
             )
+    complex_parts = [
+        p for p in fab if p.understanding and is_complex_guess(p.understanding.process)
+    ]
+    if complex_parts:
+        sentences.append(
+            f"No process guess for {len(complex_parts)} part{'s' if len(complex_parts) > 1 else ''} "
+            "with complex or free-form geometry (see the part notes for the numbers)"
+        )
     total = sum(int(r["qty"]) for r in asm.fastener_shopping_list)
     if total:
         sizes: dict[str, int] = defaultdict(int)
@@ -735,6 +755,91 @@ def design_summary(
         sentences.append(f"{total} fastener pieces to buy (screws, nuts, washers){mostly}")
     sentences += _risk_sentence(spots)
     return ". ".join(sentences) + "."
+
+
+def role_phrase(label: str, confidence: float) -> str | None:
+    """'probably a base plate (confidence 0.72)', 'possibly a ...' or None, by the role's confidence.
+
+    The confidence is rounded to the two decimals that are printed, so what is shown is what was
+    compared. Limits: ``role_phrase`` in roles.yaml.
+    """
+    cfg = load_table("roles.yaml")["role_phrase"]
+    shown = round(confidence, 2)
+    if shown >= float(cfg["probably_min"]):
+        word = "probably"
+    elif shown >= float(cfg["possibly_min"]):
+        word = "possibly"
+    else:
+        return None
+    return f"{word} a {label.replace('_', ' ')} (confidence {shown:.2f})"
+
+
+def _headline_joints(
+    model: KinematicModel,
+    topo: str,
+    wheels: set[str],
+    arm_joints: list[KinJoint],
+    movers: list[KinJoint],
+) -> list[KinJoint]:
+    """The joints a general headline rests on."""
+    if topo == "mobile_manipulator":
+        return [j for j in model.joints if j.id in wheels or j in arm_joints]
+    if topo == "mobile_base":
+        return [j for j in model.joints if j.id in wheels]
+    return movers or list(model.joints)
+
+
+def _support(model: KinematicModel, joints: list[KinJoint]) -> str:
+    """'confidence 0.60; evidence KJ1..KJ4, L0..L4': never above the weakest joint plus the headroom."""
+    cfg = load_table("roles.yaml")["kinematics"]["arm_headline"]
+    links = id_range([g.id for g in model.links])
+    if not joints:
+        return f"confidence {float(cfg['static_confidence']):.2f}; evidence {links}"
+    mean = sum(j.confidence for j in joints) / len(joints)
+    cap = min(j.confidence for j in joints) + float(cfg["weakest_joint_headroom"])
+    conf = max(float(cfg["min_confidence"]), min(float(cfg["max_confidence"]), mean, cap))
+    return f"confidence {conf:.2f}; evidence {id_range([j.id for j in joints])}, {links}"
+
+
+def _joint_phrases(model: KinematicModel, joints: list[KinJoint]) -> list[str]:
+    out = []
+    for j in joints:
+        t = f"{j.id} {j.kind} about {axis_label(np.array([j.axis.direction.x, j.axis.direction.y, j.axis.direction.z]))}"
+        mech = next((m for m in model.mechanisms if m.id == j.driven_by), None)
+        if mech and mech.kind == "belt_drive":
+            t += f" via a {fmt(mech.ratio or 0, 1)}:1 {mech.parameters.get('profile', 'belt')} belt"
+        elif mech and mech.kind == "gear_pair":
+            t += f" via a {fmt(mech.ratio or 0, 1)}:1 gear pair"
+        elif mech and mech.kind == "direct_drive":
+            t += " direct drive"
+        out.append(t)
+    return out
+
+
+def _apply_headline(
+    model: KinematicModel, ctx: KinContext | None, arm_joints: list[KinJoint]
+) -> Headline | None:
+    """Set the headline fields on *model*: a 6-axis arm, or "joint structure not determined".
+
+    The statement leads ``model.description`` so the overview, the understanding file and the
+    single-file pack say the same thing. Other designs keep their existing wording.
+    """
+    if ctx is None:
+        return None
+    up = axis_vector(ctx.asm.up_axis)
+    hl = arm_headline(
+        model, arm_joints, up, description_extras(model, ctx.soft_used)
+    ) or undetermined_headline(model, ctx.insts)
+    if hl is None:
+        return None
+    model.headline, model.headline_confidence = hl.text, hl.confidence
+    model.headline_evidence, model.statement = hl.evidence, hl.statement
+    model.axis_pattern = hl.axis_pattern
+    if hl.is_arm:  # the statement already says everything the plain description said
+        model.description = hl.statement
+    elif not model.description.startswith(hl.statement):
+        model.description = hl.statement + " " + model.description
+    return hl
 
 
 RISK_WORDS = {

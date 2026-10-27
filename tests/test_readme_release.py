@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from build_helper import run_build
 from typer.testing import CliRunner
 
 from stepscribe.cli import app
@@ -80,13 +81,7 @@ def test_release_checks_pass() -> None:
 def test_release_dry_run_builds_wheel_sdist_and_skill_zip(tmp_path: Path) -> None:
     pytest.importorskip("build")
     out = tmp_path / "dist"
-    subprocess.run(
-        [sys.executable, "-m", "build", "--outdir", str(out)],
-        check=True,
-        capture_output=True,
-        cwd=ROOT,
-        timeout=600,
-    )
+    run_build("--outdir", str(out), cwd=ROOT)
     subprocess.run([sys.executable, str(ROOT / "scripts" / "sync_skills.py")], check=True, cwd=ROOT)
     (out / "stepscribe-skill.zip").write_bytes(
         (ROOT / "dist" / "stepscribe-skill.zip").read_bytes()

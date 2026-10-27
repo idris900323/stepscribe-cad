@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
-SCHEMA_VERSION = "0.5.0"
+SCHEMA_VERSION = "0.6.0"
 
 AxisLabel = Literal["+X", "-X", "+Y", "-Y", "+Z", "-Z"]
 
@@ -347,6 +347,9 @@ class KinJoint(_M):
     range_deg_or_mm: tuple[float, float] | None = None
     blocked_by: list[str] = Field(default_factory=list)
     description: str = ""
+    declared_by_designer: bool = False  # from the `kinematics:` section: replaces the detection
+    range_source: Literal["designer", "motion_check"] | None = None  # who set range_deg_or_mm
+    positive_direction: Literal["ccw", "cw", "+", "-"] | None = None  # sign of positive motion
 
 
 class Mechanism(_M):
@@ -387,6 +390,26 @@ class KinematicModel(_M):
     floating_groups: list[str] = Field(default_factory=list)
     description: str = ""
     mermaid: str = ""
+    headline: str = ""  # "Likely: 6-axis serial arm (confidence X; evidence ...)"; empty for others
+    headline_confidence: float | None = None
+    headline_evidence: list[str] = Field(default_factory=list)
+    statement: str = ""  # the headline plus chain facts and the axis-pattern result
+    axis_pattern: list[str] = Field(default_factory=list)  # OK:/DIFFERS: lines (six-axis arms)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_headline(self, handler: Any) -> dict[str, Any]:
+        """The headline fields appear in report.json only when there is a headline to carry."""
+        data: dict[str, Any] = handler(self)
+        if not self.headline and not self.statement:
+            for key in (
+                "headline",
+                "headline_confidence",
+                "headline_evidence",
+                "statement",
+                "axis_pattern",
+            ):
+                data.pop(key, None)
+        return data
 
 
 class LoadPath(_M):
@@ -460,6 +483,11 @@ class Question(_M):
         "connection_type",
         "joint_drive",
         "joint_range",
+        "joint_ranges",
+        "joint_directions",
+        "joint_direction",
+        "joint_axis",
+        "kin_base",
         "payload",
         "purpose",
         "load",
@@ -490,9 +518,63 @@ class Answer(_M):
     question: str | None = None  # the question text, so the pack can print a Q&A list
 
 
+class KinContactDebug(_M):
+    """One contact between two instances and what the kinematic model did with its pair."""
+
+    id: str
+    instance_a: str
+    instance_b: str
+    name_a: str
+    name_b: str
+    kind: str
+    area_mm2: float | None = None
+    normal: Vec3 | None = None
+    centroid: Vec3 | None = None
+    distance_mm: float
+    connection: str  # how the pair was classified: fixed, soft, revolute, ... or none
+    link_a: str
+    link_b: str
+    decision: Literal["merged", "separate"]
+    reason: str
+
+
+class KinHolePairDebug(_M):
+    """A stack of coaxial holes across instances, and whether it became a fastener."""
+
+    joint_id: str
+    instance_ids: list[str]
+    instance_names: list[str]
+    links: list[str]
+    hole_refs: list[tuple[str, str]]
+    diameters_mm: list[float]
+    stack_thickness_mm: float
+    axis: Axis
+    became_fastener: bool
+    reason: str
+    kinematic_effect: str
+
+
+class KinematicsDebug(_M):
+    contacts: list[KinContactDebug] = Field(default_factory=list)
+    hole_pairs: list[KinHolePairDebug] = Field(default_factory=list)
+
+
 class Understanding(_M):
     kinematics: KinematicModel
+    kinematics_debug: KinematicsDebug | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_debug(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``kinematics_debug`` only when --debug-kinematics asked for it."""
+        data: dict[str, Any] = handler(self)
+        if data.get("kinematics_debug") is None:
+            data.pop("kinematics_debug", None)
+        if not data.get("load_path_note"):
+            data.pop("load_path_note", None)
+        return data
+
     load_paths: list[LoadPath] = Field(default_factory=list)
+    load_path_note: str = ""  # the tracing rule and the parts it left out; empty without load paths
     weak_spots: list[WeakSpot] = Field(default_factory=list)
     stability: StabilityInfo | None = None
     subassembly_roles: list[SubassemblyRole] = Field(default_factory=list)
@@ -576,6 +658,10 @@ class FastenerJoint(Inference):
     suggested_fastener: str | None = None
     has_threaded_end: bool = False
     existing_fastener_instance_id: str | None = None
+    pivot_candidate: bool = False  # a wide, long bore with no screw size: more likely a pivot
+    bore_pair: bool = (
+        False  # a wide but short coaxial bore pair: a locating feature or bearing seat
+    )
 
 
 class Relation(_M):
@@ -630,6 +716,21 @@ class AssemblyInfo(_M):
     spatial_facts: list[SpatialFact] = Field(default_factory=list)
     interferences: list[dict[str, Any]] = Field(default_factory=list)
     fastener_shopping_list: list[dict[str, Any]] = Field(default_factory=list)
+
+    @property
+    def fasteners(self) -> list[FastenerJoint]:
+        """Fastener joints proper: not a pivot candidate and not a large bore pair."""
+        return [j for j in self.fastener_joints if not j.pivot_candidate and not j.bore_pair]
+
+    @property
+    def pivots(self) -> list[FastenerJoint]:
+        """Wide, long bores with no screw size: more likely a pivot or press fit than a screw."""
+        return [j for j in self.fastener_joints if j.pivot_candidate]
+
+    @property
+    def bore_pairs(self) -> list[FastenerJoint]:
+        """Large coaxial bore pairs too short to be a pivot: a locating feature or bearing seat."""
+        return [j for j in self.fastener_joints if j.bore_pair]
 
 
 class Meta(_M):

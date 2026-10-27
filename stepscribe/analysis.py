@@ -65,6 +65,9 @@ class AnalyzeOptions:
     check_motion: bool = False
     motion_budget_s: int = 120
     debug_graphs: bool = False
+    debug_kinematics: bool = False
+    pivot_min_diameter_mm: float | None = None  # None: roles.yaml (kinematics.pivot)
+    pivot_min_length_ratio: float | None = None
     precision: int = 4
     extra: dict[str, Any] = field(default_factory=dict)
 

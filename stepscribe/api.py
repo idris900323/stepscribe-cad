@@ -67,6 +67,7 @@ def _meta(files: list[str], unit: str, opts: AnalyzeOptions) -> Meta:
             "understanding": opts.understanding,
             "check_motion": opts.check_motion,
             "debug_graphs": opts.debug_graphs,
+            **({"debug_kinematics": True} if opts.debug_kinematics else {}),
         },
     )
 

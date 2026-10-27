@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+Robot files from manufacturers (a six-axis industrial arm, for example): links, joints and a robot description.
+
+- **Names.** An instance labelled only with an assembly-tree occurrence id (`NAUO4`) now takes the product name (`LINK3`).
+- **Links from names.** `BASE`, `LINK<n>` and `AXIS<n>` are found anywhere in a part name, with any prefix and a `_body<k>` suffix. With three or more numbered groups in a chain, bodies of one group are one link and different groups are never merged because they rest on each other.
+- **Pivots and flanges.** A coaxial hole stack that matches no screw size, at least 20 mm wide and as long as it is wide, is a pivot candidate (revolute about the bore) instead of a confidence-0 fastener that locked two links together. A large planar contact between two link groups is a revolute candidate about its normal; a bore that agrees raises the confidence, one that disagrees wins with a lower confidence and the flange reading is listed. Change the limits with `--pivot-min-diameter` and `--pivot-min-length-ratio`; see `docs/kinematics.md`.
+- **`--debug-kinematics`** (on `pack` and `export`) writes `data/kinematics_debug.md` and a `kinematics_debug` section in `report.json`: for every contact, why it was merged or kept apart; for every unmatched hole stack, why it is not a fastener.
+- **Designer input.** A `kinematics:` section in `design_context.yaml` (base, and joints with type, axis, origin, range, positive direction) replaces what was detected and is marked "Confirmed by designer". New interview questions ask for the base link, the axis of joints known only from a flange, and the sign of positive motion.
+- **`robot.json`** in the pack for a model with at least one revolute or prismatic joint: link frames, joint axes and origins, a DH-style table, mass and inertia per link (estimates), and joint limits only from the yaml.
+- **Headline.** A chain of revolute joints reads `Likely: 6-axis serial arm (confidence 0.70; evidence KJ1..KJ6, L0..L6)`, with the chain facts and a check of the usual 6-axis layout (a mismatch is written out and lowers the confidence; the confidence is capped by the weakest joint). Parts named `LINK<n>` with no joint evidence read "Joint structure not determined", never "static structure". The overview, understanding file and single-file pack carry the same text.
+- **Interview.** For a robot the base link, the axis of flange-only joints, the sign of positive motion and the ranges come first. Answers are also written to the `kinematics:` section, and undo removes them.
+- **Joint origins** lie on their axis (common perpendicular from the previous axis); the raw point is kept as `evidence_point_mm`.
+- **`robot.urdf`** next to `robot.json`: a draft in SI units (metres, kilograms) with no invented limits or masses; a joint with no known limits is written `continuous`, and a forward-kinematics test checks the file against the detected frames.
+- **Direction convention.** One interview question asks which way positive motion goes for the whole arm, stated with the right-hand rule about each joint axis; a `cw` answer flips the axis once, answers are checked strictly, and range answers are grouped into one question.
+- **Load paths say what they trace.** Paths start at every part with at least 5 % of the total mass (volume when masses are unknown) and at every motor; it is a share threshold, not a top-N cap. The understanding file prints the rule and names the parts left out with their share (`load_path_note` in `report.json`).
+- **Complex or free-form geometry.** A part with at least 100 faces that is not a closed solid, or has 15 % or more free-form faces, gets no process guess instead of a confident "3D printed" or "injection moulded"; its measured edge distances are still reported against the generic guideline, labelled as such. See `docs/kinematics.md`.
+- **Every `Likely:` headline carries a confidence and evidence.** The static-structure, single-part and general assembly headlines now read `Likely: ... (confidence X; evidence ...)`; a single part's role phrase says "probably" from 0.60, "possibly" from 0.30 and is left out below that.
+- **Pivot candidates are not fasteners.** They no longer appear as "bolted to" relations, fastened load-path edges, single-fastener findings, "fasteners missing?" questions or fastener counts; `02_assembly.md` lists them under "Pivot candidates (not fasteners)".
+- **Large coaxial bore pairs are not fasteners.** An unmatched coaxial stack at or above the pivot minimum diameter is never a fastener joint: long enough it is a pivot candidate, too short it is a "large coaxial bore pair (locating feature or bearing seat)" in its own section of `02_assembly.md`, with no bolted relation, fastened load-path edge, shopping-list entry or clamp.
+- **Measurement change: hole edge distance.** It is now measured from the hole's side walls to the other faces. The tip of a drill point is no longer counted, because it reaches past the wall and its gap to whatever lies below is not a lateral margin. A flat-bottomed hole is unchanged. Blind drilled holes whose point was the nearest feature now read a larger distance, so some "hole too close to an edge" findings change value or disappear.
+- Weak-spot wording about printed layers appears only when the process is a printed one.
+- Build tests run hermetically (`--no-isolation`, pinned hatchling) with one isolated CI job.
+- Report schema 0.6.0 (new optional fields: `FastenerJoint.bore_pair`, the `KinematicModel` headline fields, `KinJoint` designer fields, `Understanding.kinematics_debug` and `load_path_note`, new question kinds).
+
 ## 0.1.4
 
 Fixes found on a real design (`full ass.step`).

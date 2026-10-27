@@ -44,9 +44,7 @@ def build_questions(report: Report, limit: int = 12) -> list[Question]:
             )
         )
         qs.append(
-            Question(
-                f"How many fastener joints were found? {SUFFIX}", str(len(a.fastener_joints)), True
-            )
+            Question(f"How many fastener joints were found? {SUFFIX}", str(len(a.fasteners)), True)
         )
         multi = [b for b in a.bom if b.quantity > 1]
         if multi:

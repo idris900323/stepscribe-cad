@@ -346,6 +346,43 @@ def user_process(ctx_text: str | None, r: dict[str, Any]) -> str | None:
     return None
 
 
+def _geometry_cfg() -> dict[str, Any]:
+    cfg: dict[str, Any] = rules()["complex_geometry"]
+    return cfg
+
+
+def complex_reason(*, faces: int, bspline_faces: int, valid_solid: bool) -> str | None:
+    """What was measured on a part with complex or free-form geometry, or None when it is not one.
+
+    At least ``min_faces`` faces, and either not a closed solid or ``min_freeform_share`` or more
+    of the faces free-form (B-spline). The limits are in process_rules.yaml.
+    """
+    cfg = _geometry_cfg()
+    if faces < int(cfg["min_faces"]):
+        return None
+    share = bspline_faces / faces
+    if valid_solid and share < float(cfg["min_freeform_share"]):
+        return None
+    return f"{faces} faces, {share:.0%} free-form" + ("" if valid_solid else ", not a closed solid")
+
+
+def complex_geometry_reason(part: Part) -> str | None:
+    """:func:`complex_reason` for a part, from its topology and validity."""
+    return complex_reason(
+        faces=part.topology.faces,
+        bspline_faces=int(part.topology.face_types.get("bspline", 0)),
+        valid_solid=part.is_valid_solid,
+    )
+
+
+GEOMETRY = _geometry_cfg()
+
+
+def is_complex_guess(guess: ProcessGuess) -> bool:
+    """True when the guess is the 'no process guess: complex or free-form geometry' answer."""
+    return any(e.code == "complex_geometry" for h in guess.ranked for e in h.evidence)
+
+
 def infer_process(
     part: Part,
     aag: AAG,
@@ -359,6 +396,17 @@ def infer_process(
         ev = Evidence(code="user", refs=[part.id], weight=1.0, text="process given by the designer")
         return ProcessGuess(
             ranked=[Hypothesis(label=str(override), confidence=1.0, evidence=[ev])], source="user"
+        )
+    why = complex_geometry_reason(part)
+    if why is not None:  # such shapes only look cast or printed: no confident guess
+        ev = Evidence(
+            code="complex_geometry",
+            refs=[part.id],
+            weight=0.0,
+            text=f"no process guess: complex or free-form geometry ({why})",
+        )
+        return ProcessGuess(
+            ranked=[Hypothesis(label="unknown", confidence=0.0, evidence=[ev])], source="inferred"
         )
     signals = compute_signals(part, aag, structural, sym, r)
     hits = name_hits(part.name, r)
@@ -425,6 +473,10 @@ def min_wall_for(process: str | None) -> tuple[float, str] | None:
 
 __all__ = [
     "PROCESSES",
+    "GEOMETRY",
+    "complex_geometry_reason",
+    "complex_reason",
+    "is_complex_guess",
     "FaceAttr",
     "access_axes",
     "infer_process",

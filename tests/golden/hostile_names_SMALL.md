@@ -6,7 +6,7 @@ Small version (about 12000 tokens) for free-tier chats and small models. `hostil
 
 ## Summary
 
-Likely a static structure with no moving joints. Most fabricated parts look laser or waterjet. Main risks: a part not connected to the rest (W001).
+Likely: a static structure with no moving joints (confidence 0.60; evidence L0..L4). Most fabricated parts look laser or waterjet. Main risks: a part not connected to the rest (W001).
 
 ## Kinematics
 

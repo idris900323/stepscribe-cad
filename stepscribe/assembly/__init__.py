@@ -65,8 +65,10 @@ def build_assembly(
         return None
     gbox = union_bounds(instances)
     contacts = detect_contacts(instances, tracker)
-    joints = detect_joints(instances)
-    relations = build_relations(instances, contacts, joints, opts.up)
+    joints = detect_joints(instances, opts.pivot_min_diameter_mm, opts.pivot_min_length_ratio)
+    # a pivot or a large bore pair is not a bolted joint
+    fasteners = [j for j in joints if not j.pivot_candidate and not j.bore_pair]
+    relations = build_relations(instances, contacts, fasteners, opts.up)
     masses = [i.ap.part.mass.mass_g for i in instances]
     known = all(m is not None for m in masses)
     total = float(sum(m for m in masses if m is not None)) if known else None
@@ -90,7 +92,7 @@ def build_assembly(
         relations=relations,
         spatial_facts=spatial_facts(instances, contacts, gbox, opts.up, opts.front),
         interferences=find_interferences(instances) if opts.check_interference else [],
-        fastener_shopping_list=shopping_list(joints),
+        fastener_shopping_list=shopping_list(fasteners),
     )
 
 
