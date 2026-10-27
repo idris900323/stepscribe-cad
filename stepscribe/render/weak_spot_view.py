@@ -92,14 +92,13 @@ def weak_overlay(
         draw.line([p0, p1], fill=(0, 0, 0), width=4)
         for q in (p0, p1):
             draw.ellipse([q[0] - 5, q[1] - 5, q[0] + 5, q[1] + 5], fill=(0, 0, 0))
-    image = draw_labels(rendered.image, labels)
-    d2 = ImageDraw.Draw(image)
     font = _font()
-    for p0, p1, text in lines:
-        tw, th = text_size(d2, text, font)
+    for p0, p1, text in lines:  # values first: the ID labels are then drawn over them
+        tw, th = text_size(draw, text, font)
         mx, my = (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2
-        d2.rectangle([mx + 6, my - th - 8, mx + 6 + tw + 8, my + 2], fill=(255, 255, 255))
-        draw_text(d2, (mx + 10, my - th - 4), text, font)
+        draw.rectangle([mx + 6, my - th - 8, mx + 6 + tw + 8, my + 2], fill=(255, 255, 255))
+        draw_text(draw, (mx + 10, my - th - 4), text, font)
+    image = draw_labels(rendered.image, labels)
     entries: list[tuple[tuple[int, int, int], str]] = [
         (SEVERITY[s], f"{s} severity") for s in ("high", "medium", "low", "info") if s in used
     ]
