@@ -38,6 +38,7 @@ Robot files from manufacturers (a six-axis industrial arm, for example): links, 
 - **Feature highlight** (`full`): holes, openings, bosses, fillets and chamfers in one colour per family with their IDs.
 - **Section view** (`full`): a cut through each part along its widest bore, plane position stated, cut face in red; skipped with a note when the cut fails.
 - **Contact map** (`standard`, assemblies): the parts of the largest touching pairs in colour with their contact IDs; the caption lists the pairs and patch areas.
+- **Link colour map** (`standard`, robots): the assembly coloured by link group with link IDs only; the caption lists each link and its instances.
 
 ## 0.1.4
 

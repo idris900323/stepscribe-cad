@@ -29,7 +29,7 @@ KINDS = {
     "kinematic": "kinematic diagram",
 }
 _NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak|features|section)\.png$")
-_ASSEMBLY = re.compile(r"^images/(contact_map)\.png$")
+_ASSEMBLY = re.compile(r"^images/(contact_map|link_map)\.png$")
 
 
 @dataclass
@@ -225,10 +225,25 @@ def _contacts_caption(report: Report) -> Caption:
     return Caption("contact map", text, list(dict.fromkeys(ids)), "02_assembly.md, contacts")
 
 
+def _links_caption(report: Report) -> Caption:
+    kin = report.understanding.kinematics if report.understanding else None
+    links = kin.links if kin else []
+    rows = [
+        f"{g.id}{' (ground)' if g.is_ground else ''}: {', '.join(g.instance_ids)}" for g in links
+    ]
+    ids = [x for g in links for x in (g.id, *g.instance_ids)]
+    text = (
+        "The assembly coloured by rigid link group, the ground link grey; the label on each part "
+        "is its link ID. Links and their instances: " + "; ".join(rows) + "."
+    )
+    return Caption("link colour map", text, ids, "05_understanding.md, kinematics")
+
+
 def caption_for(rel: str, report: Report) -> Caption | None:
     """The caption of an extra image, or None when *rel* is not one of them."""
-    if _ASSEMBLY.match(rel):
-        return _contacts_caption(report)
+    am = _ASSEMBLY.match(rel)
+    if am:
+        return _contacts_caption(report) if am.group(1) == "contact_map" else _links_caption(report)
     m = _NAME.match(rel)
     if not m:
         return None

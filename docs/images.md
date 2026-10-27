@@ -36,3 +36,7 @@ Every label drawn on an extra image is an ID (`PRT`, `H`, `P`, `W`, ...) or a nu
 ## Contact map (`standard`, assemblies)
 
 `images/contact_map.png`: the assembly with the parts of the selected contacts in colour and every other part grey, and each contact ID (`C001`, ...) placed where the bounding boxes of its two parts meet (a position estimate; the contact record has no point). Selected: contacts with a touching face or a fit (not near misses or edge touches), largest patch first, at most 12; the caption in `images/INDEX.md` and in the overview lists their IDs, instances, kind and patch area in mm2. A single part has no contact map; the index says so.
+
+## Link colour map (`standard`, robots)
+
+`images/link_map.png`: the assembly coloured by rigid link group (the ground link grey), each part labelled with its link ID and a legend of the link IDs. It is drawn only when the kinematics found joints; otherwise the index says so. Unlike `kinematics_iso.png` (basic), it carries no names and no joint arrows.
