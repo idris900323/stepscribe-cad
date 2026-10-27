@@ -108,6 +108,12 @@ def weak_overlay(
 
 
 def make(
-    part: Part, geom: PartGeom, report: Report, up: str, front: str, max_side: int
+    part: Part,
+    geom: PartGeom,
+    report: Report,
+    up: str,
+    front: str,
+    max_side: int,
+    _notes: list[str] | None = None,
 ) -> Image.Image | None:
     return weak_overlay(part, geom, report, up, front, max_side)

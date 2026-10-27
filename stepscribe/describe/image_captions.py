@@ -18,8 +18,13 @@ MAX_HOLE_LABELS = 40  # holes named on a hole map (the rest stay in the hole tab
 MAX_SPOT_ROWS = 12
 
 # file suffix -> image type
-KINDS = {"holes": "hole map", "views": "three-view drawing", "weak": "weak-spot overlay"}
-_NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak)\.png$")
+KINDS = {
+    "holes": "hole map",
+    "views": "three-view drawing",
+    "weak": "weak-spot overlay",
+    "features": "feature highlight",
+}
+_NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak|features)\.png$")
 
 
 @dataclass
@@ -124,6 +129,32 @@ def _weak_caption(report: Report, part: Part) -> Caption:
     )
 
 
+def _features_caption(part: Part) -> Caption:
+    families = [
+        ("holes (red rings)", [h.id for h in part.holes]),
+        (
+            "cut-outs, slots and pockets (blue dots)",
+            [c.id for c in part.cutouts]
+            + [s.id for s in part.slots if not s.cutout_id]
+            + [p.id for p in part.pockets if not p.cutout_id],
+        ),
+        ("bosses (orange dots)", [b.id for b in part.bosses]),
+        ("fillets (green dots)", [f.id for f in part.fillets[:12]]),
+        ("chamfers (purple dots)", [c.id for c in part.chamfers[:12]]),
+    ]
+    rows = [f"{name}: {', '.join(ids[:20])}" for name, ids in families if ids]
+    text = (
+        f"Part {part.id} in an isometric view with its features marked by family and named by ID: "
+        + "; ".join(rows)
+        + ". Only the first 12 fillets and 12 chamfers are marked, and a feature on a face turned "
+        "away from the view is not marked (the feature tables list everything)."
+    )
+    ids = [part.id] + [i for _n, group in families for i in group[:20]]
+    return Caption(
+        "feature highlight", text, ids, f"{part_file_hint(part.id)}, sections Holes to Fillets"
+    )
+
+
 def caption_for(rel: str, report: Report) -> Caption | None:
     """The caption of an extra image, or None when *rel* is not one of them."""
     m = _NAME.match(rel)
@@ -136,7 +167,9 @@ def caption_for(rel: str, report: Report) -> Caption | None:
         return _holes_caption(part)
     if m.group(2) == "views":
         return _views_caption(part)
-    return _weak_caption(report, part)
+    if m.group(2) == "weak":
+        return _weak_caption(report, part)
+    return _features_caption(part)
 
 
 def caption_line(rel: str, report: Report) -> str:

@@ -46,6 +46,12 @@ def three_views(
 
 
 def make(
-    part: Part, geom: PartGeom, _report: Report, up: str, front: str, max_side: int
+    part: Part,
+    geom: PartGeom,
+    _report: Report,
+    up: str,
+    front: str,
+    max_side: int,
+    _notes: list[str] | None = None,
 ) -> Image.Image | None:
     return three_views(part, geom, up, front, max_side)

@@ -24,3 +24,7 @@ Every label drawn on an extra image is an ID (`PRT`, `H`, `P`, `W`, ...) or a nu
 ## Weak-spot overlay (`standard`)
 
 `images/parts/PRT001_weak.png`, per part that a weak spot names: the part in grey with each finding marked in its severity colour (red high, orange medium, yellow low, blue info) and labelled with its ID and the feature it refers to (`W001 H004`). For an edge-distance finding the black line is the measured distance from the hole wall to the nearest face, with its length in mm; it is measured in 3D, so it can look short when it runs along the viewing direction. Findings that name no single part (tipping, interference, floating part) are not drawn.
+
+## Feature highlight (`full`)
+
+`images/parts/PRT001_features.png`, per part with features: an isometric view with a marker at every hole (red ring), cut-out, slot and pocket (blue), boss (orange), fillet (green) and chamfer (purple), each named by its ID, with a colour key. The first 12 fillets and chamfers are marked; a feature on a face turned away from the view is left out and named in the "Not drawn" notes of the index.

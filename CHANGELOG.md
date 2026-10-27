@@ -35,6 +35,7 @@ Robot files from manufacturers (a six-axis industrial arm, for example): links, 
 - **Image sets.** `--images none|basic|standard|full` (default `basic`, which is exactly today's images) and `--image-max-side` (default 1200). The extra images carry IDs and numbers only, never a name from the file; `images/INDEX.md` lists each one with what it shows, the IDs on it and the text it pairs with, and the caption is repeated next to the image reference in the part Markdown. See `docs/images.md`. First type: the **hole map** (`standard`): every hole circled and labelled with its ID and diameter, with pattern IDs.
 - **Three-view drawing** (`standard`): front, top and right views of each part on one sheet with the overall dimensions drawn and labelled.
 - **Weak-spot overlay** (`standard`): each weak spot marked on its part with its ID; an edge-distance finding also shows the measured distance line.
+- **Feature highlight** (`full`): holes, openings, bosses, fillets and chamfers in one colour per family with their IDs.
 
 ## 0.1.4
 
