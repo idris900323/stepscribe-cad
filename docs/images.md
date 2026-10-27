@@ -28,3 +28,7 @@ Every label drawn on an extra image is an ID (`PRT`, `H`, `P`, `W`, ...) or a nu
 ## Feature highlight (`full`)
 
 `images/parts/PRT001_features.png`, per part with features: an isometric view with a marker at every hole (red ring), cut-out, slot and pocket (blue), boss (orange), fillet (green) and chamfer (purple), each named by its ID, with a colour key. The first 12 fillets and chamfers are marked; a feature on a face turned away from the view is left out and named in the "Not drawn" notes of the index.
+
+## Section view (`full`)
+
+`images/parts/PRT001_section.png`, per part with a hole, cut-out or pocket: the part cut by a plane that runs along the axis of its widest hole (square to the world axis that axis lies furthest from), or across the longest extent when there is no hole. The material on the + side of the plane is removed and the cut face (red) is seen from that side, so wall thickness and the inside show. The plane is named in the title and the caption (`x = 12.00 mm`, part frame). If the cut fails the image is skipped and the index says so.

@@ -64,12 +64,16 @@ SEVERITY = {
 
 # image types of each set, in the order they are rendered (the basic set adds none)
 STANDARD_TYPES = ("holes", "views", "weak")
-FULL_ONLY_TYPES = ("features",)
+FULL_ONLY_TYPES = ("features", "section")
 TYPES = {"standard": STANDARD_TYPES, "full": STANDARD_TYPES + FULL_ONLY_TYPES}
 
 
 def types_for(image_set: str) -> tuple[str, ...]:
     return TYPES.get(image_set, ())
+
+
+class ImageSkipped(Exception):  # noqa: N818 - not an error: the picture is left out with a reason
+    """Raised by an image type that cannot be drawn for a part, with the reason for the index."""
 
 
 @dataclass
@@ -287,6 +291,7 @@ MODULES: dict[str, str] = {
     "views": "stepscribe.render.three_view",
     "weak": "stepscribe.render.weak_spot_view",
     "features": "stepscribe.render.feature_view",
+    "section": "stepscribe.render.section_view",
 }
 
 
@@ -349,6 +354,9 @@ def render_extra_images(
                 continue
             try:
                 image = _make(kind, part, ap.geom, report, up, front, max_side, result.notes)
+            except ImageSkipped as skip:
+                result.notes.append(f"{KINDS[kind]} {part.id}: not drawn, {skip}")
+                continue
             except Exception as exc:  # noqa: BLE001 - a picture must never stop the pack
                 result.notes.append(f"{KINDS[kind]} {part.id}: not drawn ({type(exc).__name__})")
                 continue
@@ -365,7 +373,11 @@ def render_extra_images(
                 tracker.image_done(Path(rel).name, now - t_last)
                 t_last = now
         if empty:
-            what = {"weak": "weak spots", "features": "features"}.get(kind, "holes")
+            what = {
+                "weak": "weak spots",
+                "features": "features",
+                "section": "holes, cut-outs or pockets",
+            }.get(kind, "holes")
             shown = ", ".join(empty[:10]) + (", ..." if len(empty) > 10 else "")
             result.notes.append(
                 f"{KINDS[kind]}: not drawn for {len(empty)} {'part' if len(empty) == 1 else 'parts'} without {what} ({shown})"

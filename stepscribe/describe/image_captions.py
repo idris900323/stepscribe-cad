@@ -23,8 +23,9 @@ KINDS = {
     "views": "three-view drawing",
     "weak": "weak-spot overlay",
     "features": "feature highlight",
+    "section": "section view",
 }
-_NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak|features)\.png$")
+_NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak|features|section)\.png$")
 
 
 @dataclass
@@ -129,6 +130,42 @@ def _weak_caption(report: Report, part: Part) -> Caption:
     )
 
 
+AXIS_LETTERS = "xyz"
+
+
+def has_inner_features(part: Part) -> bool:
+    return bool(part.holes or part.cutouts or part.pockets)
+
+
+def section_plane(part: Part) -> tuple[int, float]:
+    """(axis index, offset in mm in the part frame) of the plane the section view cuts along.
+
+    Through the axis of the widest hole, perpendicular to the world axis that is most nearly square
+    to it, so the cut runs along the bore and shows its wall; with no hole, across the longest
+    extent at its middle."""
+    lo = [part.bbox.min.x, part.bbox.min.y, part.bbox.min.z]
+    hi = [part.bbox.max.x, part.bbox.max.y, part.bbox.max.z]
+    if part.holes:
+        h = max(part.holes, key=lambda x: (x.diameter_mm, x.id))
+        d = [abs(h.axis.direction.x), abs(h.axis.direction.y), abs(h.axis.direction.z)]
+        axis = d.index(min(d))
+        return axis, [h.axis.origin.x, h.axis.origin.y, h.axis.origin.z][axis]
+    ext = [b - a for a, b in zip(lo, hi, strict=True)]
+    axis = ext.index(max(ext))
+    return axis, 0.5 * (lo[axis] + hi[axis])
+
+
+def _section_caption(part: Part) -> Caption:
+    axis, offset = section_plane(part)
+    letter = AXIS_LETTERS[axis]
+    text = (
+        f"Part {part.id} cut by the plane {letter} = {fmt(offset, 2)} mm (part frame). The material on "
+        f"the + {letter} side is removed and the cut is seen from that side; the cut face is red. "
+        "It shows the wall thickness and the inside along that plane."
+    )
+    return Caption("section view", text, [part.id], f"{part_file_hint(part.id)}, header and Holes")
+
+
 def _features_caption(part: Part) -> Caption:
     families = [
         ("holes (red rings)", [h.id for h in part.holes]),
@@ -169,7 +206,9 @@ def caption_for(rel: str, report: Report) -> Caption | None:
         return _views_caption(part)
     if m.group(2) == "weak":
         return _weak_caption(report, part)
-    return _features_caption(part)
+    if m.group(2) == "features":
+        return _features_caption(part)
+    return _section_caption(part)
 
 
 def caption_line(rel: str, report: Report) -> str:

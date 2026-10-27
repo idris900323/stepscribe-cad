@@ -36,6 +36,7 @@ Robot files from manufacturers (a six-axis industrial arm, for example): links, 
 - **Three-view drawing** (`standard`): front, top and right views of each part on one sheet with the overall dimensions drawn and labelled.
 - **Weak-spot overlay** (`standard`): each weak spot marked on its part with its ID; an edge-distance finding also shows the measured distance line.
 - **Feature highlight** (`full`): holes, openings, bosses, fillets and chamfers in one colour per family with their IDs.
+- **Section view** (`full`): a cut through each part along its widest bore, plane position stated, cut face in red; skipped with a note when the cut fails.
 
 ## 0.1.4
 
