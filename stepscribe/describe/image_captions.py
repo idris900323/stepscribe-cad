@@ -12,13 +12,14 @@ import re
 from dataclasses import dataclass
 
 from stepscribe.describe.phrases import fmt
-from stepscribe.models.schema import Part, Report
+from stepscribe.models.schema import Part, Report, WeakSpot
 
 MAX_HOLE_LABELS = 40  # holes named on a hole map (the rest stay in the hole table)
+MAX_SPOT_ROWS = 12
 
 # file suffix -> image type
-KINDS = {"holes": "hole map", "views": "three-view drawing"}
-_NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views)\.png$")
+KINDS = {"holes": "hole map", "views": "three-view drawing", "weak": "weak-spot overlay"}
+_NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak)\.png$")
 
 
 @dataclass
@@ -33,6 +34,12 @@ class Caption:
 
 def part_file_hint(part_id: str) -> str:
     return f"03_parts/{part_id}_*.md"
+
+
+def part_weak_spots(report: Report, part: Part) -> list[WeakSpot]:
+    """Weak spots that name this part (the first ref of a part-level finding is the part's ID)."""
+    u = report.understanding
+    return [w for w in u.weak_spots if part.id in w.refs] if u is not None else []
 
 
 def hole_pattern_of(part: Part) -> dict[str, str]:
@@ -86,6 +93,37 @@ def _views_caption(part: Part) -> Caption:
     return Caption("three-view drawing", text, [part.id], f"{part_file_hint(part.id)}, header")
 
 
+def _weak_caption(report: Report, part: Part) -> Caption:
+    spots = part_weak_spots(report, part)
+    rows = []
+    ids = [part.id]
+    for w in spots[:MAX_SPOT_ROWS]:
+        value = f", {fmt(w.value, 2)} {w.unit or ''}".rstrip() if w.value is not None else ""
+        holes = [r for r in w.refs if r != part.id]
+        rows.append(
+            f"{w.id} ({w.severity}, {w.category}{value}; refs {', '.join(holes) or part.id})"
+        )
+        ids += [w.id, *holes]
+    text = (
+        f"Part {part.id} drawn grey with its weak spots marked by severity colour "
+        "(red high, orange medium, yellow low, blue info): " + "; ".join(rows) + "."
+    )
+    if len(spots) > MAX_SPOT_ROWS:
+        text += f" {len(spots) - MAX_SPOT_ROWS} more are in the weak-spot table only."
+    if any(w.category == "edge_distance" for w in spots):
+        text += (
+            " For an edge-distance finding the black line runs from the hole wall to the nearest "
+            "edge and its length in mm is written beside it (measured in 3D, so it can look short "
+            "when it runs along the viewing direction)."
+        )
+    return Caption(
+        "weak-spot overlay",
+        text,
+        list(dict.fromkeys(ids)),
+        "05_understanding.md, weak spots; " + part_file_hint(part.id),
+    )
+
+
 def caption_for(rel: str, report: Report) -> Caption | None:
     """The caption of an extra image, or None when *rel* is not one of them."""
     m = _NAME.match(rel)
@@ -98,7 +136,7 @@ def caption_for(rel: str, report: Report) -> Caption | None:
         return _holes_caption(part)
     if m.group(2) == "views":
         return _views_caption(part)
-    return None
+    return _weak_caption(report, part)
 
 
 def caption_line(rel: str, report: Report) -> str:

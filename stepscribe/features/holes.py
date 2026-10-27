@@ -515,46 +515,73 @@ def _compound(faces: list) -> TopoDS_Compound:  # type: ignore[type-arg]
     return comp
 
 
-def compute_edge_distances(part: PartGeom, holes: list[Hole]) -> None:
-    """Wall left around each hole: min distance from the bore to non-hole, non-adjacent faces."""
-    table = part.table
-    if len(table.faces) > config.EDGE_DISTANCE_MAX_FACES:
-        part.warnings.append(
-            f"edge distance skipped: more than {config.EDGE_DISTANCE_MAX_FACES} faces"
-        )
-        return
+def _hole_face_sets(holes: list[Hole]) -> tuple[dict[str, set[int]], set[int]]:
     hole_faces: dict[str, set[int]] = {}
     all_hole_idx: set[int] = set()
     for h in holes:
         idx = {int(fid[1:]) - 1 for s in h.segments for fid in s.face_ids}
         hole_faces[h.id] = idx
         all_hole_idx |= idx
-    for h in holes:
-        mine = hole_faces[h.id]
-        adjacent = set().union(*(table.faces[i].neighbors for i in mine)) if mine else set()
-        # The wall left around a hole is measured from its side walls. A drill-point tip reaches
-        # further than the wall; its gap to whatever lies below is not an edge distance.
-        tip = {
-            int(fid[1:]) - 1
-            for seg in h.segments
-            if seg.kind == "cone"
-            and seg.diameter_small_mm is not None
-            and seg.diameter_small_mm < 1e-6
-            for fid in seg.face_ids
-        }
-        measured = (mine - tip) or mine
-        outer = [
-            table.faces[i].face
-            for i in range(len(table.faces))
-            if i not in all_hole_idx and i not in adjacent
-        ]
-        if not outer:
-            continue
-        dss = BRepExtrema_DistShapeShape(
-            _compound([table.faces[i].face for i in sorted(measured)]), _compound(outer)
+    return hole_faces, all_hole_idx
+
+
+def _edge_dss(
+    part: PartGeom, h: Hole, hole_faces: dict[str, set[int]], all_hole_idx: set[int]
+) -> BRepExtrema_DistShapeShape | None:
+    """The distance computation behind a hole's edge distance (None when there is nothing to measure)."""
+    table = part.table
+    mine = hole_faces[h.id]
+    adjacent = set().union(*(table.faces[i].neighbors for i in mine)) if mine else set()
+    # The wall left around a hole is measured from its side walls. A drill-point tip reaches
+    # further than the wall; its gap to whatever lies below is not an edge distance.
+    tip = {
+        int(fid[1:]) - 1
+        for seg in h.segments
+        if seg.kind == "cone" and seg.diameter_small_mm is not None and seg.diameter_small_mm < 1e-6
+        for fid in seg.face_ids
+    }
+    measured = (mine - tip) or mine
+    outer = [
+        table.faces[i].face
+        for i in range(len(table.faces))
+        if i not in all_hole_idx and i not in adjacent
+    ]
+    if not outer:
+        return None
+    dss = BRepExtrema_DistShapeShape(
+        _compound([table.faces[i].face for i in sorted(measured)]), _compound(outer)
+    )
+    return dss if dss.IsDone() else None
+
+
+def compute_edge_distances(part: PartGeom, holes: list[Hole]) -> None:
+    """Wall left around each hole: min distance from the bore to non-hole, non-adjacent faces."""
+    if len(part.table.faces) > config.EDGE_DISTANCE_MAX_FACES:
+        part.warnings.append(
+            f"edge distance skipped: more than {config.EDGE_DISTANCE_MAX_FACES} faces"
         )
-        if dss.IsDone():
+        return
+    hole_faces, all_hole_idx = _hole_face_sets(holes)
+    for h in holes:
+        dss = _edge_dss(part, h, hole_faces, all_hole_idx)
+        if dss is not None:
             h.edge_distance_mm = float(dss.Value())
+
+
+def edge_distance_segment(
+    part: PartGeom, holes: list[Hole], hole_id: str
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """The two points (part frame, mm) whose distance is the hole's edge distance, or None."""
+    if len(part.table.faces) > config.EDGE_DISTANCE_MAX_FACES:
+        return None
+    h = next((x for x in holes if x.id == hole_id), None)
+    if h is None:
+        return None
+    dss = _edge_dss(part, h, *_hole_face_sets(holes))
+    if dss is None or dss.NbSolution() < 1:
+        return None
+    a, b = dss.PointOnShape1(1), dss.PointOnShape2(1)
+    return np.array([a.X(), a.Y(), a.Z()]), np.array([b.X(), b.Y(), b.Z()])
 
 
 # ---------------------------------------------------------------- public entry point

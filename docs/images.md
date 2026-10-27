@@ -20,3 +20,7 @@ Every label drawn on an extra image is an ID (`PRT`, `H`, `P`, `W`, ...) or a nu
 ## Three-view drawing (`standard`)
 
 `images/parts/PRT001_views.png`, per part: front, top and right orthographic views on one sheet with the overall width and height of each view drawn as dimension lines in mm (where the view is large enough to hold them) and the overall size written in the fourth cell.
+
+## Weak-spot overlay (`standard`)
+
+`images/parts/PRT001_weak.png`, per part that a weak spot names: the part in grey with each finding marked in its severity colour (red high, orange medium, yellow low, blue info) and labelled with its ID and the feature it refers to (`W001 H004`). For an edge-distance finding the black line is the measured distance from the hole wall to the nearest face, with its length in mm; it is measured in 3D, so it can look short when it runs along the viewing direction. Findings that name no single part (tipping, interference, floating part) are not drawn.
