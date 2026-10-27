@@ -68,10 +68,12 @@ FULL_ONLY_TYPES = ("features", "section")
 TYPES = {"standard": STANDARD_TYPES, "full": STANDARD_TYPES + FULL_ONLY_TYPES}
 # image types of the whole assembly (robots and assemblies only): module with make_assembly()
 STANDARD_ASSEMBLY_TYPES = ("contacts", "links", "kinematic")
+FULL_ONLY_ASSEMBLY_TYPES = ("ranges",)
 ASSEMBLY_MODULES: dict[str, str] = {
     "contacts": "stepscribe.render.contact_view",
     "links": "stepscribe.render.link_view",
     "kinematic": "stepscribe.render.skeleton_view",
+    "ranges": "stepscribe.render.range_view",
 }
 
 
@@ -80,7 +82,9 @@ def types_for(image_set: str) -> tuple[str, ...]:
 
 
 def assembly_types_for(image_set: str) -> tuple[str, ...]:
-    return STANDARD_ASSEMBLY_TYPES if image_set in ("standard", "full") else ()
+    if image_set == "full":
+        return STANDARD_ASSEMBLY_TYPES + FULL_ONLY_ASSEMBLY_TYPES
+    return STANDARD_ASSEMBLY_TYPES if image_set == "standard" else ()
 
 
 class ImageSkipped(Exception):  # noqa: N818 - not an error: the picture is left out with a reason

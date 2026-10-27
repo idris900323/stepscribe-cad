@@ -44,3 +44,7 @@ Every label drawn on an extra image is an ID (`PRT`, `H`, `P`, `W`, ...) or a nu
 ## Kinematic diagram and joint axes (`standard`, robots)
 
 `images/kinematic_diagram.png`: a skeleton in the zero pose of the file over a faint outline of the model. Links are bars (from the joint that carries a link to the joints it carries), the base is a square, and each joint is an arrow along its axis labelled with its ID and axis direction (`KJ2 (0.00, 1.00, 0.00)`). `images/kinematic_axes.png`: the joint axes as labelled arrows on the shaded model. Both are drawn only when the kinematics found joints, and carry IDs and numbers only.
+
+## Joint ranges (`full`, robots with ranges from the designer)
+
+`images/kinematic_ranges.png`: the skeleton with every joint that has a range in `design_context.yaml` drawn at the low end (blue) and the high end (green) of it, over the zero pose (grey); the links below a joint move with it. A joint whose range only comes from the motion check is not drawn. Without designer ranges the image is skipped and the index says so.

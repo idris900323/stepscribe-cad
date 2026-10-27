@@ -27,9 +27,12 @@ KINDS = {
     "contacts": "contact map",
     "links": "link colour map",
     "kinematic": "kinematic diagram",
+    "ranges": "joint range image",
 }
 _NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak|features|section)\.png$")
-_ASSEMBLY = re.compile(r"^images/(contact_map|link_map|kinematic_diagram|kinematic_axes)\.png$")
+_ASSEMBLY = re.compile(
+    r"^images/(contact_map|link_map|kinematic_diagram|kinematic_axes|kinematic_ranges)\.png$"
+)
 
 
 @dataclass
@@ -251,6 +254,23 @@ def _joint_facts(report: Report) -> tuple[list[str], list[str]]:
     return rows, ids
 
 
+def _ranges_caption(report: Report) -> Caption:
+    kin = report.understanding.kinematics if report.understanding else None
+    rows, ids = [], []
+    for j in kin.joints if kin else []:
+        if j.range_deg_or_mm and j.range_source == "designer":
+            unit = "mm" if j.kind == "prismatic" else "deg"
+            lo, hi = j.range_deg_or_mm
+            rows.append(f"{j.id} {fmt(lo)} to {fmt(hi)} {unit}")
+            ids.append(j.id)
+    text = (
+        "The kinematic skeleton with every joint that has a range from the designer drawn at the "
+        "low end (blue) and the high end (green) of it; the zero pose is grey, the links below the "
+        "joint move with it and nothing else changes. Ranges: " + "; ".join(rows) + "."
+    )
+    return Caption("joint range image", text, ids, "05_understanding.md, kinematics")
+
+
 def _kinematic_caption(report: Report, skeleton: bool) -> Caption:
     rows, ids = _joint_facts(report)
     if skeleton:
@@ -282,6 +302,8 @@ def caption_for(rel: str, report: Report) -> Caption | None:
             return _contacts_caption(report)
         if am.group(1) == "link_map":
             return _links_caption(report)
+        if am.group(1) == "kinematic_ranges":
+            return _ranges_caption(report)
         return _kinematic_caption(report, am.group(1) == "kinematic_diagram")
     m = _NAME.match(rel)
     if not m:
