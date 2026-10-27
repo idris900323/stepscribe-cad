@@ -159,6 +159,16 @@ def _summary(results: list[dict[str, Any]]) -> None:
             console.print(f"[red]{Path(r['file']).name}:[/red] {e}")
 
 
+def _mesh_params(meshes: bool, max_triangles: int, visual_cap: int | None) -> dict[str, Any]:
+    """The export() parameters for --meshes (empty when off, so default runs are unchanged)."""
+    if not meshes:
+        return {}
+    out: dict[str, Any] = {"meshes": True, "mesh_max_triangles": max_triangles}
+    if visual_cap is not None:
+        out["mesh_visual_max_triangles"] = visual_cap
+    return out
+
+
 @app.command()
 def pack(
     path: Path_,
@@ -190,6 +200,29 @@ def pack(
         bool, typer.Option("--check-motion", help="Move each joint and test collisions (slow).")
     ] = False,
     motion_budget_s: Annotated[int, typer.Option(help="Time budget for --check-motion.")] = 120,
+    meshes: Annotated[
+        bool,
+        typer.Option(
+            "--meshes",
+            help="Also write meshes/ (one visual and one collision STL per robot link, metres, link frame) and reference them in robot.urdf. Robots only.",
+        ),
+    ] = False,
+    mesh_max_triangles: Annotated[
+        int,
+        typer.Option(
+            "--mesh-max-triangles",
+            min=12,
+            help="Most triangles in one link's collision mesh (see --visual-triangle-cap for the visual ones).",
+        ),
+    ] = limits.LINK_MESH_MAX_TRIANGLES,
+    visual_triangle_cap: Annotated[
+        int | None,
+        typer.Option(
+            "--visual-triangle-cap",
+            min=12,
+            help="Most triangles in one link's visual mesh, by coarser tessellation. Default: no cap.",
+        ),
+    ] = None,
     debug_graphs: Annotated[
         bool, typer.Option("--debug-graphs", help="Also write data/aag_<part>.json.")
     ] = False,
@@ -252,6 +285,7 @@ def pack(
         "context_file": str(context) if context else None,
         "budget_tokens": budget_tokens,
         "images": not no_images,
+        "export": _mesh_params(meshes, mesh_max_triangles, visual_triangle_cap),
     }
     results = _run(files, tpl, jobs, timeout_s)
     if path.is_dir():
@@ -312,6 +346,29 @@ def export(
             help="Shortest such stack, in diameters, that counts as a pivot. Default 1.",
         ),
     ] = None,
+    meshes: Annotated[
+        bool,
+        typer.Option(
+            "--meshes",
+            help="Also write meshes/ (one visual and one collision STL per robot link, metres, link frame) and reference them in robot.urdf. Robots only.",
+        ),
+    ] = False,
+    mesh_max_triangles: Annotated[
+        int,
+        typer.Option(
+            "--mesh-max-triangles",
+            min=12,
+            help="Most triangles in one link's collision mesh (see --visual-triangle-cap for the visual ones).",
+        ),
+    ] = limits.LINK_MESH_MAX_TRIANGLES,
+    visual_triangle_cap: Annotated[
+        int | None,
+        typer.Option(
+            "--visual-triangle-cap",
+            min=12,
+            help="Most triangles in one link's visual mesh, by coarser tessellation. Default: no cap.",
+        ),
+    ] = None,
     timings_flag: Annotated[
         bool,
         typer.Option(
@@ -364,6 +421,7 @@ def export(
             "chat_max_mb": chat_max_mb,
             "embed_images": embed_images,
             "make_zip": not no_zip,
+            **_mesh_params(meshes, mesh_max_triangles, visual_triangle_cap),
         },
     }
     results = _run(files, tpl, jobs, timeout_s)
