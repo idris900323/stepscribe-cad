@@ -41,6 +41,7 @@ Robot files from manufacturers (a six-axis industrial arm, for example): links, 
 - **Link colour map** (`standard`, robots): the assembly coloured by link group with link IDs only; the caption lists each link and its instances.
 - **Kinematic diagram and joint axes** (`standard`, robots): a skeleton of link bars with the joint axes as labelled arrows over a faint outline, and the axes on the shaded model.
 - **Joint ranges** (`full`): each joint with a designer range at both ends of it on the skeleton; skipped with a note without ranges.
+- **Wall-thickness heat map** (`full`, where thickness data exists): the sampled wall thickness as coloured dots on the part, labelled an estimate, with the scale.
 
 ## 0.1.4
 

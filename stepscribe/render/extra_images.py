@@ -64,7 +64,7 @@ SEVERITY = {
 
 # image types of each set, in the order they are rendered (the basic set adds none)
 STANDARD_TYPES = ("holes", "views", "weak")
-FULL_ONLY_TYPES = ("features", "section")
+FULL_ONLY_TYPES = ("features", "section", "walls")
 TYPES = {"standard": STANDARD_TYPES, "full": STANDARD_TYPES + FULL_ONLY_TYPES}
 # image types of the whole assembly (robots and assemblies only): module with make_assembly()
 STANDARD_ASSEMBLY_TYPES = ("contacts", "links", "kinematic")
@@ -308,6 +308,7 @@ MODULES: dict[str, str] = {
     "weak": "stepscribe.render.weak_spot_view",
     "features": "stepscribe.render.feature_view",
     "section": "stepscribe.render.section_view",
+    "walls": "stepscribe.render.wall_view",
 }
 
 

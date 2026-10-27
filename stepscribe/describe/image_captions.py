@@ -24,12 +24,13 @@ KINDS = {
     "weak": "weak-spot overlay",
     "features": "feature highlight",
     "section": "section view",
+    "walls": "wall thickness heat map",
     "contacts": "contact map",
     "links": "link colour map",
     "kinematic": "kinematic diagram",
     "ranges": "joint range image",
 }
-_NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak|features|section)\.png$")
+_NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak|features|section|walls)\.png$")
 _ASSEMBLY = re.compile(
     r"^images/(contact_map|link_map|kinematic_diagram|kinematic_axes|kinematic_ranges)\.png$"
 )
@@ -171,6 +172,22 @@ def _section_caption(part: Part) -> Caption:
         "It shows the wall thickness and the inside along that plane."
     )
     return Caption("section view", text, [part.id], f"{part_file_hint(part.id)}, header and Holes")
+
+
+def _walls_caption(part: Part) -> Caption:
+    thin = fmt(part.min_wall_thickness_mm, 2) if part.min_wall_thickness_mm is not None else "-"
+    text = (
+        f"Part {part.id} in an isometric view, grey, with dots coloured by the sampled wall thickness "
+        f"from red (thinnest) through yellow to blue (thickest), the scale in mm in the corner. This is "
+        f"an estimate: rays cast through the material from sampled points of the plane and cylinder faces. "
+        f"The thinnest wall reported for the part is about {thin} mm."
+    )
+    return Caption(
+        "wall thickness heat map",
+        text,
+        [part.id],
+        f"{part_file_hint(part.id)}, header (thinnest wall)",
+    )
 
 
 def _features_caption(part: Part) -> Caption:
@@ -319,7 +336,9 @@ def caption_for(rel: str, report: Report) -> Caption | None:
         return _weak_caption(report, part)
     if m.group(2) == "features":
         return _features_caption(part)
-    return _section_caption(part)
+    if m.group(2) == "section":
+        return _section_caption(part)
+    return _walls_caption(part)
 
 
 def caption_line(rel: str, report: Report) -> str:

@@ -48,3 +48,7 @@ Every label drawn on an extra image is an ID (`PRT`, `H`, `P`, `W`, ...) or a nu
 ## Joint ranges (`full`, robots with ranges from the designer)
 
 `images/kinematic_ranges.png`: the skeleton with every joint that has a range in `design_context.yaml` drawn at the low end (blue) and the high end (green) of it, over the zero pose (grey); the links below a joint move with it. A joint whose range only comes from the motion check is not drawn. Without designer ranges the image is skipped and the index says so.
+
+## Wall-thickness heat map (`full`, only where thickness was sampled)
+
+`images/parts/PRT001_walls.png`, per part with a sampled wall thickness: the part in grey with a dot at every visible sample, coloured red (thinnest) through yellow to blue (thickest), with the scale in mm in the corner and "estimate" in the title. The samples are those of the analysis (rays through the material from random points of plane and cylinder faces, same seed and count), so the thinnest value matches the report's wall thickness; it is an estimate, not a measurement of every wall. A part with no sampled thickness (the analysis was run without it, or the part is too large to cast against) is skipped and the index says so.
