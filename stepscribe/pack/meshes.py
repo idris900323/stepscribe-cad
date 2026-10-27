@@ -422,7 +422,10 @@ def make_link_meshes(
         kind = "hull"
         collision = convex_hull(visual[0], cap)
         collision_health = mesh_health([collision])
-        notes.append("collision: convex hull (no tessellation was both closed and within the cap)")
+        notes.append(
+            "collision: convex hull (no tessellation was both closed and within the cap); a hull is "
+            "larger than a concave link, so its volume and clearances are overestimated"
+        )
     return LinkResult(visual, collision, visual_health, collision_health, kind, notes)
 
 
@@ -447,7 +450,8 @@ def readme_text(
         "is the world position at the zero pose stored in the file.",
         "",
         f"Collision meshes: a coarser tessellation within {cap} triangles per link that is closed and",
-        "consistently oriented; where none exists the collision mesh is the convex hull of the link.",
+        "consistently oriented; where none exists the collision mesh is the convex hull of the link,",
+        "which is larger than a concave link (it fills hollows and gaps): use it for rough checks only.",
         "Visual meshes: " + (f"capped at {visual_cap} triangles." if visual_cap else "not capped."),
         "To make a link lighter, point its visual element in robot.urdf at its collision file.",
         "",

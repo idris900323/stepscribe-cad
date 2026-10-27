@@ -157,7 +157,9 @@ same name cleaning as every other label. The same input gives byte-identical fil
   at least 12) that is closed (no open or non-manifold edge), consistently oriented (outward, positive
   volume). The deflection is increased step by step until both hold. When no step does, the collision
   mesh is the convex hull of the link (computed with numpy; no extra dependency), which is closed by
-  construction. The URDF header and README mark such a link as "collision: convex hull".
+  construction. The URDF header and README mark such a link as "collision: convex hull". A hull is
+  larger than a concave link (it fills hollows and gaps), so it overestimates the volume and keeps
+  other objects further away than the real link does; use it for rough collision checks only.
 - **A visual mesh that is not closed** is reported, never hidden. If a part's solid is not a valid
   closed solid (the part analysis says so in its warnings) the note reads "visual mesh not closed
   because the source solid is not closed" with the part IDs and the number of open edges; if the solid

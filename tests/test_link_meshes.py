@@ -228,6 +228,7 @@ def test_a_complex_part_over_the_cap_gets_a_closed_mesh_within_it_or_a_hull_with
     assert small.collision_health.closed and small.collision_health.triangles <= 300
     assert small.collision_kind == "hull"
     assert any("convex hull" in n for n in small.notes)
+    assert any("larger than a concave link" in n for n in small.notes)
     box = 0.2 * 0.2 * 0.01
     assert 0 < small.collision_health.volume_m3 <= box * 1.0001  # a hull is no bigger than the box
     holes = 196 * np.pi * 0.003**2 * 0.01
@@ -293,8 +294,10 @@ def test_the_header_and_readme_name_the_links_that_use_a_hull_or_have_a_note() -
     assert "L0: visual 100 (5 kB), collision 12 (1 kB)" in head
     assert "L1: visual 900 (45 kB), collision: convex hull 40 (2 kB)" in head
     assert f"note: {note}" in head
+    assert "larger than a concave link" in head
     text = readme_text(robot, files, 5000, None)
     assert "| L1 | 900 |" in text and "convex hull" in text and "PRT002" in text
+    assert "larger than a concave link" in text
     assert "not capped" in text and "capped at 50 triangles" in readme_text(robot, files, 5000, 50)
 
 

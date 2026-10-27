@@ -51,6 +51,8 @@ def _mesh_header(robot: dict[str, Any], meshes: dict[str, LinkMeshes] | None) ->
     lines = [
         "Mesh paths are relative to this file: load the URDF from this folder, or keep meshes/ next",
         "to it. A tool that needs package:// paths: put this folder in a package and change the prefix.",
+        "A convex-hull collision mesh is larger than a concave link (it fills hollows and gaps): it",
+        "overestimates volume and keeps other objects further away than the real link does.",
         "To make a link lighter, point its visual element at its collision file.",
         "Mesh size per link (binary STL, triangles and kB):",
     ]
