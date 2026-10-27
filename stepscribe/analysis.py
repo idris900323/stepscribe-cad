@@ -335,6 +335,36 @@ def worker_count(
     return n
 
 
+UNKNOWN_RAM_SPLIT_WORKERS = 4  # when the OS does not say how much memory is free (macOS)
+
+
+def may_split_bores(
+    workers: int,
+    max_faces: int,
+    available_bytes: int | None = _UNSET,
+    jobs: int | None = None,
+) -> bool:
+    """Whether the ray casts of a big part may be spread over the whole pool.
+
+    Every worker that casts rays holds its own copy of the part, so the split puts the largest
+    part into all `workers` processes at once, not into one. That is allowed when the same memory
+    rule as `worker_count` (`estimate_worker_mb` for the largest part, RAM_SHARE of the free
+    memory, shared between the jobs) holds for all of them. When the OS does not report free
+    memory the split is used only on a pool of at most UNKNOWN_RAM_SPLIT_WORKERS processes. The
+    report is the same either way: no split just means the part's own worker does all the casts.
+    """
+    from stepscribe.runner import RUNNER
+
+    if workers <= 1:
+        return False
+    free = available_ram_bytes() if available_bytes is _UNSET else available_bytes
+    if free is None:
+        return workers <= UNKNOWN_RAM_SPLIT_WORKERS
+    n_jobs = max(1, jobs if jobs is not None else RUNNER.max_jobs)
+    per_worker = estimate_worker_mb(max_faces) * 1024**2
+    return workers * per_worker * n_jobs <= RAM_SHARE * free
+
+
 def assign_part_ids(parts: list[Part]) -> None:
     """PRT001... sorted by (name, content hash): Rule 6.4."""
     ordered = sorted(parts, key=lambda p: (p.name, p.content_hash))
@@ -349,6 +379,7 @@ __all__ = [
     "bore_chunk",
     "analyze_geom",
     "assign_part_ids",
+    "may_split_bores",
     "np",
     "split_bodies",
 ]

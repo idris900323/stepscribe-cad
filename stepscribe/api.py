@@ -19,6 +19,7 @@ from stepscribe.analysis import (
     analyze_brep_file,
     assign_part_ids,
     bore_chunk,
+    may_split_bores,
     split_bodies,
     worker_count,
 )
@@ -137,6 +138,7 @@ def _analyse_bodies(
             order = sorted(range(len(bodies)), key=lambda i: -faces[id(bodies[i][2])])  # big first
             tracker.stage("parts", f"analysing {len(bodies)} parts on {workers} processes")
             retry: list[int] = []
+            split = may_split_bores(workers, max(faces.values(), default=0))  # memory rule
             try:
                 with ProcessPoolExecutor(workers, mp_context=mp.get_context("spawn")) as pool:
                     pending: dict[Future[Any], tuple[str, int]] = {}
@@ -145,7 +147,7 @@ def _analyse_bodies(
                     # The ray casts of hole detection are independent per face. For a big part they
                     # go to the pool first, in chunks, so the whole pool works on the part that
                     # would otherwise be the slowest; its analysis then starts with the bores found.
-                    for i in (i for i in order if n_faces(i) >= HEAVY_BORE_FACES):
+                    for i in (i for i in order if split and n_faces(i) >= HEAVY_BORE_FACES):
                         total = n_faces(i)
                         step = max(MIN_CHUNK_FACES, -(-total // (workers * 3)))
                         futs = [

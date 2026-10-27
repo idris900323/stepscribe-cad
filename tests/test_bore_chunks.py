@@ -96,6 +96,76 @@ def test_a_part_analysed_with_its_bores_found_beforehand_is_the_same_part(brep: 
     assert pre.model_dump() == alone.model_dump()  # holes, patterns, warnings, everything
 
 
+def test_the_split_follows_the_memory_rule_of_the_worker_cap() -> None:
+    from stepscribe import analysis as A
+
+    gb = 1024**3
+    need = A.estimate_worker_mb(2000) * 1024**2  # one worker holding the largest part
+    ok = A.may_split_bores
+    assert ok(4, 2000, available_bytes=8 * gb, jobs=1)  # plenty of memory
+    assert not ok(
+        1, 2000, available_bytes=8 * gb, jobs=1
+    )  # a single process has nobody to share with
+    assert not ok(4, 2000, available_bytes=1, jobs=1)  # low memory: serial
+    just = int(4 * need / A.RAM_SHARE)
+    assert ok(4, 2000, available_bytes=just + 1, jobs=1)  # exactly what worker_count allows
+    assert not ok(4, 2000, available_bytes=just - 1024, jobs=1)
+    assert not ok(4, 2000, available_bytes=just + 1, jobs=2)  # the memory is shared between jobs
+    # it never splits where worker_count would not have started that many workers
+    for free in (gb, 2 * gb, 4 * gb, 16 * gb):
+        n = A.worker_count(40, max_faces=2000, available_bytes=free, cpus=16, jobs=1)
+        assert n == 1 or ok(n, 2000, available_bytes=free, jobs=1)
+
+
+def test_unknown_free_memory_uses_a_conservative_default() -> None:
+    from stepscribe import analysis as A
+
+    limit = A.UNKNOWN_RAM_SPLIT_WORKERS
+    assert limit == 4
+    assert A.may_split_bores(limit, 2000, available_bytes=None, jobs=1)
+    assert not A.may_split_bores(limit + 1, 2000, available_bytes=None, jobs=1)
+
+
+def test_macos_style_missing_ram_query_is_the_unknown_case(monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    from stepscribe import analysis as A
+
+    def no_such_name(_name: str) -> int:
+        raise ValueError("unrecognized configuration name")
+
+    monkeypatch.setattr(os, "sysconf", no_such_name, raising=False)
+    assert A.available_ram_bytes("darwin") is None
+    assert A.may_split_bores(2, 2000, jobs=1)
+    assert not A.may_split_bores(8, 2000, jobs=1)
+
+
+def test_low_free_memory_runs_serial_and_gives_the_same_report(
+    step_files: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stepscribe import analysis as A
+
+    src = step_files["plates_with_clip_assembly"]
+
+    def run() -> tuple[dict, list[str]]:  # type: ignore[type-arg]
+        messages: list[str] = []
+        tracker = Tracker(lambda p: messages.append(p.message))
+        report = analyze_full(src, AnalyzeOptions(no_timestamp=True), tracker).report
+        return report.model_dump(), messages
+
+    monkeypatch.setenv("STEPSCRIBE_WORKERS", "2")
+    monkeypatch.setattr(api, "PARALLEL_MIN_PARTS", 1)
+    monkeypatch.setattr(api, "PARALLEL_MIN_FACES", 1)
+    monkeypatch.setattr(api, "HEAVY_BORE_FACES", 1)  # every part would be split
+    monkeypatch.setattr(A, "available_ram_bytes", lambda platform=None: 64 * 1024**3)
+    split, split_msgs = run()
+    assert any("split" in m for m in split_msgs), split_msgs
+    monkeypatch.setattr(A, "available_ram_bytes", lambda platform=None: 1024**2)  # 1 MB free
+    serial, serial_msgs = run()
+    assert not any("split" in m for m in serial_msgs), serial_msgs
+    assert serial == split
+
+
 def test_the_pool_with_split_hole_detection_gives_the_same_report(
     step_files: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
