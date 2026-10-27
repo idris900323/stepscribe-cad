@@ -17,10 +17,8 @@ from stepscribe.models.schema import Part, Report
 MAX_HOLE_LABELS = 40  # holes named on a hole map (the rest stay in the hole table)
 
 # file suffix -> image type
-KINDS = {
-    "holes": "hole map",
-}
-_NAME = re.compile(r"^images/parts/(PRT\d+)_(holes)\.png$")
+KINDS = {"holes": "hole map", "views": "three-view drawing"}
+_NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views)\.png$")
 
 
 @dataclass
@@ -77,6 +75,17 @@ def _holes_caption(part: Part) -> Caption:
     )
 
 
+def _views_caption(part: Part) -> Caption:
+    a, b, c = (fmt(v) for v in part.obb.size_sorted)
+    text = (
+        f"Part {part.id} in three orthographic views (front, top, right). The overall width and "
+        "height of a view are drawn as dimension lines in mm where the view is large enough to "
+        f"hold them; the overall size is also written on the sheet. Oriented bounding box {a} x "
+        f"{b} x {c} mm."
+    )
+    return Caption("three-view drawing", text, [part.id], f"{part_file_hint(part.id)}, header")
+
+
 def caption_for(rel: str, report: Report) -> Caption | None:
     """The caption of an extra image, or None when *rel* is not one of them."""
     m = _NAME.match(rel)
@@ -87,6 +96,8 @@ def caption_for(rel: str, report: Report) -> Caption | None:
         return None
     if m.group(2) == "holes":
         return _holes_caption(part)
+    if m.group(2) == "views":
+        return _views_caption(part)
     return None
 
 

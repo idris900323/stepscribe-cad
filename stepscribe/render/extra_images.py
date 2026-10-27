@@ -63,7 +63,7 @@ SEVERITY = {
 }
 
 # image types of each set, in the order they are rendered (the basic set adds none)
-TYPES = {"standard": ("holes",), "full": ("holes",)}
+TYPES = {"standard": ("holes", "views"), "full": ("holes", "views")}
 
 
 def types_for(image_set: str) -> tuple[str, ...]:
@@ -267,7 +267,7 @@ def write_index(
 
 
 # the image types that live in a module of their own (the hole map is above); each module has make()
-MODULES: dict[str, str] = {}
+MODULES: dict[str, str] = {"views": "stepscribe.render.three_view"}
 
 
 def _make(

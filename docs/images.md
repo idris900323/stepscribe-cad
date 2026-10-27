@@ -16,3 +16,7 @@ Every label drawn on an extra image is an ID (`PRT`, `H`, `P`, `W`, ...) or a nu
 ## Hole map (`standard`)
 
 `images/parts/PRT001_holes.png`, per part with holes: the part seen along its main hole axis, every hole circled (red through, blue blind) and labelled with its ID and diameter in mm (`H003 dia 5.1`), plus the pattern ID where the hole belongs to a recognised pattern (`P001`). At most 40 holes are labelled; the rest stay in the hole table.
+
+## Three-view drawing (`standard`)
+
+`images/parts/PRT001_views.png`, per part: front, top and right orthographic views on one sheet with the overall width and height of each view drawn as dimension lines in mm (where the view is large enough to hold them) and the overall size written in the fourth cell.

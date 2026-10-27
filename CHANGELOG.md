@@ -33,6 +33,7 @@ Robot files from manufacturers (a six-axis industrial arm, for example): links, 
 - Build tests run hermetically (`--no-isolation`, pinned hatchling) with one isolated CI job, and wait up to 30 minutes for a build (a heavily loaded machine once timed one out at 10 minutes).
 - Report schema 0.6.0 (new optional fields: `FastenerJoint.bore_pair`, the `KinematicModel` headline fields, `KinJoint` designer fields, `Understanding.kinematics_debug` and `load_path_note`, new question kinds).
 - **Image sets.** `--images none|basic|standard|full` (default `basic`, which is exactly today's images) and `--image-max-side` (default 1200). The extra images carry IDs and numbers only, never a name from the file; `images/INDEX.md` lists each one with what it shows, the IDs on it and the text it pairs with, and the caption is repeated next to the image reference in the part Markdown. See `docs/images.md`. First type: the **hole map** (`standard`): every hole circled and labelled with its ID and diameter, with pattern IDs.
+- **Three-view drawing** (`standard`): front, top and right views of each part on one sheet with the overall dimensions drawn and labelled.
 
 ## 0.1.4
 
