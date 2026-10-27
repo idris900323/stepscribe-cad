@@ -128,6 +128,7 @@ def test_unknown_free_memory_uses_a_conservative_default() -> None:
 
 def test_macos_style_missing_ram_query_is_the_unknown_case(monkeypatch: pytest.MonkeyPatch) -> None:
     import os
+    import sys
 
     from stepscribe import analysis as A
 
@@ -135,7 +136,8 @@ def test_macos_style_missing_ram_query_is_the_unknown_case(monkeypatch: pytest.M
         raise ValueError("unrecognized configuration name")
 
     monkeypatch.setattr(os, "sysconf", no_such_name, raising=False)
-    assert A.available_ram_bytes("darwin") is None
+    monkeypatch.setattr(sys, "platform", "darwin")  # the query inside may_split_bores too
+    assert A.available_ram_bytes() is None
     assert A.may_split_bores(2, 2000, jobs=1)
     assert not A.may_split_bores(8, 2000, jobs=1)
 
