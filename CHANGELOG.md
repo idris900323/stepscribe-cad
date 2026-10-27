@@ -42,6 +42,7 @@ Robot files from manufacturers (a six-axis industrial arm, for example): links, 
 - **Kinematic diagram and joint axes** (`standard`, robots): a skeleton of link bars with the joint axes as labelled arrows over a faint outline, and the axes on the shaded model.
 - **Joint ranges** (`full`): each joint with a designer range at both ends of it on the skeleton; skipped with a note without ranges.
 - **Wall-thickness heat map** (`full`, where thickness data exists): the sampled wall thickness as coloured dots on the part, labelled an estimate, with the scale.
+- **Robot validation** (`stepscribe validate-robot <urdf or pack>`, and `doctor --robot`): layer 1 checks the URDF with no extra library (parses; one root; connected tree, no cycle; parents, children and mesh files exist; joints match `robot.json`; inertia positive definite with the triangle inequality), and simulator readiness is reported separately in plain words with the fix (no inertia, continuous joints, zero effort or velocity, no collision geometry). Layer 2 is a plug-in structure for an optional library that cross-checks forward kinematics at the zero pose and fixed random poses; no library is a dependency and none is chosen yet. See `docs/robot_validation.md`.
 
 ## 0.1.4
 
