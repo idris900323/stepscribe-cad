@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 
 from stepscribe.describe.phrases import fmt
-from stepscribe.models.schema import Part, Report, WeakSpot
+from stepscribe.models.schema import Contact, Part, Report, WeakSpot
 
 MAX_HOLE_LABELS = 40  # holes named on a hole map (the rest stay in the hole table)
 MAX_SPOT_ROWS = 12
@@ -24,8 +24,12 @@ KINDS = {
     "weak": "weak-spot overlay",
     "features": "feature highlight",
     "section": "section view",
+    "contacts": "contact map",
+    "links": "link colour map",
+    "kinematic": "kinematic diagram",
 }
 _NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak|features|section)\.png$")
+_ASSEMBLY = re.compile(r"^images/(contact_map)\.png$")
 
 
 @dataclass
@@ -192,8 +196,39 @@ def _features_caption(part: Part) -> Caption:
     )
 
 
+MAX_CONTACTS = 12
+
+
+def selected_contacts(report: Report) -> list[Contact]:
+    """The touching pairs the contact map shows: faces and fits (not near misses or edge touches),
+    largest patch first, at most MAX_CONTACTS."""
+    if report.assembly is None:
+        return []
+    real = [c for c in report.assembly.contacts if c.kind in ("planar_face", "cylindrical_fit")]
+    real.sort(key=lambda c: (-(c.contact_area_mm2 or 0.0), c.id))
+    return real[:MAX_CONTACTS]
+
+
+def _contacts_caption(report: Report) -> Caption:
+    rows = []
+    ids = []
+    for c in selected_contacts(report):
+        area = f", patch {fmt(c.contact_area_mm2)} mm2" if c.contact_area_mm2 else ""
+        rows.append(f"{c.id} {c.instance_a} - {c.instance_b} ({c.kind}{area})")
+        ids += [c.id, c.instance_a, c.instance_b]
+    total = len(report.assembly.contacts) if report.assembly else 0
+    text = (
+        "The assembly with the parts of the selected contacts in colour and every other part grey. "
+        "Each contact ID sits where the bounding boxes of its two parts meet (a position estimate). "
+        f"Contacts shown ({len(rows)} of {total}, largest patch first): " + "; ".join(rows) + "."
+    )
+    return Caption("contact map", text, list(dict.fromkeys(ids)), "02_assembly.md, contacts")
+
+
 def caption_for(rel: str, report: Report) -> Caption | None:
     """The caption of an extra image, or None when *rel* is not one of them."""
+    if _ASSEMBLY.match(rel):
+        return _contacts_caption(report)
     m = _NAME.match(rel)
     if not m:
         return None

@@ -359,7 +359,8 @@ def render_pack_images(
     if image_set in ("standard", "full"):  # the basic set stops here: exactly the images of old
         from stepscribe.render.extra_images import render_extra_images
 
-        render_extra_images(analysis, folder, image_set, max_side, up, front, tracker)
+        extra = render_extra_images(analysis, folder, image_set, max_side, up, front, tracker)
+        written.extend(extra.assembly_files)
     return written
 
 

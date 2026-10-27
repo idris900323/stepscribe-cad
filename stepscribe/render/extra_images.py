@@ -66,10 +66,17 @@ SEVERITY = {
 STANDARD_TYPES = ("holes", "views", "weak")
 FULL_ONLY_TYPES = ("features", "section")
 TYPES = {"standard": STANDARD_TYPES, "full": STANDARD_TYPES + FULL_ONLY_TYPES}
+# image types of the whole assembly (robots and assemblies only): module with make_assembly()
+STANDARD_ASSEMBLY_TYPES = ("contacts",)
+ASSEMBLY_MODULES: dict[str, str] = {"contacts": "stepscribe.render.contact_view"}
 
 
 def types_for(image_set: str) -> tuple[str, ...]:
     return TYPES.get(image_set, ())
+
+
+def assembly_types_for(image_set: str) -> tuple[str, ...]:
+    return STANDARD_ASSEMBLY_TYPES if image_set in ("standard", "full") else ()
 
 
 class ImageSkipped(Exception):  # noqa: N818 - not an error: the picture is left out with a reason
@@ -81,6 +88,7 @@ class ExtraResult:
     """What one run of the extra image types produced."""
 
     files: list[str] = field(default_factory=list)  # paths relative to the pack folder
+    assembly_files: list[str] = field(default_factory=list)  # the ones of the whole assembly
     notes: list[str] = field(default_factory=list)  # one line per image type that was skipped
 
 
@@ -326,7 +334,7 @@ def render_extra_images(
 
     result = ExtraResult()
     kinds = types_for(image_set)
-    if not kinds:
+    if not kinds and not assembly_types_for(image_set):
         return result
     report = analysis.report
     by_id = {ap.part.id: ap for ap in analysis.parts}
@@ -382,5 +390,25 @@ def render_extra_images(
             result.notes.append(
                 f"{KINDS[kind]}: not drawn for {len(empty)} {'part' if len(empty) == 1 else 'parts'} without {what} ({shown})"
             )
+    for kind in assembly_types_for(image_set):
+        module = importlib.import_module(ASSEMBLY_MODULES[kind])
+        try:
+            made: list[tuple[str, Image.Image]] = module.make_assembly(
+                analysis, report, up, front, max_side
+            )
+        except ImageSkipped as skip:
+            result.notes.append(f"{KINDS[kind]}: not drawn, {skip}")
+            continue
+        except Exception as exc:  # noqa: BLE001 - a picture must never stop the pack
+            result.notes.append(f"{KINDS[kind]}: not drawn ({type(exc).__name__})")
+            continue
+        for rel, image in made:
+            save_png(fit_side(image, max_side), str(folder / rel))
+            result.files.append(rel)
+            result.assembly_files.append(rel)
+            if tracker is not None:
+                now = time.time()
+                tracker.image_done(Path(rel).name, now - t_last)
+                t_last = now
     write_index(folder, report, image_set, max_side, result.files, result.notes)
     return result

@@ -32,3 +32,7 @@ Every label drawn on an extra image is an ID (`PRT`, `H`, `P`, `W`, ...) or a nu
 ## Section view (`full`)
 
 `images/parts/PRT001_section.png`, per part with a hole, cut-out or pocket: the part cut by a plane that runs along the axis of its widest hole (square to the world axis that axis lies furthest from), or across the longest extent when there is no hole. The material on the + side of the plane is removed and the cut face (red) is seen from that side, so wall thickness and the inside show. The plane is named in the title and the caption (`x = 12.00 mm`, part frame). If the cut fails the image is skipped and the index says so.
+
+## Contact map (`standard`, assemblies)
+
+`images/contact_map.png`: the assembly with the parts of the selected contacts in colour and every other part grey, and each contact ID (`C001`, ...) placed where the bounding boxes of its two parts meet (a position estimate; the contact record has no point). Selected: contacts with a touching face or a fit (not near misses or edge touches), largest patch first, at most 12; the caption in `images/INDEX.md` and in the overview lists their IDs, instances, kind and patch area in mm2. A single part has no contact map; the index says so.

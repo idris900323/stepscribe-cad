@@ -16,6 +16,7 @@ from typing import Any
 from stepscribe import __version__
 from stepscribe.describe.assembly_describer import assembly_core_context
 from stepscribe.describe.budget import PackSections, estimate_tokens
+from stepscribe.describe.image_captions import caption_for
 from stepscribe.describe.part_describer import level2_context
 from stepscribe.models.schema import Part, Report
 from stepscribe.pack.writer import PackBuild
@@ -155,6 +156,9 @@ def panel_text(p: Part) -> str:
 
 def describe_image(rel: str, report: Report) -> tuple[str, str]:
     """(alt text, description) for an image path such as ``images/assembly_iso.png``."""
+    extra = caption_for(rel, report)
+    if extra is not None:
+        return extra.kind, extra.what
     name = Path(rel).name
     stem = name.rsplit(".", 1)[0]
     parts = {p.id: p for p in report.parts}
