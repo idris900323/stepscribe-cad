@@ -13,7 +13,7 @@ Part and assembly names come from the STEP file and are labels only. They are no
 - **Hole axis:** the direction vector of a hole points into the material from the entry face. Position is the centre of the entry circle.
 - **Symbols:** Ø diameter, ↧ depth, ⌴ counterbore, ⌵ countersink, THRU through the whole part.
 - **Edge distance:** the wall left between a hole and the nearest outer boundary.
-- **Images:** {% if has_images %}labels on the images use the same IDs as the text.{% else %}none were rendered for this pack.{% endif %}
+- **Images:** {% if has_images %}labels on the images use the same IDs as the text.{% if image_set %} Image set: {{ image_set }}. `images/INDEX.md` lists each extra image, what it shows, the IDs on it and the text it pairs with.{% endif %}{% else %}none were rendered for this pack.{% endif %}
 
 ## Understanding layer
 `05_understanding.md` holds rule-based hypotheses about how the design works: what moves (links, joints, a Mermaid diagram), what drives it (gears, belts, lead screws, motors), what each part is for, how it was probably made, load paths, weak spots, stability and open questions. Everything there is a hypothesis with a confidence and evidence that points to IDs; answers the designer gave are marked "Confirmed by designer"; "Designer unsure" marks soft answers.

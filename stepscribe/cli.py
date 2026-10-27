@@ -159,6 +159,18 @@ def _summary(results: list[dict[str, Any]]) -> None:
             console.print(f"[red]{Path(r['file']).name}:[/red] {e}")
 
 
+def _image_params(images: str, max_side: int, no_images: bool) -> tuple[bool, dict[str, Any]]:
+    """(render images at all, the export() parameters for --images); basic adds nothing."""
+    from stepscribe.render.extra_images import IMAGE_SETS
+
+    if images not in IMAGE_SETS:
+        raise typer.BadParameter(f"must be one of {', '.join(IMAGE_SETS)}", param_hint="--images")
+    on = not no_images and images != "none"
+    if on and images in ("standard", "full"):
+        return on, {"image_set": images, "image_max_side": max_side}
+    return on, {}
+
+
 def _mesh_params(meshes: bool, max_triangles: int, visual_cap: int | None) -> dict[str, Any]:
     """The export() parameters for --meshes (empty when off, so default runs are unchanged)."""
     if not meshes:
@@ -188,6 +200,21 @@ def pack(
     no_images: Annotated[
         bool, typer.Option("--no-images", help="Skip rendering (fast mode).")
     ] = False,
+    images: Annotated[
+        str,
+        typer.Option(
+            "--images",
+            help="Image set: none, basic (the default: today's views), standard (adds a hole map, a three-view drawing and a weak-spot overlay per part) or full.",
+        ),
+    ] = "basic",
+    image_max_side: Annotated[
+        int,
+        typer.Option(
+            "--image-max-side",
+            min=400,
+            help="Longest side in pixels of the extra images of the standard and full sets.",
+        ),
+    ] = limits.IMAGE_MAX_SIDE,
     check_interference: Annotated[bool, typer.Option("--check-interference")] = False,
     understanding: Annotated[
         bool,
@@ -278,14 +305,15 @@ def pack(
         pivot_min_diameter=pivot_min_diameter,
         pivot_min_length_ratio=pivot_min_length_ratio,
     )
+    images_on, image_export = _image_params(images, image_max_side, no_images)
     tpl = {
         "out_dir": str(out),
         "mode": "pack",
         "options": options_dict(opts),
         "context_file": str(context) if context else None,
         "budget_tokens": budget_tokens,
-        "images": not no_images,
-        "export": _mesh_params(meshes, mesh_max_triangles, visual_triangle_cap),
+        "images": images_on,
+        "export": {**_mesh_params(meshes, mesh_max_triangles, visual_triangle_cap), **image_export},
     }
     results = _run(files, tpl, jobs, timeout_s)
     if path.is_dir():
@@ -317,6 +345,21 @@ def export(
     ] = False,
     no_zip: Annotated[bool, typer.Option("--no-zip")] = False,
     no_images: Annotated[bool, typer.Option("--no-images", help="Skip rendering.")] = False,
+    images: Annotated[
+        str,
+        typer.Option(
+            "--images",
+            help="Image set: none, basic (the default: today's views), standard (adds a hole map, a three-view drawing and a weak-spot overlay per part) or full.",
+        ),
+    ] = "basic",
+    image_max_side: Annotated[
+        int,
+        typer.Option(
+            "--image-max-side",
+            min=400,
+            help="Longest side in pixels of the extra images of the standard and full sets.",
+        ),
+    ] = limits.IMAGE_MAX_SIDE,
     context: Annotated[Path | None, typer.Option("--context", help="design_context.yaml")] = None,
     material: Annotated[str | None, typer.Option(help="Material keyword, e.g. alu.")] = None,
     density: Annotated[float | None, typer.Option(help="Density in g/cm3.")] = None,
@@ -407,13 +450,14 @@ def export(
         pivot_min_diameter=pivot_min_diameter,
         pivot_min_length_ratio=pivot_min_length_ratio,
     )
+    images_on, image_export = _image_params(images, image_max_side, no_images)
     tpl = {
         "out_dir": str(out),
         "mode": "export",
         "options": options_dict(opts),
         "context_file": str(context) if context else None,
         "budget_tokens": 0,
-        "images": not no_images,
+        "images": images_on,
         "export": {
             "small_budget_tokens": small_budget_tokens,
             "compact_budget_tokens": compact_budget_tokens,
@@ -422,6 +466,7 @@ def export(
             "embed_images": embed_images,
             "make_zip": not no_zip,
             **_mesh_params(meshes, mesh_max_triangles, visual_triangle_cap),
+            **image_export,
         },
     }
     results = _run(files, tpl, jobs, timeout_s)

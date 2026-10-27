@@ -291,7 +291,11 @@ def render_part_images(
 
 
 def render_pack_images(
-    analysis: Analysis, folder: Path, tracker: Tracker | None = None
+    analysis: Analysis,
+    folder: Path,
+    tracker: Tracker | None = None,
+    image_set: str = "basic",
+    max_side: int = 1200,
 ) -> list[str]:
     """Write the assembly image set and part images into *folder*; returns assembly image paths."""
     report = analysis.report
@@ -352,6 +356,10 @@ def render_pack_images(
             _save(tracker, r.image, str(folder / "images" / "kinematics_iso.png"))
             written.append("images/kinematics_iso.png")
     render_part_images(analysis, folder, up, front, tracker)
+    if image_set in ("standard", "full"):  # the basic set stops here: exactly the images of old
+        from stepscribe.render.extra_images import render_extra_images
+
+        render_extra_images(analysis, folder, image_set, max_side, up, front, tracker)
     return written
 
 
