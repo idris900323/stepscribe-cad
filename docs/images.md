@@ -40,3 +40,7 @@ Every label drawn on an extra image is an ID (`PRT`, `H`, `P`, `W`, ...) or a nu
 ## Link colour map (`standard`, robots)
 
 `images/link_map.png`: the assembly coloured by rigid link group (the ground link grey), each part labelled with its link ID and a legend of the link IDs. It is drawn only when the kinematics found joints; otherwise the index says so. Unlike `kinematics_iso.png` (basic), it carries no names and no joint arrows.
+
+## Kinematic diagram and joint axes (`standard`, robots)
+
+`images/kinematic_diagram.png`: a skeleton in the zero pose of the file over a faint outline of the model. Links are bars (from the joint that carries a link to the joints it carries), the base is a square, and each joint is an arrow along its axis labelled with its ID and axis direction (`KJ2 (0.00, 1.00, 0.00)`). `images/kinematic_axes.png`: the joint axes as labelled arrows on the shaded model. Both are drawn only when the kinematics found joints, and carry IDs and numbers only.

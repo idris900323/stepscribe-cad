@@ -67,10 +67,11 @@ STANDARD_TYPES = ("holes", "views", "weak")
 FULL_ONLY_TYPES = ("features", "section")
 TYPES = {"standard": STANDARD_TYPES, "full": STANDARD_TYPES + FULL_ONLY_TYPES}
 # image types of the whole assembly (robots and assemblies only): module with make_assembly()
-STANDARD_ASSEMBLY_TYPES = ("contacts", "links")
+STANDARD_ASSEMBLY_TYPES = ("contacts", "links", "kinematic")
 ASSEMBLY_MODULES: dict[str, str] = {
     "contacts": "stepscribe.render.contact_view",
     "links": "stepscribe.render.link_view",
+    "kinematic": "stepscribe.render.skeleton_view",
 }
 
 

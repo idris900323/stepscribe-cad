@@ -29,7 +29,7 @@ KINDS = {
     "kinematic": "kinematic diagram",
 }
 _NAME = re.compile(r"^images/parts/(PRT\d+)_(holes|views|weak|features|section)\.png$")
-_ASSEMBLY = re.compile(r"^images/(contact_map|link_map)\.png$")
+_ASSEMBLY = re.compile(r"^images/(contact_map|link_map|kinematic_diagram|kinematic_axes)\.png$")
 
 
 @dataclass
@@ -239,11 +239,50 @@ def _links_caption(report: Report) -> Caption:
     return Caption("link colour map", text, ids, "05_understanding.md, kinematics")
 
 
+def _joint_facts(report: Report) -> tuple[list[str], list[str]]:
+    kin = report.understanding.kinematics if report.understanding else None
+    rows, ids = [], []
+    for j in kin.joints if kin else []:
+        d = (j.axis.direction.x, j.axis.direction.y, j.axis.direction.z)
+        norm = sum(c * c for c in d) ** 0.5 or 1.0
+        direction = ", ".join(fmt(c / norm, 2) for c in d)
+        rows.append(f"{j.id} {j.kind} {j.parent_link} to {j.child_link}, axis ({direction})")
+        ids += [j.id, j.parent_link, j.child_link]
+    return rows, ids
+
+
+def _kinematic_caption(report: Report, skeleton: bool) -> Caption:
+    rows, ids = _joint_facts(report)
+    if skeleton:
+        what = (
+            "Kinematic diagram in the zero pose of the file: each link is a bar from the joint that "
+            "carries it to the joints it carries, the base is a square, and each joint is an arrow "
+            "along its axis labelled with its ID and axis direction, over a faint outline of the model. "
+        )
+        kind = "kinematic diagram"
+    else:
+        what = (
+            "The model in the zero pose of the file with each joint axis drawn as an arrow "
+            "labelled with the joint ID and kind. "
+        )
+        kind = "joint axes on the model"
+    return Caption(
+        kind,
+        what + "Joints: " + "; ".join(rows) + ".",
+        list(dict.fromkeys(ids)),
+        "05_understanding.md, kinematics",
+    )
+
+
 def caption_for(rel: str, report: Report) -> Caption | None:
     """The caption of an extra image, or None when *rel* is not one of them."""
     am = _ASSEMBLY.match(rel)
     if am:
-        return _contacts_caption(report) if am.group(1) == "contact_map" else _links_caption(report)
+        if am.group(1) == "contact_map":
+            return _contacts_caption(report)
+        if am.group(1) == "link_map":
+            return _links_caption(report)
+        return _kinematic_caption(report, am.group(1) == "kinematic_diagram")
     m = _NAME.match(rel)
     if not m:
         return None
