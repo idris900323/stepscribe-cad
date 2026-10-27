@@ -57,8 +57,9 @@ def readiness_checks(urdf: Urdf) -> list[Finding]:
                 Finding(
                     "R003",
                     "warning",
-                    f"Joint {show(j.name)} has effort or velocity 0 in its <limit>: some simulators then hold "
-                    "it still, and others clamp every command to zero.",
+                    f"Joint {show(j.name)} has effort or velocity 0 in its <limit>: some simulators read 0 as "
+                    "'no force allowed' (the joint cannot move), others as 'no limit'; either way it is not the "
+                    "real drive value.",
                     "Set the real effort (N or N*m) and velocity (m/s or rad/s) of the drive.",
                     show(j.name),
                 )

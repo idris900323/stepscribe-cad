@@ -36,7 +36,7 @@ A valid file can still be rejected by, or behave oddly in, a physics simulator. 
 |---|---|
 | R001 link with no `<inertial>` (warning; info for a fixed root) | many simulators give the body no mass or refuse a moving body without one: add a mass and inertia |
 | R002 continuous joint | limits are unknown, so nothing stops it: set the range and write it as revolute with a limit |
-| R003 effort or velocity 0 in a `<limit>` | some simulators hold the joint still, others clamp every command to zero: set the real drive values |
+| R003 effort or velocity 0 in a `<limit>` | some simulators read 0 as no force allowed (the joint cannot move), others as no limit: set the real drive values |
 | R004 mass at or below 1e-6 kg | unstable simulation: use a realistic mass |
 | R005 no `<collision>` geometry | no contact detection, links pass through each other and the floor: write the pack with `--meshes` |
 | R006 no `<visual>` geometry (info) | invisible in a viewer |
