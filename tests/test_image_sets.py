@@ -217,9 +217,12 @@ def test_the_command_line_takes_an_image_set(step_files, tmp_path: Path) -> None
     plate = str(step_files["plate_4xM3"])
     bad = runner.invoke(app, ["pack", plate, "--out", str(tmp_path), "--images", "huge"])
     assert bad.exit_code != 0 and "none" in bad.output and "standard" in bad.output
-    help_text = runner.invoke(app, ["export", "--help"]).output
-    for flag in ("--images", "--image-max-side", "--no-images"):
-        assert flag in help_text
+    # the options of the command itself: help text wraps and carries colour codes in CI
+    from typer.main import get_command
+
+    export = get_command(app).commands["export"]  # type: ignore[attr-defined]
+    options = {o for p in export.params for o in p.opts}
+    assert {"--images", "--image-max-side", "--no-images"} <= options
     none = runner.invoke(app, ["pack", plate, "--out", str(tmp_path / "n"), "--images", "none"])
     assert none.exit_code == 0, none.output
     assert not list((tmp_path / "n").rglob("*.png"))
