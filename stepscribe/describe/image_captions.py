@@ -62,10 +62,10 @@ def _holes_caption(part: Part) -> Caption:
     shown = part.holes[:MAX_HOLE_LABELS]
     parts = [hole_label(h, pats.get(h.id)) for h in shown]
     text = (
-        f"Part {part.id} seen along its main hole axis. Every labelled hole is circled "
-        "(red = through hole, blue = blind hole) and named with its ID and diameter in mm: "
+        f"Part {part.id} seen along its main hole axis. The holes are circled "
+        "(red = through hole, blue = blind hole) and named with their ID and diameter in mm: "
         + "; ".join(parts)
-        + "."
+        + ". A hole that faces another way and is hidden from this view is listed but not circled."
     )
     if len(part.holes) > len(shown):
         text += f" {len(part.holes) - len(shown)} more holes are in the hole table only."

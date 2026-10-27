@@ -214,8 +214,10 @@ def hole_map(
     up: str,
     front: str,
     max_side: int,
+    notes: list[str] | None = None,
 ) -> Image.Image | None:
-    """Looking down the main hole axis, every hole circled and labelled with ID and diameter."""
+    """Looking down the main hole axis, every hole circled and labelled with ID and diameter.
+    A hole that faces another way and is hidden from this view is left out and named in *notes*."""
     if not part.holes:
         return None
     w, h = _size(max_side)
@@ -225,13 +227,25 @@ def hole_map(
     draw = ImageDraw.Draw(rendered.image)
     patterns = hole_pattern_of(part)
     labels: list[Label] = []
+    hidden: list[str] = []
+    view = cam.position - cam.focal
+    view = view / np.linalg.norm(view)
     for hole in part.holes[:MAX_HOLE_LABELS]:
+        x, y, depth = hole_anchor(rendered, item, hole)
+        facing = abs(float(np.dot(_unit(hole), view))) > 0.99  # its entry is seen face on
+        if not (facing or rendered.visible(x, y, depth)):
+            hidden.append(hole.id)
+            continue
         poly = hole_circle_pixels(rendered, item, hole)
         color = THROUGH if hole.is_through else BLIND
         draw.line([*map(tuple, poly), tuple(poly[0])], fill=color, width=4)
-        x, y, depth = hole_anchor(rendered, item, hole)
-        if rendered.visible(x, y, depth):
-            labels.append(Label(hole_label(hole, patterns.get(hole.id)), x, y))
+        labels.append(Label(hole_label(hole, patterns.get(hole.id)), x, y))
+    if hidden and notes is not None:
+        shown = ", ".join(hidden[:10]) + (", ..." if len(hidden) > 10 else "")
+        noun = "hole faces" if len(hidden) == 1 else "holes face"
+        notes.append(
+            f"hole map {part.id}: {len(hidden)} {noun} away from this view and not circled ({shown})"
+        )
     image = draw_labels(rendered.image, labels)
     image = swatch_legend(image, [(THROUGH, "through hole"), (BLIND, "blind hole")])
     return _title(image, f"{part.id} hole map (dia in mm)")
@@ -274,10 +288,17 @@ MODULES: dict[str, str] = {
 
 
 def _make(
-    kind: str, part: Part, geom: PartGeom, report: Report, up: str, front: str, side: int
+    kind: str,
+    part: Part,
+    geom: PartGeom,
+    report: Report,
+    up: str,
+    front: str,
+    side: int,
+    notes: list[str],
 ) -> Image.Image | None:
     if kind == "holes":
-        return hole_map(part, geom, up, front, side)
+        return hole_map(part, geom, up, front, side, notes)
     maker = importlib.import_module(MODULES[kind])
     result: Image.Image | None = maker.make(part, geom, report, up, front, side)
     return result
@@ -324,7 +345,7 @@ def render_extra_images(
                 )
                 continue
             try:
-                image = _make(kind, part, ap.geom, report, up, front, max_side)
+                image = _make(kind, part, ap.geom, report, up, front, max_side, result.notes)
             except Exception as exc:  # noqa: BLE001 - a picture must never stop the pack
                 result.notes.append(f"{KINDS[kind]} {part.id}: not drawn ({type(exc).__name__})")
                 continue

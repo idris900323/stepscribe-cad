@@ -62,3 +62,21 @@ def test_the_caption_names_every_hole_with_its_diameter_and_pattern(
     for hid in ("H001", "H002", "H003", "H004"):
         assert f"{hid} dia 3.4 P001" in text
     assert "Pattern P001: rectangular_grid, 4 holes" in text
+
+
+def test_every_hole_is_labelled_or_named_in_the_notes(step_files, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    import re
+
+    from stepscribe.render.extra_images import render_extra_images
+    from stepscribe.render.overlay import record_text_boxes
+
+    for name in ("l_bracket", "bearing_block", "blind_holes"):
+        analysis = fresh(step_files, name)
+        part = analysis.parts[0].part
+        with record_text_boxes() as texts:
+            result = render_extra_images(analysis, tmp_path / name, "standard", 1200, "+Z", "-Y")
+        labelled = {m.group(1) for t, _b, _s in texts if (m := re.match(r"(H\d+) dia ", t))}
+        noted = set(
+            re.findall(r"H\d+", " ".join(n for n in result.notes if n.startswith("hole map")))
+        )
+        assert {h.id for h in part.holes} <= labelled | noted, name
