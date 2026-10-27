@@ -98,6 +98,17 @@ def golden(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def]
 
 
 RENDER_FILES = {
+    "test_image_contacts.py",
+    "test_image_features.py",
+    "test_image_hole_map.py",
+    "test_image_kinematic.py",
+    "test_image_links.py",
+    "test_image_ranges.py",
+    "test_image_section.py",
+    "test_image_sets.py",
+    "test_image_three_view.py",
+    "test_image_walls.py",
+    "test_image_weak_spots.py",
     "test_render.py",
     "test_no_clipping.py",
     "test_export.py",
