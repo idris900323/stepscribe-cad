@@ -136,7 +136,51 @@ volume and a density. All of it is marked as a draft needing human verification:
   A prismatic joint has no unlimited form in URDF, so it stays prismatic with a comment;
 - lengths in the URDF are metres (a joint at z = 120 mm is written 0.12), masses kilograms,
   inertia kg m^2 and angles radians;
-- there is no visual or collision geometry, and the URDF is in metres, kilograms and radians.
+- by default there is no visual or collision geometry. With `--meshes` (on `pack` and `export`) the
+  pack also holds `meshes/<link>_visual.stl` and `meshes/<link>_collision.stl`, one pair per link, and
+  every `<link>` gets `<visual>` and `<collision>` elements that point to them (see below);
+- the URDF is in metres, kilograms and radians.
+
+### Link meshes (`--meshes`)
+
+Binary STL, SI metres, vertices in the link's own frame (the frame on the origin of the joint that
+carries the link, parallel to the file's axes), so mesh position plus link frame is the world
+position at the zero pose stored in the file. Meshes are written only on request, only for a robot,
+and never go into the chat bundle or the MCP results. File names come from the link IDs through the
+same name cleaning as every other label. The same input gives byte-identical files.
+
+- **Visual mesh:** tessellated like the images (0.1 % of each part's diagonal). By default it has no
+  triangle cap, so a detailed part can be large. `--visual-triangle-cap N` makes the tessellation
+  coarser, in steps, until the link has at most N triangles; if even the coarsest step is above N, the
+  coarsest mesh is written and the URDF header and `meshes/README.md` say so.
+- **Collision mesh:** a coarser OpenCASCADE tessellation within `--mesh-max-triangles` (default 5000,
+  at least 12) that is closed (no open or non-manifold edge), consistently oriented (outward, positive
+  volume). The deflection is increased step by step until both hold. When no step does, the collision
+  mesh is the convex hull of the link (computed with numpy; no extra dependency), which is closed by
+  construction. The URDF header and README mark such a link as "collision: convex hull". A hull is
+  larger than a concave link (it fills hollows and gaps), so it overestimates the volume and keeps
+  other objects further away than the real link does; use it for rough collision checks only.
+- **A visual mesh that is not closed** is reported, never hidden. If a part's solid is not a valid
+  closed solid (the part analysis says so in its warnings) the note reads "visual mesh not closed
+  because the source solid is not closed" with the part IDs and the number of open edges; if the solid
+  is valid the note says the tessellation left the mesh open.
+
+The path form is relative (`meshes/L2_visual.stl`), resolved against the URDF file's own folder:
+that works wherever the pack folder is moved or unzipped, with no ROS package and no absolute path in
+the file. A tool that needs `package://` paths needs the folder placed in a package and the prefix
+changed; the URDF header says so. The header also lists the size of every link's files, and
+`meshes/README.md` repeats the list as a table, for example:
+
+```
+Mesh size per link (binary STL, triangles and kB):
+  L0: visual 12 (1 kB), collision 12 (1 kB)
+  L2: visual 356 (18 kB), collision 148 (7 kB)
+```
+
+(a generated six-axis arm made of boxes with a few bores; a real housing has far more triangles).
+Default sizes: visual meshes are uncapped; collision meshes are at most 5000 triangles per link. To
+get a lighter visual mesh use `--visual-triangle-cap`, or point a link's `<visual>` at its
+`_collision.stl` file by hand.
 
 ## 9. Complex or free-form geometry: no process guess
 

@@ -19,6 +19,7 @@ from stepscribe.describe.part_describer import level1, level1_short, level2_cont
 from stepscribe.io.report_writer import write_report
 from stepscribe.models.schema import Part, Report
 from stepscribe.pack.design_context import context_text, load_context
+from stepscribe.pack.meshes import DEFAULT_MAX_TRIANGLES, write_link_meshes
 from stepscribe.progress import Tracker
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -173,9 +174,22 @@ def write_pack(
     context_file: str | Path | None = None,
     images: bool = False,
     tracker: Tracker | None = None,
+    meshes: bool = False,
+    mesh_max_triangles: int = DEFAULT_MAX_TRIANGLES,
+    mesh_visual_max_triangles: int | None = None,
 ) -> Path:
     """Write the whole pack folder and return its path."""
-    return write_pack_build(analysis, out_dir, budget_tokens, context_file, images, tracker).folder
+    return write_pack_build(
+        analysis,
+        out_dir,
+        budget_tokens,
+        context_file,
+        images,
+        tracker,
+        meshes=meshes,
+        mesh_max_triangles=mesh_max_triangles,
+        mesh_visual_max_triangles=mesh_visual_max_triangles,
+    ).folder
 
 
 def write_pack_build(
@@ -186,6 +200,9 @@ def write_pack_build(
     images: bool = False,
     tracker: Tracker | None = None,
     folder: Path | None = None,
+    meshes: bool = False,
+    mesh_max_triangles: int = DEFAULT_MAX_TRIANGLES,
+    mesh_visual_max_triangles: int | None = None,
 ) -> PackBuild:
     """Write the pack (into *folder*, or ``<out_dir>/<name>_context_pack``) and keep its parts."""
     report = analysis.report
@@ -250,7 +267,17 @@ def write_pack_build(
         put("robot.json", robot)
         from stepscribe.pack.urdf import urdf_text
 
-        urdf = urdf_text(report)
+        link_meshes = None
+        if meshes:  # only on request: the default pack stays small and fast
+            from stepscribe.pack.robot import build_robot
+
+            robot_dict = build_robot(report)
+            assert robot_dict is not None
+            with timings.stage("meshes"):
+                link_meshes = write_link_meshes(
+                    analysis, robot_dict, folder, mesh_max_triangles, mesh_visual_max_triangles
+                )
+        urdf = urdf_text(report, link_meshes)
         if urdf is not None:
             put("robot.urdf", urdf)
     if report.meta.options.get("debug_graphs"):

@@ -169,10 +169,9 @@ def test_job_flow_start_poll_export(step_files, monkeypatch, tmp_path) -> None: 
 
     monkeypatch.setenv("STEPSCRIBE_CACHE", str(tmp_path))
     path = str(step_files["two_plates_assembly"])
-    t0 = time.time()
     started = json.loads(tools.start_analysis(path))
-    # it returns before the analysis finishes (that takes tens of seconds), even on a slow runner
-    assert time.time() - t0 < 5.0 and started["cached"] is False and started["eta_s"] >= 0
+    # that start does not wait for the export is tested by test_start_returns_before_the_export_ends
+    assert started["cached"] is False and started["eta_s"] >= 0 and started["job_id"]
     job = started["job_id"]
     status = json.loads(tools.get_job_status(job))
     deadline = time.time() + 240
@@ -190,6 +189,52 @@ def test_job_flow_start_poll_export(step_files, monkeypatch, tmp_path) -> None: 
     assert again["cached"] is True and again["eta_s"] == 0
     assert "reused from the cache" in tools.export_pack(path)
     MANAGER.jobs.clear()
+
+
+def test_start_returns_before_the_export_ends(step_files, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """start_analysis hands back a job that is still running while the export is held up.
+
+    The export is replaced by one that blocks until the test lets it go, so the property is
+    "start does not wait for the export", not a wall-clock threshold that a slow runner can pass
+    or miss.
+    """
+    import json
+    import threading
+    import time
+
+    import stepscribe.exporter  # noqa: F401 - imported lazily by start_analysis
+    from stepscribe.jobs import MANAGER, JobManager, JobState
+
+    monkeypatch.setenv("STEPSCRIBE_CACHE", str(tmp_path))
+    release = threading.Event()
+    entered = threading.Event()
+
+    def slow_export(state: JobState, spec: dict, queue: object) -> None:  # type: ignore[type-arg]
+        entered.set()
+        release.wait(timeout=60)
+        state.summary = {"parts": 0, "holes": 0, "joints": 0, "relations": 0, "seconds": 0}
+        state.done = True
+
+    monkeypatch.setattr(JobManager, "_run", staticmethod(slow_export))
+    try:
+        started = json.loads(tools.start_analysis(str(step_files["two_plates_assembly"])))
+        assert entered.wait(timeout=30), "the held-up export never started"
+        # start has already returned, and the export it started is still held up
+        assert started["job_id"] and started["cached"] is False and started["eta_s"] >= 0
+        status = json.loads(tools.get_job_status(started["job_id"]))
+        assert status["done"] is False and status["error"] is None
+        assert status["stage"] == "starting" and 0 <= status["percent"] <= 100
+        # a second start for the same file while it runs reuses the running job
+        again = json.loads(tools.start_analysis(str(step_files["two_plates_assembly"])))
+        assert again["job_id"] == started["job_id"]
+        release.set()
+        end = time.time() + 30
+        while not json.loads(tools.get_job_status(started["job_id"]))["done"]:
+            assert time.time() < end
+            time.sleep(0.05)
+    finally:
+        release.set()
+        MANAGER.jobs.clear()
 
 
 def test_export_pack_for_a_path_and_unknown_job(step_files, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]

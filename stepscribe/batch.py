@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from stepscribe import limits
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.procutil import kill_tree
 from stepscribe.progress import ProgressFn, Tracker
@@ -86,7 +87,19 @@ def process_file(job: Job, callback: ProgressFn | None = None) -> dict[str, Any]
             status = "ok"
         else:
             pack_dir = str(
-                write_pack(analysis, out, job.budget_tokens, job.context_file, job.images, tracker)
+                write_pack(
+                    analysis,
+                    out,
+                    job.budget_tokens,
+                    job.context_file,
+                    job.images,
+                    tracker,
+                    meshes=bool(job.export.get("meshes")),
+                    mesh_max_triangles=int(
+                        job.export.get("mesh_max_triangles", limits.LINK_MESH_MAX_TRIANGLES)
+                    ),
+                    mesh_visual_max_triangles=job.export.get("mesh_visual_max_triangles"),
+                )
             )
             status = "ok"
         tracker.finish("finished")

@@ -179,6 +179,10 @@ def test_the_pool_with_split_hole_detection_gives_the_same_report(
         report = analyze_full(src, AnalyzeOptions(no_timestamp=True), tracker).report
         return report.model_dump(), messages
 
+    from stepscribe import analysis as A
+
+    # the split follows the memory rule: pin the free memory so the test does not depend on the machine
+    monkeypatch.setattr(A, "available_ram_bytes", lambda platform=None: 64 * 1024**3)
     monkeypatch.setattr(api, "PARALLEL_MIN_PARTS", 1)
     monkeypatch.setattr(api, "PARALLEL_MIN_FACES", 1)
     monkeypatch.setattr(api, "HEAVY_BORE_FACES", 10**9)  # nothing is split

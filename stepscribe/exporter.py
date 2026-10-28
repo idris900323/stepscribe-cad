@@ -29,6 +29,7 @@ from stepscribe.describe.budget import estimate_tokens
 from stepscribe.exporter_text import clean, compose_full, compose_small
 from stepscribe.models.schema import SCHEMA_VERSION, Report, json_schema
 from stepscribe.pack.design_context import apply_context, load_context
+from stepscribe.pack.meshes import DEFAULT_MAX_TRIANGLES
 from stepscribe.pack.writer import _safe, write_pack_build
 from stepscribe.progress import Tracker
 
@@ -140,7 +141,12 @@ def _params(params: dict[str, Any]) -> dict[str, Any]:
         "make_zip": True,
         "images": True,
     }
-    return {k: params.get(k, defaults[k]) for k in keys}
+    out = {k: params.get(k, defaults[k]) for k in keys}
+    if params.get("meshes"):  # left out when off, so existing cache keys do not change
+        out["meshes"] = int(params.get("mesh_max_triangles", DEFAULT_MAX_TRIANGLES))
+        if params.get("mesh_visual_max_triangles") is not None:
+            out["mesh_visual"] = int(params["mesh_visual_max_triangles"])
+    return out
 
 
 def _with_context(options: AnalyzeOptions, context_file: str | Path | None) -> AnalyzeOptions:
@@ -165,6 +171,9 @@ def export(
     images: bool = True,
     tracker: Tracker | None = None,
     analysis: Analysis | None = None,
+    meshes: bool = False,
+    mesh_max_triangles: int = DEFAULT_MAX_TRIANGLES,
+    mesh_visual_max_triangles: int | None = None,
 ) -> ExportResult:
     """Analyse *path* (unless the export is already on disk) and write the export folder."""
     p = Path(path)
@@ -177,6 +186,9 @@ def export(
             "embed_images": embed_images,
             "make_zip": make_zip,
             "images": images,
+            "meshes": meshes,
+            "mesh_max_triangles": mesh_max_triangles,
+            "mesh_visual_max_triangles": mesh_visual_max_triangles,
         }
     )
     opts = _with_context(options or AnalyzeOptions(), context_file)
@@ -215,6 +227,9 @@ def export(
             images,
             tracker,
             folder=folder / "pack",
+            meshes=meshes,
+            mesh_max_triangles=mesh_max_triangles,
+            mesh_visual_max_triangles=mesh_visual_max_triangles,
         )
     pack = build.folder
     warnings: list[str] = []
