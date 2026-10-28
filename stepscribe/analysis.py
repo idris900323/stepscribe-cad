@@ -5,7 +5,9 @@
 Worker memory (`estimate_worker_mb`): a part-pool worker needs about WORKER_BASE_MB plus
 WORKER_MB_PER_KFACE per thousand faces of the largest part (MB per worker). The constants come
 from hardening/H3/worker_rss.py run on SO_5DOF_ARM100_Assembly.step and SO101 Assembly.step;
-`worker_count` keeps the estimate under RAM_SHARE of the memory that is free.
+`worker_count` keeps the estimate under RAM_SHARE of the memory that is free. On macOS the free figure
+is an approximation (`vm_stat`: free + inactive + speculative pages; inactive pages are reclaimable, not
+free), and the 60 % share absorbs the difference.
 """
 
 from __future__ import annotations
