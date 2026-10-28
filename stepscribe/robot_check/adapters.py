@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 idris sadiq
-"""The two library adapters behind ``pip install 'stepscribe[robot]'``.
+"""The library adapters of the optional robot support.
 
-* **yourdfpy** (MIT) is an independent implementation of URDF kinematics. It is the default for the
-  forward-kinematics cross-check (:class:`YourdfpyBackend`).
-* **MuJoCo** (Apache-2.0) compiles the URDF into a physical model and refuses what a physics engine
-  cannot use. :func:`mujoco_readiness` turns that answer into readiness findings; the adapter
-  :class:`MujocoBackend` can also serve as a kinematics backend (``--backend mujoco``).
+* **MuJoCo** (Apache-2.0, ``pip install 'stepscribe[robot]'``) does both jobs. It compiles the URDF
+  into a physical model and refuses what a physics engine cannot use; :func:`mujoco_readiness` turns
+  that answer into readiness findings. Its forward kinematics (:class:`MujocoBackend`) are compared
+  with stepscribe's own at the zero pose and at fixed random joint values.
+* **yourdfpy** (MIT) is an independent implementation of URDF kinematics. It is not part of the extra
+  (its dependencies add about 225 MB): install it yourself and use ``--backend yourdfpy``
+  (:class:`YourdfpyBackend`).
 
 Neither library is imported until an adapter is created: the factories raise ImportError when the
 library is missing, and the registry then leaves that adapter out. Everything a library says about

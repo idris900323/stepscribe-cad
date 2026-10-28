@@ -118,6 +118,13 @@ def test_deselected_tests_are_not_counted_as_skips(tmp_path: Path) -> None:
     assert mod.main(["check_skips.py", str(junit)]) == 0
 
 
+def test_the_optional_yourdfpy_test_may_be_skipped_everywhere(tmp_path: Path) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, "yourdfpy is not installed (optional: install it yourself)")
+    for platform in ("linux", "darwin", "win32"):
+        assert mod.unexpected_skips(xml, platform) == []
+
+
 def test_robot_extra_skips_are_allowed_except_in_the_robot_job(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

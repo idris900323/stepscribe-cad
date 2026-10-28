@@ -38,9 +38,10 @@ jobs:
         if: always()
         run: python scripts/check_skips.py junit.xml
 
-  # Layer 2 of validate-robot needs the optional extra. Every test that uses yourdfpy or MuJoCo runs
+  # Layer 2 of validate-robot needs the optional extra (MuJoCo). Every test that uses MuJoCo runs
   # here, on every platform and Python of the matrix; STEPSCRIBE_REQUIRE_ROBOT=1 makes a skip a failure.
-  # macos-latest is Apple silicon, for which MuJoCo has wheels (there is none for macOS Intel).
+  # macos-latest is Apple silicon, for which MuJoCo has wheels (there is none for macOS Intel, and no
+  # Intel runner label is used here).
   robot:
     strategy:
       fail-fast: false
