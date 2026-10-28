@@ -116,3 +116,16 @@ def test_deselected_tests_are_not_counted_as_skips(tmp_path: Path) -> None:
     assert names == ["test_fast"]
     assert mod.unexpected_skips(str(junit), "linux") == []
     assert mod.main(["check_skips.py", str(junit)]) == 0
+
+
+def test_robot_extra_skips_are_allowed_except_in_the_robot_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, "the robot extra is not installed")
+    monkeypatch.delenv("STEPSCRIBE_REQUIRE_ROBOT", raising=False)
+    for platform in ("linux", "darwin", "win32"):
+        assert mod.unexpected_skips(xml, platform) == []
+    monkeypatch.setenv("STEPSCRIBE_REQUIRE_ROBOT", "1")  # the `robot` CI job
+    for platform in ("linux", "darwin", "win32"):
+        assert len(mod.unexpected_skips(xml, platform)) == 1

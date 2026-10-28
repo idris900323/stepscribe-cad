@@ -2,7 +2,8 @@
 # Copyright (C) 2026 idris sadiq
 """Layer 2: the plug-in structure for an optional robotics library, and the cross-check itself.
 
-No library is a dependency of stepscribe. A backend is any object with the shape of
+No library is a dependency of stepscribe. ``pip install 'stepscribe[robot]'`` adds the two adapters
+in :mod:`stepscribe.robot_check.adapters` (yourdfpy, MuJoCo). A backend is any object with the shape of
 :class:`FkBackend`, registered here (``register_backend``) or published by another package under the
 entry-point group ``stepscribe.robot_fk``. With none installed, layer 1 still runs and the report says
 so. The cross-check compares the link transforms the library computes with stepscribe's own
@@ -26,10 +27,11 @@ from stepscribe.text_safety import clean_name
 ENTRY_POINT_GROUP = "stepscribe.robot_fk"
 POSITION_TOL_M = 1e-6
 ROTATION_TOL_RAD = 1e-6
+DEFAULT_BACKEND = "yourdfpy"  # the independent kinematics implementation; used when none is named
 INSTALL_HINT = (
-    "Layer 2 needs an optional robotics library. The install target will be "
-    "pip install 'stepscribe[robot]' once a library is chosen; a library packaged as a "
-    f"stepscribe plug-in (entry-point group {ENTRY_POINT_GROUP}) is found automatically."
+    "Layer 2 needs an optional robotics library: pip install 'stepscribe[robot]' "
+    "(yourdfpy for the kinematics cross-check, MuJoCo for simulator readiness). A library "
+    f"packaged as a stepscribe plug-in (entry-point group {ENTRY_POINT_GROUP}) is found automatically."
 )
 
 
@@ -60,7 +62,15 @@ def unregister_backend(name: str) -> None:
     _REGISTRY.pop(name, None)
 
 
+def _builtin() -> None:
+    from stepscribe.robot_check.adapters import MujocoBackend, YourdfpyBackend
+
+    for factory in (YourdfpyBackend, MujocoBackend):
+        _REGISTRY.setdefault(factory.name, factory)
+
+
 def _discover() -> None:
+    _builtin()
     for ep in importlib.metadata.entry_points(group=ENTRY_POINT_GROUP):
         if ep.name not in _REGISTRY:
             try:
@@ -79,6 +89,13 @@ def available_backends() -> dict[str, FkBackend]:
         except Exception:  # noqa: BLE001 - not installed, or broken: not available
             continue
     return out
+
+
+def default_backend(found: dict[str, FkBackend]) -> FkBackend | None:
+    """The backend used when none is named: yourdfpy if installed, else the first available."""
+    if DEFAULT_BACKEND in found:
+        return found[DEFAULT_BACKEND]
+    return next(iter(found.values())) if found else None
 
 
 def cross_check(
