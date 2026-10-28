@@ -63,7 +63,8 @@ def link_labels(model: KinematicModel) -> dict[str, str]:
 
 def link_legend(model: KinematicModel) -> list[str]:
     return [
-        f"{g.id}  {'ground: ' if g.is_ground else ''}{g.description}"[:70] for g in model.links
+        f"{g.id}  {'ground, ' if g.is_ground else ''}{len(g.instance_ids)} part(s)"
+        for g in model.links
     ][:30]
 
 
