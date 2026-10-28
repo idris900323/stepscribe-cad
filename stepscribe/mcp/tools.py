@@ -348,7 +348,7 @@ def render_view_result(
         from stepscribe.exporter_text import panel_text
 
         p = _find_part(get_analysis(path).report, part)
-        lines.append(f"Info panel of {p.id} {p.name}: {panel_text(p)}.")
+        lines.append(f"Info panel of {p.id}: {panel_text(p)}.")
     saved = _save_image(png, "view_" + _digest(path, view, part, highlight))
     lines.append(f"Saved at {saved}")
     return "\n".join(lines), png

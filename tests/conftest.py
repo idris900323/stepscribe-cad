@@ -108,6 +108,7 @@ RENDER_FILES = {
     "test_image_sets.py",
     "test_image_three_view.py",
     "test_image_walls.py",
+    "test_image_no_names.py",
     "test_image_weak_spots.py",
     "test_render.py",
     "test_no_clipping.py",
