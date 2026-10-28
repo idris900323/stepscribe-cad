@@ -114,7 +114,8 @@ def test_worker_count_is_capped_by_available_ram() -> None:
     tight = int(analysis_mod.estimate_worker_mb(20000) * 1024**2 * 2.5 / analysis_mod.RAM_SHARE)
     assert free(40, max_faces=20000, available_bytes=tight, cpus=16) == 2
     assert free(40, max_faces=20000, available_bytes=1, cpus=16) == 1, "never below one worker"
-    assert free(40, max_faces=20000, available_bytes=None, cpus=16) == 8, "unknown RAM: CPU rule"
+    # unknown RAM is capped (it used to follow the CPU rule alone, up to 8 big workers at once)
+    assert free(40, max_faces=20000, available_bytes=None, cpus=16) == 4, "unknown RAM: capped"
 
 
 def test_worker_estimate_grows_with_faces_and_is_documented() -> None:
