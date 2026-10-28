@@ -152,7 +152,10 @@ def render_labelled(
 
 
 def _legend(items: list[SceneItem], labels: dict[str, str]) -> list[str]:
-    return [f"{labels[i.key]}  {i.name}" for i in sorted(items, key=lambda i: labels[i.key])][:30]
+    """One row per label: the ID only; never a name taken from the file."""
+    return [f"{labels[i.key]}  {i.part_id}" for i in sorted(items, key=lambda i: labels[i.key])][
+        :30
+    ]
 
 
 def dominant_hole_axis(part) -> tuple[Vec, Vec] | None:  # type: ignore[no-untyped-def]

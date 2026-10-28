@@ -164,11 +164,11 @@ def describe_image(rel: str, report: Report) -> tuple[str, str]:
     parts = {p.id: p for p in report.parts}
     if stem.startswith("assembly_"):
         view = stem[len("assembly_") :]
-        listed = ", ".join(f"{p.id} `{p.name}`" for p in report.parts[:30])
+        listed = ", ".join(p.id for p in report.parts[:30])
         more = " and more" if len(report.parts) > 30 else ""
         text = (
             f"{_VIEW_TEXT.get(view, f'{view} view of the whole assembly.')} Labels are part IDs "
-            f"with names. Parts: {listed}{more}."
+            f"(names are in the text). Parts: {listed}{more}."
         )
         return f"{view} view of the assembly", text
     if stem == "kinematics_iso":
@@ -195,10 +195,10 @@ def describe_image(rel: str, report: Report) -> tuple[str, str]:
             else f"in a {m.group(2)} view"
         )
         text = (
-            f"Part {p.id} `{p.name}`, viewed {how}. The white panel on the right of the image repeats: "
+            f"Part {p.id}, viewed {how}. The white panel on the right of the image repeats: "
             f"{panel_text(p)}."
         )
-        return f"{p.id} {p.name}, {m.group(2)} view", text
+        return f"{p.id}, {m.group(2)} view", text
     return stem.replace("_", " "), "Rendered view; labels use the same IDs as the text."
 
 
