@@ -18,7 +18,11 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path  # noqa: S405 - our own pytest output
 
-EVERYWHERE = ("the claude CLI is not installed",)
+# yourdfpy is not part of the robot extra: its one test runs only where the user installed it.
+EVERYWHERE = (
+    "the claude CLI is not installed",
+    "yourdfpy is not installed (optional: install it yourself)",
+)
 WINDOWS_ONLY = ("POSIX permissions", "needs symlinks", "POSIX process groups")
 NO_GL = ("off-screen rendering is not available on this machine",)  # bare macOS / Windows VMs
 NOT_WINDOWS = ("needs Windows PowerShell", "Windows console API")  # the Windows-only tests

@@ -2,8 +2,9 @@
 # Copyright (C) 2026 idris sadiq
 """Layer 2: the plug-in structure for an optional robotics library, and the cross-check itself.
 
-No library is a dependency of stepscribe. ``pip install 'stepscribe[robot]'`` adds the two adapters
-in :mod:`stepscribe.robot_check.adapters` (yourdfpy, MuJoCo). A backend is any object with the shape of
+No library is a dependency of stepscribe. ``pip install 'stepscribe[robot]'`` adds MuJoCo, which does
+both the forward-kinematics cross-check and the simulator-readiness check. The adapter for yourdfpy is
+registered as well and is used when you install yourdfpy yourself. A backend is any object with the shape of
 :class:`FkBackend`, registered here (``register_backend``) or published by another package under the
 entry-point group ``stepscribe.robot_fk``. With none installed, layer 1 still runs and the report says
 so. The cross-check compares the link transforms the library computes with stepscribe's own
@@ -27,10 +28,11 @@ from stepscribe.text_safety import clean_name
 ENTRY_POINT_GROUP = "stepscribe.robot_fk"
 POSITION_TOL_M = 1e-6
 ROTATION_TOL_RAD = 1e-6
-DEFAULT_BACKEND = "yourdfpy"  # the independent kinematics implementation; used when none is named
+DEFAULT_BACKEND = "mujoco"  # used when none is named; yourdfpy only if it is the one installed
 INSTALL_HINT = (
     "Layer 2 needs an optional robotics library: pip install 'stepscribe[robot]' "
-    "(yourdfpy for the kinematics cross-check, MuJoCo for simulator readiness). A library "
+    "(MuJoCo: kinematics cross-check and simulator readiness). yourdfpy is also supported: "
+    "install it yourself and pass --backend yourdfpy. A library "
     f"packaged as a stepscribe plug-in (entry-point group {ENTRY_POINT_GROUP}) is found automatically."
 )
 
@@ -92,7 +94,7 @@ def available_backends() -> dict[str, FkBackend]:
 
 
 def default_backend(found: dict[str, FkBackend]) -> FkBackend | None:
-    """The backend used when none is named: yourdfpy if installed, else the first available."""
+    """The backend used when none is named: MuJoCo if installed, else the first available."""
     if DEFAULT_BACKEND in found:
         return found[DEFAULT_BACKEND]
     return next(iter(found.values())) if found else None
