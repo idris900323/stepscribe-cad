@@ -415,7 +415,9 @@ def test_the_command_reports_and_sets_the_exit_code(pack_dir: Path, tmp_path: Pa
     assert (
         "Structural validity: VALID" in ok.output and "Simulator readiness: NOT READY" in ok.output
     )
-    assert "stepscribe[robot]" in ok.output  # layer 2 not run, with how to install
+    # with or without the extra installed: a library that is not there says how to install it
+    named = runner.invoke(app, ["validate-robot", str(pack_dir), "--backend", "no-such-library"])
+    assert "stepscribe[robot]" in named.output
     strict = runner.invoke(app, ["validate-robot", str(pack_dir), "--require-ready"])
     assert strict.exit_code == 2
     bad = runner.invoke(

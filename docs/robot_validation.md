@@ -46,4 +46,23 @@ A valid file can still be rejected by, or behave oddly in, a physics simulator. 
 
 If a robotics library adapter is installed, the URDF is loaded in it and its forward kinematics (link transforms) are compared with stepscribe's own (plain numpy, `stepscribe/robot_check/fk.py`) at the zero pose and at four fixed pseudo-random poses within the limits. A link that differs by more than 1e-6 m or 1e-6 rad is named (`X003`), and a library that rejects the file reports its own words (`X001`).
 
-No library is a dependency of stepscribe, and none is chosen yet. The plug-in structure is in place: an adapter is an object with `name`, `version()`, `load(path)` and `link_transforms(values)` (`stepscribe.robot_check.backends.FkBackend`), registered with `register_backend` or published under the entry-point group `stepscribe.robot_fk`. Without one, layer 1 and the readiness notes still run and the report says how layer 2 will be installed (`pip install 'stepscribe[robot]'`, once the library is chosen). The evaluation of the candidates is kept apart from the code.
+No library is a dependency of stepscribe. The two libraries are an optional extra:
+
+```
+pip install 'stepscribe[robot]'
+```
+
+| Library | Pinned | Used for | Licence (from the package metadata) |
+|---|---|---|---|
+| yourdfpy | 0.0.60 | the kinematics cross-check (the default backend): an independent implementation of URDF forward kinematics; meshes are not loaded | MIT |
+| MuJoCo | 3.17.0 | simulator readiness: the file is compiled into a physical model and MuJoCo's own reason for refusing it is reported (`R101`); it can also serve as a kinematics backend with `--backend mujoco` | Apache-2.0 |
+
+Both licences are permissive and compatible with stepscribe's AGPL-3.0 and a commercial licence. The extra pulls 35 more packages (measured in a clean Python 3.12 environment on Windows). Their licences, read from each installed package's metadata: MIT, BSD (2- and 3-clause), Apache-2.0, ISC, and `certifi` under MPL-2.0 (file-level copyleft; it is installed, not modified or bundled). `embreex` carries a BSD-style notice and `vhacdx` an MIT licence file, and neither states a licence field in its metadata.
+
+**Size.** The extra adds about 320 MB installed (653 MB to 972 MB in the measured environment; the libraries themselves are small: yourdfpy is pure Python, the MuJoCo wheel is 16 to 27 MB). Most of the weight is yourdfpy's dependency `trimesh[easy]` (scipy, shapely, networkx, lxml, and others). It is never installed by default.
+
+**Where it installs.** The CI job `robot` installs the extra and runs every library test on Ubuntu, macOS (Apple silicon) and Windows with Python 3.11, 3.12 and 3.13; MuJoCo and yourdfpy have wheels for all nine combinations. There is no MuJoCo wheel for macOS on Intel, so the extra leaves MuJoCo out there (an environment marker in `pyproject.toml`); the cross-check with yourdfpy still works and the report says that MuJoCo is not installed. The tests of the libraries are skipped (with the reason "the robot extra is not installed") in the jobs without the extra, and the `robot` job fails if any of them is skipped (`STEPSCRIBE_REQUIRE_ROBOT=1`, see `scripts/check_skips.py`). The audit (`pip-audit`) runs in that job and is blocking; on the day of the check it found nothing in the extra or its packages (only the old `pip` of a fresh virtual environment, which the job upgrades first).
+
+**How MuJoCo's answer is reported.** It is a readiness finding, never a validity finding: `R100` (info) says it compiled the file; `R101` (error) says it refused it and quotes the library's reason (cleaned); `R102` notes that continuous joints become hinges with no range; `R103` notes that a URDF carries no actuators. A file MuJoCo refuses is therefore NOT READY but can still be VALID. The measured behaviour that led to the choice (a link with no inertia is refused or given an invented mass; a missing mesh file is a hard error) is in the evaluation kept with the project notes.
+
+The plug-in structure is unchanged: an adapter is an object with `name`, `version()`, `load(path)` and `link_transforms(values)` (`stepscribe.robot_check.backends.FkBackend`), registered with `register_backend` or published under the entry-point group `stepscribe.robot_fk`. Without a library, layer 1 and the readiness notes still run and the report says how to install the extra.

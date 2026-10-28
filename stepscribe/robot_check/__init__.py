@@ -18,6 +18,7 @@ from stepscribe.robot_check.backends import (
     FkBackend,
     available_backends,
     cross_check,
+    default_backend,
 )
 from stepscribe.robot_check.findings import Finding, Layer2, ValidationReport
 from stepscribe.robot_check.model import MAX_BYTES, UrdfError, parse_urdf, show
@@ -96,8 +97,10 @@ def validate(
     if not report.structurally_valid:
         report.layer2 = Layer2("not_run", detail="skipped: fix the structural errors first")
         return report
+    if backends is None:
+        report.readiness += _simulator_readiness(urdf_path)
     found = backends if backends is not None else available_backends()
-    chosen = found.get(backend) if backend else (next(iter(found.values())) if found else None)
+    chosen = found.get(backend) if backend else default_backend(found)
     if backend and chosen is None:
         report.layer2 = Layer2(
             "not_run", backend, f"the backend {show(backend)} is not installed. " + INSTALL_HINT
@@ -107,6 +110,16 @@ def validate(
     else:
         report.layer2 = cross_check(urdf, urdf_path, chosen, n_random)
     return report
+
+
+def _simulator_readiness(urdf_path: Path) -> list[Finding]:
+    """MuJoCo's answer as readiness findings; none when MuJoCo is not installed."""
+    try:
+        from stepscribe.robot_check.adapters import mujoco_readiness
+
+        return mujoco_readiness(urdf_path)
+    except ImportError:
+        return []
 
 
 def format_report(report: ValidationReport) -> str:
