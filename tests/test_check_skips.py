@@ -136,3 +136,11 @@ def test_robot_extra_skips_are_allowed_except_in_the_robot_job(
     monkeypatch.setenv("STEPSCRIBE_REQUIRE_ROBOT", "1")  # the `robot` CI job
     for platform in ("linux", "darwin", "win32"):
         assert len(mod.unexpected_skips(xml, platform)) == 1
+
+
+def test_the_macos_only_memory_test_may_not_be_skipped_on_macos(tmp_path: Path) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, "only on macOS: it reads the real vm_stat")
+    assert mod.unexpected_skips(xml, "linux") == []
+    assert mod.unexpected_skips(xml, "win32") == []
+    assert len(mod.unexpected_skips(xml, "darwin")) == 1  # on macOS it must run
