@@ -264,6 +264,10 @@ def analyze_brep_file(
 WORKER_BASE_MB = 340.0  # interpreter + OCC + numpy, measured 341 MB at 10 faces
 WORKER_MB_PER_KFACE = 45.0  # measured about 43 MB per 1000 faces (pool worker: 383 MB at 617 faces)
 RAM_SHARE = 0.6  # of the free memory that the part workers may use
+UNKNOWN_RAM_MAX_WORKERS = 4  # pool size when the OS does not say how much memory is free
+VM_STAT = "/usr/bin/vm_stat"
+VM_STAT_TIMEOUT_S = 2.0
+MAX_PAGE_SIZE = 1 << 20
 _UNSET: Any = object()
 
 
@@ -272,11 +276,55 @@ def estimate_worker_mb(max_faces: int) -> float:
     return WORKER_BASE_MB + WORKER_MB_PER_KFACE * max_faces / 1000.0
 
 
+def parse_vm_stat(text: str) -> int | None:
+    """Reclaimable memory in bytes from the output of macOS ``vm_stat``, or None if it is not that.
+
+    Free + inactive + speculative pages times the page size on the first line
+    (``Mach Virtual Memory Statistics: (page size of 16384 bytes)``). Anything else, a missing
+    line, a count that is not a plain number: None, never an exception.
+    """
+    import re
+
+    size = re.search(r"page size of (\d+) bytes", text)
+    if size is None or not 0 < int(size.group(1)) <= MAX_PAGE_SIZE:
+        return None
+    pages: dict[str, int] = {}
+    for line in text.splitlines():
+        m = re.fullmatch(r"\s*Pages (free|inactive|speculative):\s*(\d+)\.?\s*", line)
+        if m:
+            pages[m.group(1)] = int(m.group(2))
+    if len(pages) != 3:
+        return None
+    total = sum(pages.values()) * int(size.group(1))
+    return total if total > 0 else None
+
+
+def _run_vm_stat(cmd: list[str], **kwargs: Any) -> Any:
+    import subprocess
+
+    return subprocess.run(cmd, capture_output=True, check=False, **kwargs)  # noqa: S603
+
+
+def macos_available_bytes(run: Any = None) -> int | None:
+    """Free memory on macOS from ``vm_stat``; None on a timeout, a missing command or odd output."""
+    import subprocess
+
+    try:
+        result = (run or _run_vm_stat)([VM_STAT], timeout=VM_STAT_TIMEOUT_S)
+        if result.returncode != 0:
+            return None
+        return parse_vm_stat(result.stdout.decode("utf-8"))
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        return None  # UnicodeDecodeError is a ValueError
+
+
 def available_ram_bytes(platform: str | None = None) -> int | None:
     """Free physical memory, or None if this OS does not say."""
     import os
     import sys
 
+    if (platform or sys.platform) == "darwin":
+        return macos_available_bytes()
     try:
         if (platform or sys.platform) == "win32":
             import ctypes
@@ -315,7 +363,9 @@ def worker_count(
     """Processes to use for part analysis.
 
     STEPSCRIBE_WORKERS wins. Otherwise CPUs - 1 (at most 8) shared between the jobs allowed to run
-    at once, and never more than the free memory allows (`estimate_worker_mb`, RAM_SHARE).
+    at once, and never more than the free memory allows (`estimate_worker_mb`, RAM_SHARE). When the
+    OS does not report free memory (macOS reads it from ``vm_stat``; if that fails too) the pool is
+    capped at UNKNOWN_RAM_MAX_WORKERS (4) processes shared between the jobs, not left unlimited.
     """
     import os
 
@@ -329,13 +379,15 @@ def worker_count(
     by_cpu = max(1, parallelism(cpus) // n_jobs)
     n = max(1, min(by_cpu, n_parts))
     free = available_ram_bytes() if available_bytes is _UNSET else available_bytes
-    if free is not None and max_faces > 0:
+    if free is None:  # the OS does not say: a conservative pool, shared between the jobs
+        n = min(n, max(1, UNKNOWN_RAM_MAX_WORKERS // n_jobs))
+    elif max_faces > 0:
         per_worker = estimate_worker_mb(max_faces) * 1024**2
         n = min(n, max(1, int(RAM_SHARE * free / (per_worker * n_jobs))))
     return n
 
 
-UNKNOWN_RAM_SPLIT_WORKERS = 4  # when the OS does not say how much memory is free (macOS)
+UNKNOWN_RAM_SPLIT_WORKERS = UNKNOWN_RAM_MAX_WORKERS  # the split rule uses the same limit
 
 
 def may_split_bores(

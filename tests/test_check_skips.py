@@ -116,3 +116,11 @@ def test_deselected_tests_are_not_counted_as_skips(tmp_path: Path) -> None:
     assert names == ["test_fast"]
     assert mod.unexpected_skips(str(junit), "linux") == []
     assert mod.main(["check_skips.py", str(junit)]) == 0
+
+
+def test_the_macos_only_memory_test_may_not_be_skipped_on_macos(tmp_path: Path) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, "only on macOS: it reads the real vm_stat")
+    assert mod.unexpected_skips(xml, "linux") == []
+    assert mod.unexpected_skips(xml, "win32") == []
+    assert len(mod.unexpected_skips(xml, "darwin")) == 1  # on macOS it must run
