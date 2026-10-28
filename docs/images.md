@@ -9,6 +9,24 @@
 | `standard` | basic, plus the types below that are marked standard |
 | `full` | standard, plus the types marked full |
 
+## Which set to use
+
+| Use | Set | Why |
+|---|---|---|
+| Quick look, small packs, a pipeline that only needs the overview | `basic` (default) | the images of earlier versions: assembly views, the kinematics view and an iso and an axis view per part; no extra time |
+| Handing the pack to an AI in chat | `standard` | adds the images that answer the questions people ask a model: hole map, three-view drawing, weak-spot overlay and, for assemblies, contact map, link colour map and the kinematic diagram with joint axes. Captions are plain facts in the text and in `images/INDEX.md`, so a model that cannot see images still gets them |
+| A human reviewing the design | `full` | adds feature highlight, section view, wall-thickness heat map and joint ranges (when the designer gave ranges): the pictures a reviewer wants to look at, at the price of the most files |
+
+Measured on the IRB1660 (16 parts, 7 links; render stage only, analysis restored from its report; Windows, nothing else running; times move by about 10 % between runs, sizes do not):
+
+| Set | Render time | Images folder | Extra images |
+|---|---|---|---|
+| `basic` | 71.6 s | 4.04 MB (30 files) | 0 |
+| `standard` | 118.2 s (+46.6 s) | 5.67 MB (+1.63 MB) | 31 |
+| `full` | 190.5 s (+118.9 s) | 6.95 MB (+2.91 MB) | 64 (the cap of 60 per-part images is reached) |
+
+The analysis itself does not change with the set; only the render stage grows. A small part adds a few seconds (the fixtures of the test suite: 5 to 30 s for `full`). `--image-max-side` (default 1200 px) keeps each image small for vision input.
+
 The default stays `basic`, so default packs, their size and their run time do not change, with one deliberate exception: no image set draws a part name any more (the assembly legend, the part-image panel title and the link legend show IDs and counts only), because a name drawn into an image is a way to put instructions into it. The extra images have at most `--image-max-side` pixels on their longest side (default 1200) and at most 20 parts get a per-part image of each type (60 extra images in all), so AI vision input stays small. Rendering is offscreen and deterministic: the same input gives the same file names and label positions.
 
 Every label drawn on an extra image is an ID (`PRT`, `H`, `P`, `W`, ...) or a number, never a name from the file: a name drawn into an image would be a way to put instructions into it. `images/INDEX.md` lists each extra image with what it shows, the IDs on it and the text section it pairs with, and the same caption stands next to the image reference in the part Markdown, written as plain facts so an AI that cannot see images can use it. An image type that cannot be drawn for a part (no holes, too many faces, an error) is skipped and named in the "Not drawn" section of the index; it never stops the pack. The read-me names the image set when it is not `basic`.
