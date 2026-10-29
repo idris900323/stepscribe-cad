@@ -76,7 +76,28 @@ def test_every_hole_is_labelled_or_named_in_the_notes(step_files, tmp_path: Path
         with record_text_boxes() as texts:
             result = render_extra_images(analysis, tmp_path / name, "standard", 1200, "+Z", "-Y")
         labelled = {m.group(1) for t, _b, _s in texts if (m := re.match(r"(H\d+) dia ", t))}
+        # a hole in a drawn group is covered by the group's legend line
+        legend = {m.group(1) for t, _b, _s in texts if (m := re.match(r"(P\d+)  \d+x dia ", t))}
+        labelled |= {hid for pat in part.hole_patterns if pat.id in legend for hid in pat.hole_ids}
         noted = set(
             re.findall(r"H\d+", " ".join(n for n in result.notes if n.startswith("hole map")))
         )
         assert {h.id for h in part.holes} <= labelled | noted, name
+
+
+def test_the_holes_of_a_pattern_are_one_legend_line_not_one_label_each(  # type: ignore[no-untyped-def]
+    step_files, tmp_path: Path
+) -> None:
+    import re
+
+    from stepscribe.render.extra_images import GROUP_MIN_HOLES, render_extra_images
+    from stepscribe.render.overlay import record_text_boxes
+
+    analysis = fresh(step_files, "plate_4xM3")
+    part = analysis.parts[0].part
+    assert part.hole_patterns[0].count >= GROUP_MIN_HOLES
+    with record_text_boxes() as texts:
+        render_extra_images(analysis, tmp_path / "g", "standard", 1200, "+Z", "-Y")
+    drawn = [t for t, _b, _s in texts]
+    assert not [t for t in drawn if re.match(r"H\d+ dia ", t)]
+    assert any(re.match(r"P001  4x dia 3.4 thru", t) for t in drawn)

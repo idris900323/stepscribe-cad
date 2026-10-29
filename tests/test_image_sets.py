@@ -142,7 +142,7 @@ def test_a_part_name_from_the_file_never_reaches_a_caption_or_a_label(
 
 _WORDS = (
     "dia mm front top right Overall x in map weak spots hole width depth height through blind "
-    "high medium low info severity measured edge distance"
+    "high medium low info severity measured edge distance outline thru deep grid pitch on"
 ).split()
 
 
@@ -154,7 +154,7 @@ def test_every_drawn_label_is_an_id_a_number_or_a_fixed_word(step_files, tmp_pat
         assert texts
         for text, _box, _size in texts:
             for token in [t for t in re.split(r"[ ,()]+", text) if t]:
-                if re.fullmatch(r"(PRT|H|P|W)\d+|[\d.()]+", token):
+                if re.fullmatch(r"(PRT|H|P|W)\d+|[\d.()]+|\d+x", token):
                     continue
                 assert token in _WORDS, (name, token, text)
 
