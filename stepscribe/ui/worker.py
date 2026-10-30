@@ -67,7 +67,13 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
                 or "nothing to analyse"
             )
         folder = write_pack(
-            analysis, Path(job["out"]), 60000, context_file, bool(job.get("images", True)), tracker
+            analysis,
+            Path(job["out"]),
+            60000,
+            context_file,
+            bool(job.get("images", True)),
+            tracker,
+            image_set=UI_IMAGE_SET,
         )
         tracker.finish("pack written")
         queue.put(
@@ -96,6 +102,9 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
         )
 
 
+UI_IMAGE_SET = (
+    "full"  # the page shows every image the pack has, so the pack is built with all of them
+)
 IDLE_SECONDS = 900  # an interview process that nobody talks to for 15 minutes ends
 
 

@@ -74,6 +74,9 @@ def test_page_and_upload_flow(server: str, step_files) -> None:  # type: ignore[
     assert "TopPlate is bolted to BasePlate" in " ".join(r["relations"])
     img = r["images"][0]
     assert get(f"{server}/files/{job}/{img}")[:4] == b"\x89PNG"
+    # the page lists every image of the pack: the extra types of the full set too, not only the basic views
+    names = {i.rsplit("/", 1)[-1] for i in r["images"]}
+    assert {"PRT001_holes.png", "PRT001_views.png"} <= names, sorted(names)
     z = zipfile.ZipFile(io.BytesIO(get(f"{server}/api/zip?id={job}")))
     assert any(n.endswith("context_pack.md") for n in z.namelist())
 
