@@ -17,7 +17,9 @@ from typing import Any
 import numpy as np
 
 from stepscribe.models.schema import AxisLabel, KinJoint, Part, Report
+from stepscribe.understanding.mass_distribution import link_body, principal_dict
 from stepscribe.understanding.process import complex_geometry_reason
+from stepscribe.understanding.rigid_body import STATIC_LABEL, G, JointSpec, Payload, holding_loads
 
 FORMAT = "stepscribe-robot"
 FORMAT_VERSION = "0.1"
@@ -169,8 +171,10 @@ def _complex_geometry(part: Part) -> bool:
     return complex_geometry_reason(part) is not None
 
 
-def build_robot(report: Report) -> dict[str, Any] | None:
-    """The robot description as a dict, or None when the model has no revolute or prismatic joint."""
+def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any] | None:
+    """The robot description as a dict, or None when the model has no revolute or prismatic joint.
+
+    *payload* is the designer's optional mass at the end of the chain, used for the static holding loads."""
     u, asm = report.understanding, report.assembly
     if u is None or asm is None:
         return None
@@ -194,6 +198,7 @@ def build_robot(report: Report) -> dict[str, Any] | None:
         }
         row.update(_link_mass(report, g.instance_ids))
         row["mass_is_estimate"] = True
+        row["principal_inertia"] = principal_dict(link_body(report, g.instance_ids))
         low = sorted(
             {
                 parts[inst_part[i]].name
@@ -233,6 +238,27 @@ def build_robot(report: Report) -> dict[str, Any] | None:
         )
         prev_origin_of_link[j.child_link] = o
 
+    specs = [
+        JointSpec(j["id"], j["type"], j["parent"], j["child"], j["origin_mm"], j["axis"])
+        for j in joints
+    ]
+    bodies = {g.id: link_body(report, g.instance_ids, reliable=True) for g in kin.links}
+    held = holding_loads(specs, bodies, _up(asm.up_axis), payload)
+    static_loads: dict[str, Any] = {
+        "label": STATIC_LABEL,
+        "pose": "the pose stored in the file (all joint angles zero)",
+        "gravity_m_s2": G,
+        "up_axis": asm.up_axis,
+        "units": {"revolute": "N*m", "prismatic": "N"},
+        "sign": "minus the gravity load along the joint's positive axis: what the joint must supply",
+        "payload": None
+        if payload is None
+        else {"mass_kg": payload.mass_kg, "offset_mm": payload.offset_mm},
+        "joints": [
+            {"joint": h.joint, "type": h.kind, "value": h.value, "unit": h.unit, "reason": h.reason}
+            for h in held
+        ],
+    }
     serial = (
         all(movers[i].child_link == movers[i + 1].parent_link for i in range(len(movers) - 1))
         and movers[0].parent_link == base
@@ -271,6 +297,7 @@ def build_robot(report: Report) -> dict[str, Any] | None:
         "base_link": base,
         "links": links,
         "joints": joints,
+        "static_holding_loads": static_loads,
         "dh_style": {
             "serial_chain": serial,
             "note": "a, alpha and d are measured between consecutive joint axes (the first against "
@@ -291,9 +318,9 @@ def build_robot(report: Report) -> dict[str, Any] | None:
     return _round(data)  # type: ignore[no-any-return]
 
 
-def robot_json(report: Report) -> str | None:
+def robot_json(report: Report, payload: Payload | None = None) -> str | None:
     """robot.json text (stable key order, two-space indent), or None for a non-robot."""
-    data = build_robot(report)
+    data = build_robot(report, payload)
     if data is None:
         return None
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
