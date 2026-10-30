@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "build/**"]
+    branches: [main, "release/**", "build/**"]
   pull_request:
   workflow_dispatch:  # the full matrix, macOS included, on demand: run it on release/v2 before a release
 
