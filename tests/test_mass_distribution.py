@@ -210,3 +210,71 @@ def test_a_bad_payload_in_the_pack_is_named_in_the_section(  # type: ignore[no-u
     assert "payload ignored: mass_kg must be above 0" in text
     robot = json.loads((folder / "robot.json").read_text("utf-8"))
     assert robot["static_holding_loads"]["payload"] is None
+
+
+# ------------------------------------------------------------------ wording and sign
+def section_text(report, payload=None, note=None) -> str:  # type: ignore[no-untyped-def]
+    return md.mass_markdown(md.mass_distribution(report), build_robot(report, payload), note)
+
+
+def test_the_disclaimer_comes_with_every_torque_value(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    for payload in (None, Payload(2.5, np.array([0.0, 0.0, 150.0]))):
+        text = section_text(steel_arm.report, payload)
+        first_value = text.index("holding ")
+        assert text.index(STATIC_LABEL) < first_value, "the label must precede the first value"
+        assert "estimates" in text.split("\n")[0] and "nothing is measured" in text
+        data = build_robot(steel_arm.report, payload)
+        assert data["static_holding_loads"]["label"] == STATIC_LABEL  # type: ignore[index]
+    # a value is never shown without the label, whatever the robot dict holds
+    fake = {
+        "static_holding_loads": {
+            "payload": None,
+            "joints": [
+                {"joint": "KJ1", "type": "revolute", "value": -1.5, "unit": "N*m", "reason": None}
+            ],
+        }
+    }
+    text = md.mass_markdown(md.mass_distribution(steel_arm.report), fake, None)
+    assert STATIC_LABEL in text and "holding -1.500 N*m" in text
+
+
+def test_a_value_that_is_not_computed_shows_only_its_reason(bare_arm) -> None:  # type: ignore[no-untyped-def]
+    text = section_text(bare_arm.report)
+    lines = text.split("\n")
+    joint_lines = [ln for ln in lines if ln.startswith("- KJ")]
+    assert len(joint_lines) == 6
+    for ln in joint_lines:
+        assert ln.startswith("- KJ") and "): not computed: mass unknown or unreliable" in ln
+        assert "holding" not in ln and "N*m" not in ln and "magnitude" not in ln
+    assert "- Assembly: not computed: material or density unknown" in lines
+    for ln in lines:
+        if "not computed" in ln:
+            assert "g*mm^2" not in ln and "radii" not in ln
+    data = build_robot(bare_arm.report)
+    assert data is not None
+    for row in data["static_holding_loads"]["joints"]:
+        assert row["value"] is None and row["reason"].startswith("not computed")
+    for link in data["links"]:
+        assert link["principal_inertia"]["status"] == "not computed"
+        assert set(link["principal_inertia"]) == {"status", "reason"}
+
+
+def test_a_clockwise_answer_flips_the_sign_of_that_joints_torque(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    before = build_robot(steel_arm.report)
+    assert before is not None
+    flipped = steel_arm.report.model_copy(deep=True)
+    joint = next(j for j in flipped.understanding.kinematics.joints if j.id == "KJ2")
+    assert joint.positive_direction is None
+    joint.positive_direction = "cw"  # what a "cw" answer in the interview sets
+    after = build_robot(flipped)
+    assert after is not None
+    b, a = by_joint(before), by_joint(after)
+    assert a["KJ2"]["value"] == pytest.approx(-b["KJ2"]["value"], abs=1e-9)
+    assert abs(b["KJ2"]["value"]) > 1.0  # a real value, not a zero that flips to a zero
+    for jid in ("KJ1", "KJ3", "KJ4", "KJ5", "KJ6"):  # the other joints do not move
+        assert a[jid]["value"] == pytest.approx(b[jid]["value"], abs=1e-9), jid
+    flags = {j["id"]: j["axis_flipped"] for j in after["joints"]}
+    assert flags["KJ2"] is True and not any(v for k, v in flags.items() if k != "KJ2")
+    # and the text says the same number with the opposite sign
+    text = section_text(flipped)
+    assert f"KJ2 (revolute): holding {md.fmt(a['KJ2']['value'], 3)} N*m" in text
