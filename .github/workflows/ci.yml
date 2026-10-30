@@ -6,10 +6,11 @@ on:
   pull_request:
   workflow_dispatch:  # the full matrix, macOS included, on demand: run it on release/v2 before a release
 
-# A new push or a reopened pull request replaces the run that is still going for the same ref.
+# Only a pull request run is replaced by a newer one for the same pull request. Every other run
+# (a push to main, release/** or build/**, or a manual run) has its own group and is never cancelled.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
