@@ -355,14 +355,34 @@ def available_ram_bytes(platform: str | None = None) -> int | None:
         return None
 
 
-def worker_count(
+@dataclass(frozen=True)
+class WorkerChoice:
+    """The pool size and the rule that chose it (logged at the start of every analysis)."""
+
+    workers: int
+    rule: str  # which limit decided: env, cpu, memory, unknown-memory
+    free_bytes: int | None
+    cpu_cap: int
+    memory_cap: int | None
+    jobs: int
+
+    def describe(self) -> str:
+        free = "unknown" if self.free_bytes is None else f"{self.free_bytes / 1024**3:.1f} GiB"
+        mem = "no memory limit" if self.memory_cap is None else f"memory allows {self.memory_cap}"
+        return (
+            f"part workers: {self.workers} ({self.rule}; free memory {free}; "
+            f"cpu allows {self.cpu_cap}; {mem}; jobs {self.jobs})"
+        )
+
+
+def worker_choice(
     n_parts: int,
     max_faces: int = 0,
     available_bytes: int | None = _UNSET,
     cpus: int | None = None,
     jobs: int | None = None,
-) -> int:
-    """Processes to use for part analysis.
+) -> WorkerChoice:
+    """Processes to use for part analysis, with the rule that decided.
 
     STEPSCRIBE_WORKERS wins. Otherwise CPUs - 1 (at most 8) shared between the jobs allowed to run
     at once, and never more than the free memory allows (`estimate_worker_mb`, RAM_SHARE). When the
@@ -374,19 +394,35 @@ def worker_count(
     from stepscribe.limits import parallelism
     from stepscribe.runner import RUNNER
 
+    n_jobs = max(1, jobs if jobs is not None else RUNNER.max_jobs)
+    free = available_ram_bytes() if available_bytes is _UNSET else available_bytes
+    cpu_cap = max(1, min(max(1, parallelism(cpus) // n_jobs), n_parts))
     env = os.environ.get("STEPSCRIBE_WORKERS")
     if env and env.isdigit():
-        return max(1, min(int(env), n_parts))
-    n_jobs = max(1, jobs if jobs is not None else RUNNER.max_jobs)
-    by_cpu = max(1, parallelism(cpus) // n_jobs)
-    n = max(1, min(by_cpu, n_parts))
-    free = available_ram_bytes() if available_bytes is _UNSET else available_bytes
+        n = max(1, min(int(env), n_parts))
+        return WorkerChoice(n, "STEPSCRIBE_WORKERS", free, cpu_cap, None, n_jobs)
+    n, rule, mem_cap = cpu_cap, "cpu", None
     if free is None:  # the OS does not say: a conservative pool, shared between the jobs
-        n = min(n, max(1, UNKNOWN_RAM_MAX_WORKERS // n_jobs))
+        mem_cap = max(1, UNKNOWN_RAM_MAX_WORKERS // n_jobs)
+        if mem_cap < n:
+            n, rule = mem_cap, "unknown free memory"
     elif max_faces > 0:
         per_worker = estimate_worker_mb(max_faces) * 1024**2
-        n = min(n, max(1, int(RAM_SHARE * free / (per_worker * n_jobs))))
-    return n
+        mem_cap = max(1, int(RAM_SHARE * free / (per_worker * n_jobs)))
+        if mem_cap < n:
+            n, rule = mem_cap, "free memory"
+    return WorkerChoice(n, rule, free, cpu_cap, mem_cap, n_jobs)
+
+
+def worker_count(
+    n_parts: int,
+    max_faces: int = 0,
+    available_bytes: int | None = _UNSET,
+    cpus: int | None = None,
+    jobs: int | None = None,
+) -> int:
+    """Processes to use for part analysis (see :func:`worker_choice` for the rule that decided)."""
+    return worker_choice(n_parts, max_faces, available_bytes, cpus, jobs).workers
 
 
 UNKNOWN_RAM_SPLIT_WORKERS = UNKNOWN_RAM_MAX_WORKERS  # the split rule uses the same limit

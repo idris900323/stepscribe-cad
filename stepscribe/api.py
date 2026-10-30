@@ -21,7 +21,7 @@ from stepscribe.analysis import (
     bore_chunk,
     may_split_bores,
     split_bodies,
-    worker_count,
+    worker_choice,
 )
 from stepscribe.features.holes import assemble_bores
 from stepscribe.geometry.occ_utils import unique_subshapes
@@ -101,9 +101,18 @@ def _analyse_bodies(
 
     from OCP.BRepTools import BRepTools
 
-    workers = worker_count(len(bodies), max(faces.values(), default=0))
+    choice = worker_choice(len(bodies), max(faces.values(), default=0))
+    workers = choice.workers
+    text = choice.describe()
     if len(bodies) < PARALLEL_MIN_PARTS or sum(faces.values()) < PARALLEL_MIN_FACES:
         workers = 1
+        text = (
+            f"part workers: 1 (small model: fewer than {PARALLEL_MIN_PARTS} parts or {PARALLEL_MIN_FACES} faces); "
+            + text
+        )
+    timings.note("part_workers", text)
+    timings.count("part_workers", workers)
+    tracker.emit(text)
     results: dict[int, Part] = {}
     bores: dict[int, list[Any] | None] = {}
 

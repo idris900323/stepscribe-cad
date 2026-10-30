@@ -27,7 +27,8 @@ def test_off_by_default_costs_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
         pass
     timings.add_part("p", 10, 1.0)
     timings.count("pairs", 3)
-    assert timings.snapshot() == {"stages_s": {}, "parts": [], "counts": {}}
+    timings.note("anything", "text")  # off: nothing is kept either
+    assert timings.snapshot() == {"stages_s": {}, "parts": [], "counts": {}, "notes": {}}
 
 
 def test_flag_writes_stage_times_and_parts(
