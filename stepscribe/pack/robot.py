@@ -17,7 +17,13 @@ from typing import Any
 import numpy as np
 
 from stepscribe.models.schema import AxisLabel, KinJoint, Part, Report
-from stepscribe.understanding.mass_distribution import ASSUMPTIONS, link_body, principal_dict
+from stepscribe.understanding.mass_distribution import (
+    ASSUMPTIONS,
+    down_label,
+    gravity_note,
+    link_body,
+    principal_dict,
+)
 from stepscribe.understanding.process import complex_geometry_reason
 from stepscribe.understanding.rigid_body import STATIC_LABEL, G, JointSpec, Payload, holding_loads
 
@@ -253,7 +259,10 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
         "gravity_m_s2": G,
         "up_axis": asm.up_axis,
         "units": {"revolute": "N*m", "prismatic": "N"},
-        "sign": "minus the gravity load along the joint's positive axis: what the joint must supply",
+        "gravity_direction": down_label(asm.up_axis),
+        "gravity_note": gravity_note(asm.up_axis),
+        "sign": "the value is what the joint must supply to hold the pose: minus the gravity load "
+        "along the joint's positive axis",
         "payload": None
         if payload is None
         else {"mass_kg": payload.mass_kg, "offset_mm": payload.offset_mm},

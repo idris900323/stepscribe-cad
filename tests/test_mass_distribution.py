@@ -222,12 +222,13 @@ def test_the_disclaimer_comes_with_every_torque_value(steel_arm) -> None:  # typ
         text = section_text(steel_arm.report, payload)
         first_value = text.index("holding ")
         assert text.index(STATIC_LABEL) < first_value, "the label must precede the first value"
-        assert "estimates" in text.split("\n")[0] and "nothing is measured" in text
+        assert "estimates" in text.split("\n")[0] and "they are not measured values" in text
         data = build_robot(steel_arm.report, payload)
         assert data["static_holding_loads"]["label"] == STATIC_LABEL  # type: ignore[index]
     # a value is never shown without the label, whatever the robot dict holds
     fake = {
         "static_holding_loads": {
+            "up_axis": "+Z",
             "payload": None,
             "joints": [
                 {"joint": "KJ1", "type": "revolute", "value": -1.5, "unit": "N*m", "reason": None}
@@ -292,3 +293,34 @@ def test_the_wording_is_the_agreed_one_in_the_pack_and_in_robot_json(steel_arm) 
     assert s["estimate"] == "estimate from geometry and density; not measured"
     assert s["assumptions"] == md.ASSUMPTIONS and "prismatic" in s["unit_note"]
     assert section_text(steel_arm.report).count(f"### Joint loads: {STATIC_LABEL}") == 1
+
+
+def test_the_pack_and_robot_json_say_which_way_gravity_points(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    text = section_text(steel_arm.report)
+    assert "Gravity (9.80665 m/s^2) is taken along the file's -Z axis" in text
+    assert "the up axis is +Z" in text and "design_context.yaml cannot set it" in text
+    assert "what the joint must supply to hold the pose" in text
+    data = build_robot(steel_arm.report)
+    assert data is not None
+    s = data["static_holding_loads"]
+    assert s["gravity_direction"] == "-Z" and s["up_axis"] == "+Z"
+    assert "along the file's -Z axis" in s["gravity_note"]
+    assert "what the joint must supply to hold the pose" in s["sign"]
+
+
+def test_the_gravity_line_follows_the_up_axis_that_was_used(step_files) -> None:  # type: ignore[no-untyped-def]
+    analysis = analyze_full(
+        step_files["arm_6_axis"],
+        AnalyzeOptions(no_timestamp=True, material="steel", up="+Y", front="+Z"),
+    )
+    text = section_text(analysis.report)
+    assert "is taken along the file's -Y axis: the up axis is +Y" in text
+    data = build_robot(analysis.report)
+    assert data is not None and data["static_holding_loads"]["gravity_direction"] == "-Y"
+
+
+def test_the_assumptions_use_the_agreed_wording() -> None:
+    assert len(md.ASSUMPTIONS) == 4
+    joined = " ".join(md.ASSUMPTIONS)
+    assert "they are not measured values" in joined and "will not match the real part" in joined
+    assert "nothing is measured" not in joined and "are wrong" not in joined

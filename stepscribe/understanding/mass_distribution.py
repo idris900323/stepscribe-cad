@@ -20,15 +20,18 @@ from stepscribe.understanding.process import complex_geometry_reason
 from stepscribe.understanding.rigid_body import (
     STATIC_LABEL,
     Body,
+    G,
     Payload,
     combine,
     principal_inertia,
 )
 
 ASSUMPTIONS = [
-    "Estimates from CAD volume and the material or density named for each part; nothing is measured.",
+    "Estimates from CAD volume and the material or density named for each part: mass and inertia are "
+    "estimated from CAD volume and density; they are not measured values.",
     "Each part is taken as a solid of uniform density. Hollow, cast, welded or assembled-from-sheet parts, "
-    "and models that are simplified outer skins, are not like that; the mass and inertia of such parts are wrong.",
+    "and models that are simplified outer skins, are not like that; the mass and inertia of such parts "
+    "will not match the real part.",
     "A density guessed from a part name is a guess; the line says which parts rest on one.",
     "Moments are about the centre of mass, in the axes named; radii of gyration are k = sqrt(I / m).",
 ]
@@ -190,6 +193,19 @@ def _principal_lines(label: str, d: dict[str, Any]) -> list[str]:
     return lines
 
 
+def down_label(up_axis: str) -> str:
+    """The axis label gravity points along: the opposite of the up axis ('+Z' -> '-Z')."""
+    return ("-" if up_axis[0] == "+" else "+") + up_axis[1]
+
+
+def gravity_note(up_axis: str) -> str:
+    """Which way gravity points, why, and how the up axis is set."""
+    return (
+        f"Gravity ({fmt(G, 5)} m/s^2) is taken along the file's {down_label(up_axis)} axis: the up axis is "
+        f"{up_axis} (default +Z; set it with --up or the up field of the UI; design_context.yaml cannot set it)."
+    )
+
+
 def mass_markdown(
     dist: dict[str, Any], robot: dict[str, Any] | None, payload_note: str | None = None
 ) -> str:
@@ -221,6 +237,11 @@ def mass_markdown(
             lines.append(f"- {payload_note}")
         else:
             lines.append("- No payload given: the arm's own weight only.")
+        lines.append("- " + gravity_note(loads["up_axis"]))
+        lines.append(
+            "- Sign: each value is what the joint must supply to hold the pose (torque in N*m, force in N "
+            "for a prismatic joint), that is minus what gravity applies about the joint's positive axis."
+        )
         for j in loads["joints"]:
             if j["value"] is None:
                 lines.append(f"- {j['joint']} ({j['type']}): {j['reason']}")
