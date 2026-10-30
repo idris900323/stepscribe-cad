@@ -81,6 +81,42 @@ def test_page_and_upload_flow(server: str, step_files) -> None:  # type: ignore[
     assert any(n.endswith("context_pack.md") for n in z.namelist())
 
 
+@pytest.mark.parametrize(("image_set", "has_hole_map"), [("basic", False), ("standard", True)])
+def test_the_image_set_decides_which_images_the_page_lists(  # type: ignore[no-untyped-def]
+    server: str, step_files, image_set: str, has_hole_map: bool
+) -> None:
+    req = urllib.request.Request(
+        server + f"/api/upload?name=plate.step&material=alu&images=1&image_set={image_set}",
+        data=step_files["plate_4xM3"].read_bytes(),
+        method="POST",
+        headers=_headers({"Content-Type": "application/octet-stream"}),
+    )
+    job = json.loads(urllib.request.urlopen(req, timeout=30).read())["id"]
+    s = wait_done(server, job)
+    assert s["error"] is None, s["error"]
+    names = {i.rsplit("/", 1)[-1] for i in s["result"]["images"]}
+    assert ("PRT001_holes.png" in names) is has_hole_map, sorted(names)
+
+
+def test_an_unknown_image_set_is_rejected(server: str, step_files) -> None:  # type: ignore[no-untyped-def]
+    req = urllib.request.Request(
+        server + "/api/upload?name=plate.step&image_set=everything",
+        data=step_files["plate_4xM3"].read_bytes(),
+        method="POST",
+        headers=_headers({"Content-Type": "application/octet-stream"}),
+    )
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req, timeout=10)
+    assert e.value.code == 400
+
+
+def test_the_page_offers_the_three_sets_with_standard_selected() -> None:
+    page = (Path(__file__).resolve().parent.parent / "stepscribe/ui/index.html").read_text("utf-8")
+    assert '<select id="imageset">' in page
+    assert '<option value="standard" selected>' in page
+    assert all(f'<option value="{v}"' in page for v in ("basic", "standard", "full"))
+
+
 def test_bad_path_and_traversal_are_rejected(server: str) -> None:
     req = urllib.request.Request(
         server + "/api/start_path",

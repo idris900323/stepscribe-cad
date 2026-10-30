@@ -167,7 +167,7 @@
         <span class="hint">STEP files in the robot_steps folder next to the project.</span></label>
     </div></div>
     <h2 class="step2"><span class="step">2</span>Options <span class="mute">all optional</span></h2>
-    <p class="lead">Images with dimensions and the collision check are always included.</p>
+    <p class="lead">Images with dimensions and the collision check are always included; the image set decides how many.</p>
     <div class="row fields opts">
       <label>Material<input type="text" id="material" placeholder="alu, steel, pla, petg...">
         <span class="hint">Gives each part a mass. Empty: mass unknown.</span></label>
@@ -175,6 +175,8 @@
         <span class="hint">Instead of a material, e.g. 2.70 for aluminium.</span></label>
       <label>Up axis<select id="up"><option>+Z</option><option>-Z</option><option>+Y</option><option>-Y</option><option>+X</option><option>-X</option></select>
         <span class="hint">The model axis that points up.</span></label>
+      <label>Image set<select id="imageset"><option value="basic">basic</option><option value="standard" selected>standard</option><option value="full">full</option></select>
+        <span class="hint">basic: quick views. standard: for an AI in chat. full: for a human review (slower).</span></label>
       <label>Front axis<select id="front"><option>-Y</option><option>+Y</option><option>+X</option><option>-X</option><option>+Z</option><option>-Z</option></select>
         <span class="hint">The axis that faces you. Not the up axis.</span></label>
     </div>
@@ -263,7 +265,7 @@ api('/api/samples').then(r => r.json()).then(list => {
 
 function params() {
   return { material: $('material').value, density: $('density').value, up: $('up').value, front: $('front').value,
-           images: true, interference: true };
+           images: true, image_set: $('imageset').value, interference: true };
 }
 $('go').onclick = async () => {
   $('err').textContent = ''; $('resCard').style.display = 'none';
