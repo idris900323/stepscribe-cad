@@ -297,8 +297,8 @@ def test_the_wording_is_the_agreed_one_in_the_pack_and_in_robot_json(steel_arm) 
 
 def test_the_pack_and_robot_json_say_which_way_gravity_points(steel_arm) -> None:  # type: ignore[no-untyped-def]
     text = section_text(steel_arm.report)
-    assert "Gravity (9.80665 m/s^2) is taken along the file's -Z axis" in text
-    assert "the up axis is +Z" in text and "design_context.yaml cannot set it" in text
+    assert "Gravity (9.80665 m/s^2) is taken along the file's -Z axis (up axis used: +Z)." in text
+    assert "--up" not in text and "design_context.yaml" not in text  # how to set it is in the docs
     assert "what the joint must supply to hold the pose" in text
     data = build_robot(steel_arm.report)
     assert data is not None
@@ -314,13 +314,20 @@ def test_the_gravity_line_follows_the_up_axis_that_was_used(step_files) -> None:
         AnalyzeOptions(no_timestamp=True, material="steel", up="+Y", front="+Z"),
     )
     text = section_text(analysis.report)
-    assert "is taken along the file's -Y axis: the up axis is +Y" in text
+    assert "is taken along the file's -Y axis (up axis used: +Y)." in text
     data = build_robot(analysis.report)
     assert data is not None and data["static_holding_loads"]["gravity_direction"] == "-Y"
+
+
+ASSUMPTION_1 = (
+    "Mass and inertia are estimated from CAD volume and the material or density named for each part; "
+    "they are not measured values."
+)
 
 
 def test_the_assumptions_use_the_agreed_wording() -> None:
     assert len(md.ASSUMPTIONS) == 4
     joined = " ".join(md.ASSUMPTIONS)
+    assert ASSUMPTION_1 == md.ASSUMPTIONS[0]
     assert "they are not measured values" in joined and "will not match the real part" in joined
     assert "nothing is measured" not in joined and "are wrong" not in joined

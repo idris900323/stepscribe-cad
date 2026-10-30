@@ -27,8 +27,8 @@ from stepscribe.understanding.rigid_body import (
 )
 
 ASSUMPTIONS = [
-    "Estimates from CAD volume and the material or density named for each part: mass and inertia are "
-    "estimated from CAD volume and density; they are not measured values.",
+    "Mass and inertia are estimated from CAD volume and the material or density named for each part; "
+    "they are not measured values.",
     "Each part is taken as a solid of uniform density. Hollow, cast, welded or assembled-from-sheet parts, "
     "and models that are simplified outer skins, are not like that; the mass and inertia of such parts "
     "will not match the real part.",
@@ -199,10 +199,10 @@ def down_label(up_axis: str) -> str:
 
 
 def gravity_note(up_axis: str) -> str:
-    """Which way gravity points, why, and how the up axis is set."""
+    """Which way gravity points, as a fact (how the up axis is set is in docs/mass_distribution.md)."""
     return (
-        f"Gravity ({fmt(G, 5)} m/s^2) is taken along the file's {down_label(up_axis)} axis: the up axis is "
-        f"{up_axis} (default +Z; set it with --up or the up field of the UI; design_context.yaml cannot set it)."
+        f"Gravity ({fmt(G, 5)} m/s^2) is taken along the file's {down_label(up_axis)} axis "
+        f"(up axis used: {up_axis})."
     )
 
 
