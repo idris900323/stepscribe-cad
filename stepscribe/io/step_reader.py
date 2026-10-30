@@ -27,6 +27,14 @@ from OCP.XCAFDoc import (
     XCAFDoc_ShapeTool,
 )
 
+from stepscribe.io.step_meta import (
+    RawDimension,
+    StepMeta,
+    layer_names,
+    read_description,
+    read_dimensions,
+    read_material,
+)
 from stepscribe.text_safety import clean_name
 
 
@@ -43,6 +51,8 @@ class ProtoPart:
     shape: TopoDS_Shape
     color_rgb: list[float] | None = None
     name_cleaned: bool = False  # the file's name was altered by cleaning (the text is dropped)
+    product_name: str | None = None  # the file's own product name, when it is not a generic one
+    meta: StepMeta | None = None  # what the file states about the part (None: nothing)
 
 
 @dataclass
@@ -67,6 +77,7 @@ class StepModel:
     instances: list[InstanceRec] = field(default_factory=list)
     is_assembly: bool = False
     warnings: list[str] = field(default_factory=list)
+    dimensions: list[RawDimension] = field(default_factory=list)  # PMI of the whole file
 
 
 _UNIT_PREFIX = {
@@ -173,6 +184,7 @@ class _Walker:
         self.ct = color_tool
         self.model = model
         self.counter = 0
+        self.layers: dict[str, list[str]] = {}
 
     def proto(self, label: TDF_Label) -> ProtoPart:
         key = _label_key(label)
@@ -187,12 +199,26 @@ class _Walker:
                 else (f"{stem}_{self.counter}" if _is_generic(raw) else str(raw))
             )
             shape = XCAFDoc_ShapeTool.GetShape_s(label)
+            meta = StepMeta(
+                read_description(label),
+                read_material(label),
+                sorted(
+                    {
+                        n
+                        for entry, names in self.layers.items()
+                        if entry == key or entry.startswith(key + ":")
+                        for n in names
+                    }
+                ),
+            )
             self.model.protos[key] = ProtoPart(
                 key,
                 name,
                 shape,
                 _label_color(self.ct, label),
                 bool(raw_text) and raw_text != clean_name(raw_text),
+                None if _is_generic(raw) else raw,
+                None if meta.empty else meta,
             )
         return self.model.protos[key]
 
@@ -250,6 +276,9 @@ def read_step(path: str | Path) -> StepModel:
     reader.SetColorMode(True)
     reader.SetNameMode(True)
     reader.SetLayerMode(True)
+    reader.SetMatMode(True)  # the material a part is assigned
+    reader.SetProductMetaMode(True)  # the product description
+    reader.SetGDTMode(True)  # dimensions and tolerances (PMI)
     if reader.ReadFile(str(p)) != IFSelect_RetDone:
         raise StepReadError(f"cannot parse STEP file: {p.name}")
     if not reader.Transfer(doc):
@@ -261,6 +290,7 @@ def read_step(path: str | Path) -> StepModel:
     free = Sequence_TDF_Label()
     shape_tool.GetFreeShapes(free)
     walker = _Walker(shape_tool, color_tool, model)
+    walker.layers = layer_names(doc.Main())
     labels = _seq(free)
     for label in labels:
         walker.walk(label, TopLoc_Location(), "", None, None)
@@ -270,6 +300,7 @@ def read_step(path: str | Path) -> StepModel:
     if not model.instances:
         raise StepReadError(f"no shapes found in {p.name}")
     _drop_empty_prototypes(model, p.name)
+    model.dimensions = read_dimensions(doc.Main())
     return model
 
 

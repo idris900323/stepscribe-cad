@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
 from OCP.Bnd import Bnd_OBB
 from OCP.BRepBndLib import BRepBndLib
@@ -69,6 +71,7 @@ def mass_properties(
     name: str = "",
     density: float | None = None,
     material: str | None = None,
+    source: Literal["user", "step_file"] = "user",
 ) -> MassProperties:
     """Volume, area, centroid; mass/inertia only if a density is known."""
     vol = GProp_GProps()
@@ -76,13 +79,13 @@ def mass_properties(
     area = GProp_GProps()
     BRepGProp.SurfaceProperties_s(shape, area)
     centroid = to_np(vol.CentreOfMass())
-    source = "none"
-    if density is not None:
-        source = "user"
-    else:
+    origin: Literal["user", "step_file", "name_guess", "none"] = (
+        source if density is not None else "none"
+    )
+    if density is None:
         guess = guess_density(name)
         if guess:
-            density, material, source = guess[0], guess[1], "name_guess"
+            density, material, origin = guess[0], guess[1], "name_guess"
     volume = float(vol.Mass())
     mass = None
     inertia = None
@@ -98,6 +101,6 @@ def mass_properties(
         density_g_cm3=density,
         mass_g=mass,
         material_assumed=material,
-        material_source=source,
+        material_source=origin,
         inertia_tensor_g_mm2=inertia,
     )
