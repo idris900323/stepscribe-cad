@@ -16,7 +16,8 @@ ASSEMBLY_FACTOR = 6.0  # parts plus contacts, from progress.ASSEMBLY_PRIOR_FRACT
 MAX_WORKERS = 8
 LARGE_BYTES = 50 * 1024**2  # over this, warn
 SLOW_SECONDS = 600  # an estimate over this, warn
-LINK_MESH_MAX_TRIANGLES = 5000  # collision mesh of one robot link (export --meshes)
+LINK_MESH_MAX_TRIANGLES = 5000
+IMAGE_MAX_SIDE = 1200  # longest side in pixels of the extra images (--image-max-side)  # collision mesh of one robot link (export --meshes)
 
 
 def parallelism(cpus: int | None = None) -> int:

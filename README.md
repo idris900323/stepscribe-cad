@@ -50,8 +50,8 @@ stepscribe init-context                            # template for design intent 
 <!-- cli-defaults:start -->
 Defaults (generated from the command line, `python scripts/update_readme_defaults.py`):
 
-- `stepscribe export`: `--out` = `stepscribe_export`, `--small-budget-tokens` = `12000`, `--compact-budget-tokens` = `40000`, `--chat-max-images` = `4`, `--chat-max-mb` = `10.0`, `--up` = `+Z`, `--front` = `-Y`, `--mesh-max-triangles` = `5000`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
-- `stepscribe pack`: `--out` = `out`, `--up` = `+Z`, `--front` = `-Y`, `--budget-tokens` = `40000`, `--motion-budget-s` = `120`, `--mesh-max-triangles` = `5000`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
+- `stepscribe export`: `--out` = `stepscribe_export`, `--small-budget-tokens` = `12000`, `--compact-budget-tokens` = `40000`, `--chat-max-images` = `4`, `--chat-max-mb` = `10.0`, `--images` = `basic`, `--image-max-side` = `1200`, `--up` = `+Z`, `--front` = `-Y`, `--mesh-max-triangles` = `5000`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
+- `stepscribe pack`: `--out` = `out`, `--up` = `+Z`, `--front` = `-Y`, `--budget-tokens` = `40000`, `--images` = `basic`, `--image-max-side` = `1200`, `--motion-budget-s` = `120`, `--mesh-max-triangles` = `5000`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
 - `stepscribe analyze`: `--out` = `out`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
 - `stepscribe ui`: `--port` = `8765`, `--max-upload-mb` = `500`, `--max-jobs` = `1`, `--session-idle-min` = `15.0`, `--cache-max-gb` = `2.0`, `--idle-exit-min` = `10.0`
 - `stepscribe mcp`: `--max-jobs` = `1`, `--cache-max-gb` = `2.0`

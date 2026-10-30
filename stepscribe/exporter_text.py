@@ -16,6 +16,7 @@ from typing import Any
 from stepscribe import __version__
 from stepscribe.describe.assembly_describer import assembly_core_context
 from stepscribe.describe.budget import PackSections, estimate_tokens
+from stepscribe.describe.image_captions import caption_for
 from stepscribe.describe.part_describer import level2_context
 from stepscribe.models.schema import Part, Report
 from stepscribe.pack.writer import PackBuild
@@ -155,16 +156,19 @@ def panel_text(p: Part) -> str:
 
 def describe_image(rel: str, report: Report) -> tuple[str, str]:
     """(alt text, description) for an image path such as ``images/assembly_iso.png``."""
+    extra = caption_for(rel, report)
+    if extra is not None:
+        return extra.kind, extra.what
     name = Path(rel).name
     stem = name.rsplit(".", 1)[0]
     parts = {p.id: p for p in report.parts}
     if stem.startswith("assembly_"):
         view = stem[len("assembly_") :]
-        listed = ", ".join(f"{p.id} `{p.name}`" for p in report.parts[:30])
+        listed = ", ".join(p.id for p in report.parts[:30])
         more = " and more" if len(report.parts) > 30 else ""
         text = (
             f"{_VIEW_TEXT.get(view, f'{view} view of the whole assembly.')} Labels are part IDs "
-            f"with names. Parts: {listed}{more}."
+            f"(names are in the text). Parts: {listed}{more}."
         )
         return f"{view} view of the assembly", text
     if stem == "kinematics_iso":
@@ -191,10 +195,10 @@ def describe_image(rel: str, report: Report) -> tuple[str, str]:
             else f"in a {m.group(2)} view"
         )
         text = (
-            f"Part {p.id} `{p.name}`, viewed {how}. The white panel on the right of the image repeats: "
+            f"Part {p.id}, viewed {how}. The white panel on the right of the image repeats: "
             f"{panel_text(p)}."
         )
-        return f"{p.id} {p.name}, {m.group(2)} view", text
+        return f"{p.id}, {m.group(2)} view", text
     return stem.replace("_", " "), "Rendered view; labels use the same IDs as the text."
 
 

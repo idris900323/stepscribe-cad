@@ -99,6 +99,8 @@ def process_file(job: Job, callback: ProgressFn | None = None) -> dict[str, Any]
                         job.export.get("mesh_max_triangles", limits.LINK_MESH_MAX_TRIANGLES)
                     ),
                     mesh_visual_max_triangles=job.export.get("mesh_visual_max_triangles"),
+                    image_set=str(job.export.get("image_set", "basic")),
+                    image_max_side=int(job.export.get("image_max_side", 1200)),
                 )
             )
             status = "ok"

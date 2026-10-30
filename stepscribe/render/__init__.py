@@ -151,10 +151,6 @@ def render_labelled(
     return rendered
 
 
-def _legend(items: list[SceneItem], labels: dict[str, str]) -> list[str]:
-    return [f"{labels[i.key]}  {i.name}" for i in sorted(items, key=lambda i: labels[i.key])][:30]
-
-
 def dominant_hole_axis(part) -> tuple[Vec, Vec] | None:  # type: ignore[no-untyped-def]
     """(entry point, direction into the material) of the largest group of parallel holes, or, when
     cut-outs outnumber the holes (or there are none), of the cut-outs sharing one entry face."""
@@ -291,7 +287,11 @@ def render_part_images(
 
 
 def render_pack_images(
-    analysis: Analysis, folder: Path, tracker: Tracker | None = None
+    analysis: Analysis,
+    folder: Path,
+    tracker: Tracker | None = None,
+    image_set: str = "basic",
+    max_side: int = 1200,
 ) -> list[str]:
     """Write the assembly image set and part images into *folder*; returns assembly image paths."""
     report = analysis.report
@@ -311,7 +311,8 @@ def render_pack_images(
     if items:
         (folder / "images").mkdir(parents=True, exist_ok=True)
         labels = item_labels(items)
-        legend = _legend(items, labels) if len(items) > 1 else None
+        # the IDs are on the image: a legend would repeat them, and names are never drawn
+        legend = None
         assembled = scene_bounds(items)
         caption = size_caption(assembled, up, front)
         kin = report.understanding.kinematics if report.understanding else None
@@ -352,6 +353,11 @@ def render_pack_images(
             _save(tracker, r.image, str(folder / "images" / "kinematics_iso.png"))
             written.append("images/kinematics_iso.png")
     render_part_images(analysis, folder, up, front, tracker)
+    if image_set in ("standard", "full"):  # the basic set stops here: exactly the images of old
+        from stepscribe.render.extra_images import render_extra_images
+
+        extra = render_extra_images(analysis, folder, image_set, max_side, up, front, tracker)
+        written.extend(extra.assembly_files)
     return written
 
 
@@ -396,7 +402,7 @@ def render_view_file(
         labels,
         only=hl,
         highlight=hl,
-        legend=_legend(items, labels) if len(items) > 1 else None,
+        legend=None,
     )
     target = Path(out)
     target.parent.mkdir(parents=True, exist_ok=True)

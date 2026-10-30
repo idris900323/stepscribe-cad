@@ -101,7 +101,7 @@ def build_sections(
     l1s = {p.id: level1_short(p) for p in ranked}
     l2 = {
         p.id: env.get_template("part.md.j2")
-        .render(c=level2_context(p, rels.get(p.id), (recon or {}).get(p.id)))
+        .render(c=level2_context(p, rels.get(p.id), (recon or {}).get(p.id), report))
         .rstrip()
         + "\n"
         for p in ranked
@@ -177,6 +177,8 @@ def write_pack(
     meshes: bool = False,
     mesh_max_triangles: int = DEFAULT_MAX_TRIANGLES,
     mesh_visual_max_triangles: int | None = None,
+    image_set: str = "basic",
+    image_max_side: int = 1200,
 ) -> Path:
     """Write the whole pack folder and return its path."""
     return write_pack_build(
@@ -189,6 +191,8 @@ def write_pack(
         meshes=meshes,
         mesh_max_triangles=mesh_max_triangles,
         mesh_visual_max_triangles=mesh_visual_max_triangles,
+        image_set=image_set,
+        image_max_side=image_max_side,
     ).folder
 
 
@@ -203,6 +207,8 @@ def write_pack_build(
     meshes: bool = False,
     mesh_max_triangles: int = DEFAULT_MAX_TRIANGLES,
     mesh_visual_max_triangles: int | None = None,
+    image_set: str = "basic",
+    image_max_side: int = 1200,
 ) -> PackBuild:
     """Write the pack (into *folder*, or ``<out_dir>/<name>_context_pack``) and keep its parts."""
     report = analysis.report
@@ -224,7 +230,9 @@ def write_pack_build(
         from stepscribe.render import render_pack_images
 
         with timings.stage("images"):
-            images_written = render_pack_images(analysis, folder, tracker)
+            images_written = render_pack_images(
+                analysis, folder, tracker, image_set, image_max_side
+            )
     else:  # reuse images rendered earlier (the interview rebuilds the text only)
         existing = folder / "images"
         images_written = (
@@ -243,7 +251,10 @@ def write_pack_build(
     put(
         "00_READ_ME_FIRST.md",
         env.get_template("00_READ_ME_FIRST.md.j2").render(
-            up=up, front=front, has_images=bool(images_written)
+            up=up,
+            front=front,
+            has_images=bool(images_written),
+            image_set=image_set if images and image_set in ("standard", "full") else None,
         ),
     )
     put("01_overview.md", sections.level0 + "\n")

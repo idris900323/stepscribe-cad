@@ -7,8 +7,9 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+from stepscribe.describe.image_captions import caption_line
 from stepscribe.describe.phrases import fmt, hole_callout, join_and, plural
-from stepscribe.models.schema import Cutout, Hole, Part, ShapeClass
+from stepscribe.models.schema import Cutout, Hole, Part, Report, ShapeClass
 
 
 def size_text(part: Part) -> str:
@@ -206,7 +207,10 @@ def cutout_row(c: Cutout, part: Part | None = None) -> dict[str, str]:
 
 
 def level2_context(
-    part: Part, relations: list[str] | None = None, recon: list[str] | None = None
+    part: Part,
+    relations: list[str] | None = None,
+    recon: list[str] | None = None,
+    report: Report | None = None,
 ) -> dict[str, Any]:
     """All the data the part template renders."""
     sc = part.shape_class
@@ -252,6 +256,6 @@ def level2_context(
         else None,
         "relations": relations or [],
         "recon": recon or [],
-        "images": part.images,
+        "images": [caption_line(i, report) for i in part.images] if report else part.images,
         "warnings": part.warnings,
     }

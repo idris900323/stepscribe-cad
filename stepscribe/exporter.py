@@ -146,6 +146,9 @@ def _params(params: dict[str, Any]) -> dict[str, Any]:
         out["meshes"] = int(params.get("mesh_max_triangles", DEFAULT_MAX_TRIANGLES))
         if params.get("mesh_visual_max_triangles") is not None:
             out["mesh_visual"] = int(params["mesh_visual_max_triangles"])
+    if params.get("image_set") in ("standard", "full"):  # same: only when not the default set
+        out["image_set"] = params["image_set"]
+        out["image_max_side"] = int(params.get("image_max_side", 1200))
     return out
 
 
@@ -174,6 +177,8 @@ def export(
     meshes: bool = False,
     mesh_max_triangles: int = DEFAULT_MAX_TRIANGLES,
     mesh_visual_max_triangles: int | None = None,
+    image_set: str = "basic",
+    image_max_side: int = 1200,
 ) -> ExportResult:
     """Analyse *path* (unless the export is already on disk) and write the export folder."""
     p = Path(path)
@@ -189,6 +194,8 @@ def export(
             "meshes": meshes,
             "mesh_max_triangles": mesh_max_triangles,
             "mesh_visual_max_triangles": mesh_visual_max_triangles,
+            "image_set": image_set,
+            "image_max_side": image_max_side,
         }
     )
     opts = _with_context(options or AnalyzeOptions(), context_file)
@@ -230,6 +237,8 @@ def export(
             meshes=meshes,
             mesh_max_triangles=mesh_max_triangles,
             mesh_visual_max_triangles=mesh_visual_max_triangles,
+            image_set=image_set,
+            image_max_side=image_max_side,
         )
     pack = build.folder
     warnings: list[str] = []
