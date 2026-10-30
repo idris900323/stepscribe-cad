@@ -4,13 +4,22 @@ on:
   push:
     branches: [main, "build/**"]
   pull_request:
+  workflow_dispatch:  # the full matrix, macOS included, on demand: run it on release/v2 before a release
+
+# Only a pull request run is replaced by a newer one for the same pull request. Every other run
+# (a push to main, release/** or build/**, or a manual run) has its own group and is never cancelled.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS runners are scarce and slow, so a pull request runs Linux and Windows; macOS runs
+        # on every push to main and build/** and on demand (workflow_dispatch), before a release.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
         python: ["3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
@@ -35,6 +44,38 @@ jobs:
       - run: python scripts/check_release.py
       - run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}pytest -q -p no:cacheprovider --junitxml=junit.xml
       - name: No test may be skipped unexpectedly (the POSIX tests must run on Linux and macOS)
+        if: always()
+        run: python scripts/check_skips.py junit.xml
+
+  # Layer 2 of validate-robot needs the optional extra (MuJoCo). Every test that uses MuJoCo runs
+  # here, on every platform and Python of the matrix; STEPSCRIBE_REQUIRE_ROBOT=1 makes a skip a failure.
+  # macos-latest is Apple silicon, for which MuJoCo has wheels (there is none for macOS Intel, and no
+  # Intel runner label is used here).
+  robot:
+    strategy:
+      fail-fast: false
+      matrix:
+        # as the test job: macOS on pushes to main / build/** and on demand, not on pull requests
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
+        python: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    env:
+      STEPSCRIBE_REQUIRE_ROBOT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Virtual display for the image renderer (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev,robot]"
+      - name: Dependency audit with the robot extra installed (a warning for now, like the main audit)
+        run: pip-audit --skip-editable
+        continue-on-error: true
+      - run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}pytest -q -p no:cacheprovider --junitxml=junit.xml tests/test_robot_libs.py tests/test_robot_validate.py
+      - name: The robot tests must have run, not been skipped
         if: always()
         run: python scripts/check_skips.py junit.xml
 

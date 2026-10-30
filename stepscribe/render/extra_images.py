@@ -26,8 +26,9 @@ from stepscribe.describe.image_captions import (
     hole_label,
     hole_pattern_of,
 )
+from stepscribe.describe.phrases import fmt
 from stepscribe.geometry.part_geom import PartGeom
-from stepscribe.models.schema import Hole, Part, Report
+from stepscribe.models.schema import Hole, HolePattern, Part, Report
 from stepscribe.render.overlay import Label, _font, draw_labels, draw_text, save_png, text_size
 from stepscribe.render.raster import Rendered, render_scene
 from stepscribe.render.scene import (
@@ -55,6 +56,15 @@ MAX_FACES = (
 CIRCLE_POINTS = 48
 THROUGH = (214, 39, 40)
 BLIND = (31, 119, 180)
+GROUP_MIN_HOLES = 3  # holes of one pattern drawn as a group (one tint, one legend line)
+GROUP_TINTS = [
+    (255, 214, 153),
+    (173, 216, 230),
+    (198, 239, 163),
+    (240, 176, 208),
+    (207, 190, 240),
+    (255, 245, 157),
+]
 SEVERITY = {
     "high": (214, 39, 40),
     "medium": (255, 127, 14),
@@ -248,8 +258,10 @@ def hole_map(
     rendered = render_scene([item], cam, (w, h))
     draw = ImageDraw.Draw(rendered.image)
     patterns = hole_pattern_of(part)
+    by_id = {pat.id: pat for pat in part.hole_patterns}
     labels: list[Label] = []
     hidden: list[str] = []
+    seen: list[tuple[Hole, float, float, np.ndarray]] = []
     view = cam.position - cam.focal
     view = view / np.linalg.norm(view)
     for hole in part.holes[:MAX_HOLE_LABELS]:
@@ -258,10 +270,25 @@ def hole_map(
         if not (facing or rendered.visible(x, y, depth)):
             hidden.append(hole.id)
             continue
-        poly = hole_circle_pixels(rendered, item, hole)
+        seen.append((hole, x, y, hole_circle_pixels(rendered, item, hole)))
+    # the holes of one pattern are one group: one tint and one legend line instead of a label each
+    members: dict[str, int] = {}
+    for hole, *_rest in seen:
+        if hole.id in patterns:
+            members[patterns[hole.id]] = members.get(patterns[hole.id], 0) + 1
+    grouped = [pid for pid, n in members.items() if n >= GROUP_MIN_HOLES]
+    tints = {pid: GROUP_TINTS[i % len(GROUP_TINTS)] for i, pid in enumerate(sorted(grouped))}
+    first: dict[str, Hole] = {}
+    for hole, x, y, poly in seen:
+        pid = patterns.get(hole.id)
+        in_group = pid in tints
+        if in_group:
+            first.setdefault(str(pid), hole)
+            draw.polygon([tuple(pt) for pt in poly], fill=tints[str(pid)])
         color = THROUGH if hole.is_through else BLIND
         draw.line([*map(tuple, poly), tuple(poly[0])], fill=color, width=4)
-        labels.append(Label(hole_label(hole, patterns.get(hole.id)), x, y))
+        if not in_group:
+            labels.append(Label(hole_label(hole, pid), x, y))
     if hidden and notes is not None:
         shown = ", ".join(hidden[:10]) + (", ..." if len(hidden) > 10 else "")
         noun = "hole faces" if len(hidden) == 1 else "holes face"
@@ -269,8 +296,27 @@ def hole_map(
             f"hole map {part.id}: {len(hidden)} {noun} away from this view and not circled ({shown})"
         )
     image = draw_labels(rendered.image, labels)
-    image = swatch_legend(image, [(THROUGH, "through hole"), (BLIND, "blind hole")])
+    key = [(THROUGH, "through hole outline"), (BLIND, "blind hole outline")]
+    key += [(tints[pid], pattern_summary(by_id[pid], first[pid])) for pid in sorted(tints)]
+    image = swatch_legend(image, key)
     return _title(image, f"{part.id} hole map (dia in mm)")
+
+
+def pattern_summary(pat: HolePattern, hole: Hole) -> str:
+    """'P001  9x dia 6 thru, pitch 20': the one legend line of a group of holes."""
+    depth = f"x {fmt(hole.depth_mm)} deep" if hole.depth_mm else "blind"
+    text = (
+        f"{pat.id}  {pat.count}x dia {fmt(pat.diameter_mm)} {'thru' if hole.is_through else depth}"
+    )
+    if pat.kind == "rectangular_grid" and pat.grid_rows and pat.grid_cols:
+        text += f", {pat.grid_rows} x {pat.grid_cols} grid"
+        if pat.col_pitch_mm and pat.row_pitch_mm:
+            text += f", pitch {fmt(pat.col_pitch_mm)} x {fmt(pat.row_pitch_mm)}"
+    elif pat.kind == "circular" and pat.pitch_circle_diameter_mm:
+        text += f", on dia {fmt(pat.pitch_circle_diameter_mm)}"
+    elif pat.pitch_mm:
+        text += f", pitch {fmt(pat.pitch_mm)}"
+    return text
 
 
 # ------------------------------------------------------------------ driver

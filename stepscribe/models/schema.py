@@ -58,7 +58,7 @@ class MassProperties(_M):
     density_g_cm3: float | None = None
     mass_g: float | None = None
     material_assumed: str | None = None
-    material_source: Literal["user", "name_guess", "none"] = "none"
+    material_source: Literal["user", "step_file", "name_guess", "none"] = "none"
     inertia_tensor_g_mm2: list[list[float]] | None = None
 
 
@@ -585,6 +585,42 @@ class Understanding(_M):
     summary: str = ""
 
 
+class StepMaterial(_M):
+    """A material the STEP file assigns to a part (names are cleaned; they are labels)."""
+
+    name: str
+    description: str | None = None
+    density_stated: float | None = None  # the number in the file (its unit is not trusted)
+    density_g_cm3: float | None = None  # that number as g/cm3 when it is plausible (see step_apply)
+    density_used: bool = False  # True when it set the part's mass
+
+
+class PmiDimension(_M):
+    """A dimension the STEP file states, with the cross-check against the geometry where one exists."""
+
+    id: str  # "PMI001"
+    kind: str  # "linear_distance", "diameter", "radius", ... (the file's dimension type)
+    stated: float  # mm, or degrees for an angle
+    unit: Literal["mm", "deg"] = "mm"
+    plus: float | None = None
+    minus: float | None = None
+    face_ids: list[str] = Field(default_factory=list)
+    measured: float | None = None
+    status: Literal["within_tolerance", "outside_tolerance", "not_checked"] = "not_checked"
+    note: str = ""
+
+
+class StepData(_M):
+    """What the STEP file itself states about a part. Absent when it states none of this."""
+
+    product_name: str | None = None
+    description: str | None = None
+    color_rgb: list[float] | None = None
+    material: StepMaterial | None = None
+    layers: list[str] = Field(default_factory=list)
+    dimensions: list[PmiDimension] = Field(default_factory=list)
+
+
 class Part(_M):
     id: str
     name: str
@@ -614,6 +650,15 @@ class Part(_M):
     warnings: list[str] = Field(default_factory=list)
     understanding: PartUnderstanding | None = None
     name_cleaned: bool = False  # the name in the file was changed by cleaning; its text is not kept
+    from_step: StepData | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_step_data(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``from_step`` only for a part whose STEP file states something."""
+        data: dict[str, Any] = handler(self)
+        if data.get("from_step") is None:
+            data.pop("from_step", None)
+        return data
 
 
 # ---------- assembly ----------
