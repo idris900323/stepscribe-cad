@@ -16,7 +16,9 @@ import numpy as np
 
 G = 9.80665  # m/s^2, standard gravity
 
-STATIC_LABEL = "static holding load, gravity only, at this pose; not dynamic, not a motor selection"
+STATIC_LABEL = (
+    "static holding torque, gravity only, at this pose; not dynamic, not a motor selection"
+)
 
 
 @dataclass(frozen=True)

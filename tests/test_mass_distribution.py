@@ -278,3 +278,17 @@ def test_a_clockwise_answer_flips_the_sign_of_that_joints_torque(steel_arm) -> N
     # and the text says the same number with the opposite sign
     text = section_text(flipped)
     assert f"KJ2 (revolute): holding {md.fmt(a['KJ2']['value'], 3)} N*m" in text
+
+
+def test_the_wording_is_the_agreed_one_in_the_pack_and_in_robot_json(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    assert (
+        STATIC_LABEL
+        == "static holding torque, gravity only, at this pose; not dynamic, not a motor selection"
+    )
+    data = build_robot(steel_arm.report)
+    assert data is not None
+    s = data["static_holding_loads"]
+    assert s["label"] == STATIC_LABEL
+    assert s["estimate"] == "estimate from geometry and density; not measured"
+    assert s["assumptions"] == md.ASSUMPTIONS and "prismatic" in s["unit_note"]
+    assert section_text(steel_arm.report).count(f"### Joint loads: {STATIC_LABEL}") == 1

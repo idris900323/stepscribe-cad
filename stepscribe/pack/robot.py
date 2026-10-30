@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 
 from stepscribe.models.schema import AxisLabel, KinJoint, Part, Report
-from stepscribe.understanding.mass_distribution import link_body, principal_dict
+from stepscribe.understanding.mass_distribution import ASSUMPTIONS, link_body, principal_dict
 from stepscribe.understanding.process import complex_geometry_reason
 from stepscribe.understanding.rigid_body import STATIC_LABEL, G, JointSpec, Payload, holding_loads
 
@@ -246,6 +246,9 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
     held = holding_loads(specs, bodies, _up(asm.up_axis), payload)
     static_loads: dict[str, Any] = {
         "label": STATIC_LABEL,
+        "estimate": "estimate from geometry and density; not measured",
+        "assumptions": ASSUMPTIONS,
+        "unit_note": "N*m for a revolute joint; for a prismatic joint the value is a force in N",
         "pose": "the pose stored in the file (all joint angles zero)",
         "gravity_m_s2": G,
         "up_axis": asm.up_axis,
