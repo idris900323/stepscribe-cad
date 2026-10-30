@@ -54,7 +54,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # as the test job: macOS on pushes to main / build/** and on demand, not on pull requests
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
         python: ["3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     env:
