@@ -98,6 +98,39 @@ def test_the_image_set_decides_which_images_the_page_lists(  # type: ignore[no-u
     assert ("PRT001_holes.png" in names) is has_hole_map, sorted(names)
 
 
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [(None, "standard"), ("basic", "basic"), ("standard", "standard"), ("full", "full")],
+)
+def test_the_chosen_image_set_is_the_one_the_pack_is_written_with(  # type: ignore[no-untyped-def]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, given: str | None, expected: str
+) -> None:
+    """Logic only: the analysis and the pack writer are stubbed, so this runs on every OS."""
+    import types
+
+    from stepscribe.ui import server as ui_server
+    from stepscribe.ui import worker
+
+    seen: dict[str, object] = {}
+
+    def fake_write_pack(*args, **kwargs):  # type: ignore[no-untyped-def]
+        seen.update(kwargs)
+        return tmp_path / "pack"
+
+    fake_analysis = types.SimpleNamespace(
+        parts=[object()], report=types.SimpleNamespace(errors=[], understanding=None)
+    )
+    monkeypatch.setattr("stepscribe.api.analyze_full", lambda *a, **k: fake_analysis)
+    monkeypatch.setattr("stepscribe.pack.writer.write_pack", fake_write_pack)
+    params = ui_server._params({} if given is None else {"image_set": given})
+    assert params["image_set"] == expected  # the page and the API default to standard
+    messages: list[dict] = []  # type: ignore[type-arg]
+    queue = types.SimpleNamespace(put=messages.append)
+    worker.run_job({**params, "path": "x.step", "out": str(tmp_path)}, queue)
+    assert seen["image_set"] == expected, seen
+    assert [m["type"] for m in messages][-1] == "done", messages
+
+
 def test_an_unknown_image_set_is_rejected(server: str, step_files) -> None:  # type: ignore[no-untyped-def]
     req = urllib.request.Request(
         server + "/api/upload?name=plate.step&image_set=everything",
