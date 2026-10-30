@@ -543,6 +543,12 @@ def schema(out: Annotated[Path | None, typer.Option("--out", "-o")] = None) -> N
 @app.command()
 def doctor(
     json_out: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+    robot: Annotated[
+        bool,
+        typer.Option(
+            "--robot", help="Also say what is available for robot validation (see validate-robot)."
+        ),
+    ] = False,
 ) -> None:
     """Check this computer: versions, rendering, cache, memory; with a fix for each problem."""
     import dataclasses
@@ -550,12 +556,68 @@ def doctor(
     from stepscribe import doctor as doctor_mod
 
     checks = doctor_mod.run_checks()
+    if robot:
+        checks += doctor_mod.robot_checks()
     if json_out:
         typer.echo(json.dumps([dataclasses.asdict(c) for c in checks], indent=2))
     else:
         typer.echo(doctor_mod.format_report(checks))
     if any(c.level == "fail" for c in checks):
         raise typer.Exit(1)
+
+
+@app.command("validate-robot")
+def validate_robot(
+    path: Annotated[
+        Path,
+        typer.Argument(exists=True, help="A robot.urdf, or a pack or export folder holding one."),
+    ],
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend", help="Library adapter for the cross-check (default: the first installed)."
+        ),
+    ] = None,
+    poses: Annotated[
+        int, typer.Option(min=0, max=50, help="Fixed random poses besides the zero pose.")
+    ] = 4,
+    json_out: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+    require_ready: Annotated[
+        bool,
+        typer.Option(
+            "--require-ready", help="Also exit with 2 when the file is not simulator ready."
+        ),
+    ] = False,
+) -> None:
+    """Check a robot URDF: structural validity, simulator readiness, and (if a library is installed) forward kinematics.
+
+    Validity and readiness are reported separately. Exit 1 when the file is not valid.
+    """
+    import dataclasses
+
+    from stepscribe import robot_check
+
+    try:
+        result = robot_check.validate(path, backend, poses)
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    **dataclasses.asdict(result),
+                    "structurally_valid": result.structurally_valid,
+                    "simulator_ready": result.simulator_ready,
+                },
+                indent=2,
+            )
+        )
+    else:
+        typer.echo(robot_check.format_report(result))
+    if not result.structurally_valid or result.layer2.status in ("failed", "error"):
+        raise typer.Exit(1)
+    if require_ready and not result.simulator_ready:
+        raise typer.Exit(2)
 
 
 @app.command()

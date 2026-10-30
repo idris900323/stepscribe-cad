@@ -118,6 +118,26 @@ def test_deselected_tests_are_not_counted_as_skips(tmp_path: Path) -> None:
     assert mod.main(["check_skips.py", str(junit)]) == 0
 
 
+def test_the_optional_yourdfpy_test_may_be_skipped_everywhere(tmp_path: Path) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, "yourdfpy is not installed (optional: install it yourself)")
+    for platform in ("linux", "darwin", "win32"):
+        assert mod.unexpected_skips(xml, platform) == []
+
+
+def test_robot_extra_skips_are_allowed_except_in_the_robot_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, "the robot extra is not installed")
+    monkeypatch.delenv("STEPSCRIBE_REQUIRE_ROBOT", raising=False)
+    for platform in ("linux", "darwin", "win32"):
+        assert mod.unexpected_skips(xml, platform) == []
+    monkeypatch.setenv("STEPSCRIBE_REQUIRE_ROBOT", "1")  # the `robot` CI job
+    for platform in ("linux", "darwin", "win32"):
+        assert len(mod.unexpected_skips(xml, platform)) == 1
+
+
 def test_the_macos_only_memory_test_may_not_be_skipped_on_macos(tmp_path: Path) -> None:
     mod = _load()
     xml = _junit(tmp_path, "only on macOS: it reads the real vm_stat")
