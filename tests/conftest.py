@@ -119,6 +119,8 @@ RENDER_TESTS = {
     "test_image_tools_return_small_pngs_and_panel_text",
     "test_section_and_render_return_png",
     "test_page_and_upload_flow",
+    "test_the_image_set_decides_which_images_the_page_lists[basic-False]",
+    "test_the_image_set_decides_which_images_the_page_lists[standard-True]",
     "test_interview_over_http",
 }
 

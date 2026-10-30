@@ -2111,6 +2111,7 @@
           "default": "none",
           "enum": [
             "user",
+            "step_file",
             "name_guess",
             "none"
           ],
@@ -2510,6 +2511,17 @@
           "default": false,
           "title": "Name Cleaned",
           "type": "boolean"
+        },
+        "from_step": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -2572,6 +2584,98 @@
         "process"
       ],
       "title": "PartUnderstanding",
+      "type": "object"
+    },
+    "PmiDimension": {
+      "additionalProperties": false,
+      "description": "A dimension the STEP file states, with the cross-check against the geometry where one exists.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "stated": {
+          "title": "Stated",
+          "type": "number"
+        },
+        "unit": {
+          "default": "mm",
+          "enum": [
+            "mm",
+            "deg"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "plus": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plus"
+        },
+        "minus": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minus"
+        },
+        "face_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Face Ids",
+          "type": "array"
+        },
+        "measured": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured"
+        },
+        "status": {
+          "default": "not_checked",
+          "enum": [
+            "within_tolerance",
+            "outside_tolerance",
+            "not_checked"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "stated"
+      ],
+      "title": "PmiDimension",
       "type": "object"
     },
     "Pocket": {
@@ -3306,6 +3410,134 @@
         "deviation_mm"
       ],
       "title": "StandardMatch",
+      "type": "object"
+    },
+    "StepData": {
+      "additionalProperties": false,
+      "description": "What the STEP file itself states about a part. Absent when it states none of this.",
+      "properties": {
+        "product_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "color_rgb": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color Rgb"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepMaterial"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "layers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Layers",
+          "type": "array"
+        },
+        "dimensions": {
+          "items": {
+            "$ref": "#/$defs/PmiDimension"
+          },
+          "title": "Dimensions",
+          "type": "array"
+        }
+      },
+      "title": "StepData",
+      "type": "object"
+    },
+    "StepMaterial": {
+      "additionalProperties": false,
+      "description": "A material the STEP file assigns to a part (names are cleaned; they are labels).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "density_stated": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Density Stated"
+        },
+        "density_g_cm3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Density G Cm3"
+        },
+        "density_used": {
+          "default": false,
+          "title": "Density Used",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "StepMaterial",
       "type": "object"
     },
     "StructuralFeature": {

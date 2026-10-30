@@ -26,6 +26,7 @@ from stepscribe.analysis import (
 from stepscribe.features.holes import assemble_bores
 from stepscribe.geometry.occ_utils import unique_subshapes
 from stepscribe.geometry.part_geom import PartGeom
+from stepscribe.io.step_apply import step_data
 from stepscribe.io.step_reader import StepModel, StepReadError, read_step
 from stepscribe.models.schema import SCHEMA_VERSION, Meta, Part, Report
 from stepscribe.progress import Tracker
@@ -262,6 +263,16 @@ def analyze_full(
         done_parts = _analyse_bodies(bodies, faces, p.name, opts, tracker, errors)
     for key, geom, part in done_parts:
         part.name_cleaned = model.protos[key].name_cleaned
+        proto = model.protos[key]
+        part.from_step = step_data(
+            part,
+            geom,
+            proto.product_name,
+            proto.meta,
+            [d for d in model.dimensions if d.owner_key == key],
+            model.original_unit,
+            opts,
+        )
         ap = AnalyzedPart(part, geom)
         parts.append(ap)
         proto_parts.setdefault(key, []).append(ap)
