@@ -4,13 +4,21 @@ on:
   push:
     branches: [main, "build/**"]
   pull_request:
+  workflow_dispatch:  # the full matrix, macOS included, on demand: run it on release/v2 before a release
+
+# A new push or a reopened pull request replaces the run that is still going for the same ref.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS runners are scarce and slow, so a pull request runs Linux and Windows; macOS runs
+        # on every push to main and build/** and on demand (workflow_dispatch), before a release.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
         python: ["3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
@@ -46,7 +54,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # as the test job: macOS on pushes to main / build/** and on demand, not on pull requests
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
         python: ["3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     env:
