@@ -31,6 +31,11 @@ Repository = "https://github.com/idris900323/stepscribe-cad"
 dev = ["build", "hatchling==1.32.4", "build123d", "packaging", "psutil", "pytest", "pytest-cov", "ruff", "mypy", "pip-audit", "types-PyYAML"]
 mcp = ["mcp>=2,<3"]
 llm = ["httpx"]
+# Layer 2 of validate-robot: MuJoCo, for the kinematics cross-check and for simulator readiness.
+# MuJoCo has no macOS Intel wheel, so the extra installs nothing there; see docs/robot_validation.md.
+robot = [
+    "mujoco==3.17.0; sys_platform != 'darwin' or platform_machine == 'arm64'",
+]
 
 [project.scripts]
 stepscribe = "stepscribe.cli:app"

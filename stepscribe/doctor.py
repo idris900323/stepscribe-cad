@@ -45,6 +45,29 @@ class Probe:
     cpus: Callable[[], int]
 
 
+def robot_checks() -> list[Check]:
+    """What is available for `validate-robot`: the built-in checks and any installed library adapter."""
+    from stepscribe.robot_check.backends import INSTALL_HINT, available_backends
+
+    checks = [
+        Check("robot validation: structural checks", "ok", "built in, no extra library needed")
+    ]
+    found = available_backends()
+    if found:
+        listed = ", ".join(f"{n} {b.version()}" for n, b in found.items())
+        checks.append(Check("robot validation: library cross-check", "ok", listed))
+    else:
+        checks.append(
+            Check(
+                "robot validation: library cross-check",
+                "warn",
+                "no optional robotics library is installed (optional: layer 1 still runs)",
+                INSTALL_HINT,
+            )
+        )
+    return checks
+
+
 def _dist_version(name: str) -> str | None:
     try:
         return importlib.metadata.version(name)
