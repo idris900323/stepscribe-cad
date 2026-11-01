@@ -39,7 +39,9 @@ def disagreements(sites: dict[str, str]) -> list[str]:
 
 def test_every_site_that_carries_the_version_agrees() -> None:
     sites = collect_sites()
-    assert len(sites) >= 6, sites  # the collector must not quietly find nothing
+    assert len(sites) >= 5, sites  # the collector must not quietly find nothing
+    for expected in ("__version__", "plugin.json", "marketplace.json", "report.json", "FULL.md"):
+        assert any(expected in name for name in sites), expected
     assert disagreements(sites) == [], disagreements(sites)
 
 
