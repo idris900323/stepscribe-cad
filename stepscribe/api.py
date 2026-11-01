@@ -20,6 +20,7 @@ from stepscribe.analysis import (
     assign_part_ids,
     bore_chunk,
     may_split_bores,
+    memory_advice,
     split_bodies,
     worker_choice,
 )
@@ -113,6 +114,10 @@ def _analyse_bodies(
     timings.note("part_workers", text)
     timings.count("part_workers", workers)
     tracker.emit(text)
+    advice = memory_advice(choice) if workers == choice.workers else None
+    if advice:
+        timings.note("part_workers_advice", advice)
+        tracker.emit(advice)
     results: dict[int, Part] = {}
     bores: dict[int, list[Any] | None] = {}
 

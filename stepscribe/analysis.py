@@ -375,6 +375,24 @@ class WorkerChoice:
         )
 
 
+def memory_advice(choice: WorkerChoice) -> str | None:
+    """One plain sentence when free memory, not the CPU, holds the pool below what the CPU allows."""
+    if (
+        choice.rule not in ("free memory", "unknown free memory")
+        or choice.workers >= choice.cpu_cap
+    ):
+        return None
+    free = (
+        "not known on this computer"
+        if choice.free_bytes is None
+        else f"{choice.free_bytes / 1024**3:.1f} GiB now"
+    )
+    return (
+        f"Using {choice.workers} of {choice.cpu_cap} possible part workers because free memory "
+        f"({free}) is the limit; closing other programs frees memory and speeds this up."
+    )
+
+
 def worker_choice(
     n_parts: int,
     max_faces: int = 0,

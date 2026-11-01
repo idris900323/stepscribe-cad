@@ -73,3 +73,28 @@ def test_the_pool_is_logged_in_the_progress_and_in_timings(step_files, tmp_path:
     out = tmp_path / "t.json"
     out.write_text(json.dumps(data), encoding="utf-8")
     assert "part_workers" in json.loads(out.read_text("utf-8"))["notes"]
+
+
+def test_a_memory_capped_pool_says_so_in_one_plain_sentence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STEPSCRIBE_WORKERS", raising=False)
+    capped = A.worker_choice(100, 1581, 2 * GB, cpus=16, jobs=1)
+    text = A.memory_advice(capped)
+    assert text == (
+        f"Using {capped.workers} of {capped.cpu_cap} possible part workers because free memory "
+        "(2.0 GiB now) is the limit; closing other programs frees memory and speeds this up."
+    )
+    unknown = A.memory_advice(A.worker_choice(100, 1000, None, cpus=16, jobs=1))
+    assert unknown is not None and "not known on this computer" in unknown
+
+
+def test_there_is_no_advice_when_the_cpu_or_the_override_is_the_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STEPSCRIBE_WORKERS", raising=False)
+    assert A.memory_advice(A.worker_choice(100, 1000, 64 * GB, cpus=4, jobs=1)) is None
+    # 2 parts: the CPU cap is 2 and 8 GiB allow more, so memory is not what holds it
+    assert A.memory_advice(A.worker_choice(2, 1000, 8 * GB, cpus=16, jobs=1)) is None
+    monkeypatch.setenv("STEPSCRIBE_WORKERS", "1")
+    assert A.memory_advice(A.worker_choice(100, 40000, 1 * GB, cpus=16, jobs=1)) is None
