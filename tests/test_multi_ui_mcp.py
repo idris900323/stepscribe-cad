@@ -205,8 +205,16 @@ def test_the_page_accepts_several_files_and_a_zip() -> None:
 def test_the_mcp_tools_accept_a_zip_as_the_path(step_files, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     z = make_zip(tmp_path, [step_files["plate_4xM3"], step_files["cube_10"]])
     tools.clear_cache()
+    # the report tools only read the cache: a zip is analysed by start_analysis like any file
+    started = json.loads(tools.start_analysis(str(z)))
+    end = time.time() + 240
+    status = json.loads(tools.get_job_status(started["job_id"]))
+    while not status["done"] and time.time() < end:
+        time.sleep(0.3)
+        status = json.loads(tools.get_job_status(started["job_id"]))
+    assert status["done"] and status["error"] is None, status
     text = tools.get_overview(str(z))
-    assert "PRT001" in text and "PRT002" in text
+    assert "PRT001" in text and "PRT002" in text, text
     analysis = tools.get_analysis(str(z))
     assert len(analysis.report.sources) == 2
     tools.clear_cache()
