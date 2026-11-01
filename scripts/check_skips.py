@@ -26,6 +26,9 @@ EVERYWHERE = (
 WINDOWS_ONLY = ("POSIX permissions", "needs symlinks", "POSIX process groups")
 NO_GL = ("off-screen rendering is not available on this machine",)  # bare macOS / Windows VMs
 NOT_MACOS = ("only on macOS: it reads the real vm_stat",)  # the one test of the macOS memory query
+NOT_LINUX = (
+    "only on Linux: it reads the real /proc/meminfo",
+)  # the one test of the Linux memory query
 NOT_WINDOWS = ("needs Windows PowerShell", "Windows console API")  # the Windows-only tests
 # The tests of the optional robot libraries. The `robot` CI job sets STEPSCRIBE_REQUIRE_ROBOT=1,
 # and there a skip for this reason is a failure: the job exists to run them.
@@ -35,8 +38,8 @@ ALLOWED: dict[str, tuple[str, ...]] = {
     "linux": EVERYWHERE
     + NOT_WINDOWS
     + NOT_MACOS,  # xvfb provides OpenGL, so rendering tests must run
-    "darwin": EVERYWHERE + NOT_WINDOWS + NO_GL,
-    "win32": EVERYWHERE + WINDOWS_ONLY + NO_GL + NOT_MACOS,
+    "darwin": EVERYWHERE + NOT_WINDOWS + NO_GL + NOT_LINUX,
+    "win32": EVERYWHERE + WINDOWS_ONLY + NO_GL + NOT_MACOS + NOT_LINUX,
 }
 
 
