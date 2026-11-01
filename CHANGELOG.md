@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.0.0 (DRAFT: date to be confirmed by the user at release time; nothing is bumped yet)
+
+The list below is only what changes behaviour for people who already use stepscribe. Everything new is
+listed in full under "Unreleased" (to be renamed to this version in the release PR).
+
+### Changes that alter existing behaviour
+
+- **Contact kinds.** Parts that touch at an edge or a point are reported as `edge_or_point` ("A touches at an edge or point B.") instead of `point` or `line`; the split was not reliably decidable. Older saved reports and cached exports with `point` or `line` still load and are read as `edge_or_point`.
+- **Image labels carry IDs only.** No part name is drawn or captioned on any image, the basic set included (the assembly legend, the part-panel title, the link legend and the image descriptions used to carry names). The names stay in the Markdown text, labelled as data. The golden `two_plates_assembly_FULL.md` changed for this reason.
+- **Report schema 0.6.0 (unreleased, not tied to the package version)** has new optional fields: `parts[].from_step`, `material_source: step_file`, `FastenerJoint.bore_pair`, the `KinematicModel` headline fields, `KinJoint` designer fields, `Understanding.kinematics_debug` and `load_path_note`, new question kinds. A file that states none of this produces the same `report.json` as before.
+- **Headline wording and confidence.** Every `Likely:` headline now carries a confidence and its evidence; a chain of revolute joints reads `Likely: 6-axis serial arm (confidence X; evidence ...)` and its confidence is capped by the weakest joint; a single part's role phrase says "probably" from 0.60 and "possibly" from 0.30.
+- **Fasteners.** Pivot candidates and large coaxial bore pairs are no longer fasteners: they leave the "bolted to" relations, the fastener counts and the "fasteners missing?" questions and have their own sections in `02_assembly.md`.
+- **Hole edge distance** is measured from the hole's side walls (a drill-point tip no longer counts).
+- **Process guesses.** A part with complex or free-form geometry gets no process guess instead of a confident one.
+- **UI image sets.** The page builds its pack with the chosen image set (basic, standard or full); the default is **standard**, so the UI now draws more images (hole map, three views, weak spots, ...) than before and takes longer on big files.
+- **CLI image set default stays `basic`** (today's images, apart from the IDs-only change above).
+- **macOS.** Free memory is read through `vm_stat`; an unknown value caps the part-worker pool at 4 (it used to be unlimited).
+
+### Checked before release
+
+- An old saved report (the pre-change IRB1660 report, schema 0.6.0 as written then) loads with the current models: done for this draft; repeat on the release head.
+- Version strings: see `docs/release_prep_2.0.0.md` for every site and `tests/test_version_sites.py` for the check.
+
 ## Unreleased
 
 Robot files from manufacturers (a six-axis industrial arm, for example): links, joints and a robot description.
