@@ -42,10 +42,12 @@ def _reason(
     conn: Conn | None, same_link: bool, ctx: KinContext, contact_kind: str, dist: float
 ) -> str:
     if conn is None:
+        words = contact_kind.replace("_", " ")
+        article = "an" if words[:1] in "aeiou" else "a"
         what = (
             f"a near miss at {fmt(dist, 2)} mm, not touching"
             if contact_kind == "near_miss"
-            else f"a {contact_kind.replace('_', ' ')} contact"
+            else f"{article} {words} contact"
         )
         return f"no connection classified for {what}" + (
             "; merged only through other connections" if same_link else "; kept as separate links"

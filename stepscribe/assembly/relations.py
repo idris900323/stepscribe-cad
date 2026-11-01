@@ -207,8 +207,7 @@ def build_relations(
                 continue
             word = {
                 "near_miss": f"is almost touching ({fmt(c.min_distance_mm, 2)} mm from)",
-                "line": "touches along a line",
-                "point": "touches at a point",
+                "edge_or_point": "touches at an edge or point",
             }
             conf = NEAR_MISS_CONF if c.kind == "near_miss" else CONTACT_CONF
             if c.kind == "near_miss":

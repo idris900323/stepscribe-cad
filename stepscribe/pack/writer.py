@@ -11,7 +11,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from stepscribe import config
+from stepscribe import config, timings
 from stepscribe.api import Analysis
 from stepscribe.describe.assembly_describer import assembly_core_context, level0_context
 from stepscribe.describe.budget import PackSections, compose_budgeted, rank_parts
@@ -19,6 +19,7 @@ from stepscribe.describe.part_describer import level1, level1_short, level2_cont
 from stepscribe.io.report_writer import write_report
 from stepscribe.models.schema import Part, Report
 from stepscribe.pack.design_context import context_text, load_context
+from stepscribe.pack.meshes import DEFAULT_MAX_TRIANGLES, write_link_meshes
 from stepscribe.progress import Tracker
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -100,7 +101,7 @@ def build_sections(
     l1s = {p.id: level1_short(p) for p in ranked}
     l2 = {
         p.id: env.get_template("part.md.j2")
-        .render(c=level2_context(p, rels.get(p.id), (recon or {}).get(p.id)))
+        .render(c=level2_context(p, rels.get(p.id), (recon or {}).get(p.id), report))
         .rstrip()
         + "\n"
         for p in ranked
@@ -173,9 +174,26 @@ def write_pack(
     context_file: str | Path | None = None,
     images: bool = False,
     tracker: Tracker | None = None,
+    meshes: bool = False,
+    mesh_max_triangles: int = DEFAULT_MAX_TRIANGLES,
+    mesh_visual_max_triangles: int | None = None,
+    image_set: str = "basic",
+    image_max_side: int = 1200,
 ) -> Path:
     """Write the whole pack folder and return its path."""
-    return write_pack_build(analysis, out_dir, budget_tokens, context_file, images, tracker).folder
+    return write_pack_build(
+        analysis,
+        out_dir,
+        budget_tokens,
+        context_file,
+        images,
+        tracker,
+        meshes=meshes,
+        mesh_max_triangles=mesh_max_triangles,
+        mesh_visual_max_triangles=mesh_visual_max_triangles,
+        image_set=image_set,
+        image_max_side=image_max_side,
+    ).folder
 
 
 def write_pack_build(
@@ -186,6 +204,11 @@ def write_pack_build(
     images: bool = False,
     tracker: Tracker | None = None,
     folder: Path | None = None,
+    meshes: bool = False,
+    mesh_max_triangles: int = DEFAULT_MAX_TRIANGLES,
+    mesh_visual_max_triangles: int | None = None,
+    image_set: str = "basic",
+    image_max_side: int = 1200,
 ) -> PackBuild:
     """Write the pack (into *folder*, or ``<out_dir>/<name>_context_pack``) and keep its parts."""
     report = analysis.report
@@ -209,7 +232,10 @@ def write_pack_build(
     if images:
         from stepscribe.render import render_pack_images
 
-        images_written = render_pack_images(analysis, folder, tracker)
+        with timings.stage("images"):
+            images_written = render_pack_images(
+                analysis, folder, tracker, image_set, image_max_side
+            )
     else:  # reuse images rendered earlier (the interview rebuilds the text only)
         existing = folder / "images"
         images_written = (
@@ -228,7 +254,11 @@ def write_pack_build(
     put(
         "00_READ_ME_FIRST.md",
         env.get_template("00_READ_ME_FIRST.md.j2").render(
-            up=up, front=front, has_images=bool(images_written), sources=report.sources
+            up=up,
+            front=front,
+            has_images=bool(images_written),
+            image_set=image_set if images and image_set in ("standard", "full") else None,
+            sources=report.sources,
         ),
     )
     put("01_overview.md", sections.level0 + "\n")
@@ -252,7 +282,17 @@ def write_pack_build(
         put("robot.json", robot)
         from stepscribe.pack.urdf import urdf_text
 
-        urdf = urdf_text(report)
+        link_meshes = None
+        if meshes:  # only on request: the default pack stays small and fast
+            from stepscribe.pack.robot import build_robot
+
+            robot_dict = build_robot(report)
+            assert robot_dict is not None
+            with timings.stage("meshes"):
+                link_meshes = write_link_meshes(
+                    analysis, robot_dict, folder, mesh_max_triangles, mesh_visual_max_triangles
+                )
+        urdf = urdf_text(report, link_meshes)
         if urdf is not None:
             put("robot.urdf", urdf)
     if report.meta.options.get("debug_graphs"):

@@ -9,6 +9,7 @@ from typing import Any
 
 from stepscribe.assembly.file_frames import FRAME_WARNING
 from stepscribe.describe.budget import rank_parts
+from stepscribe.describe.image_captions import caption_line
 from stepscribe.describe.part_describer import shape_label
 from stepscribe.describe.phrases import fmt, join_and, plural
 from stepscribe.models.schema import BBox, FastenerJoint, Part, Report
@@ -123,7 +124,7 @@ def level0_context(
         "fasteners": [f"{row['qty']} × {row['item']}" for row in shopping],
         "up": up,
         "front": front,
-        "images": images or [],
+        "images": [caption_line(i, report) for i in images] if images else [],
     }
 
 

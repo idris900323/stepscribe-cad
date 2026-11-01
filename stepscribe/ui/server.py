@@ -726,6 +726,9 @@ def _step_path(raw: Any) -> Path:
     return p
 
 
+IMAGE_SETS = ("basic", "standard", "full")  # standard is the default of the page and of the API
+
+
 def _params(src: dict[str, Any]) -> dict[str, Any]:
     def flag(k: str, default: bool) -> bool:
         v = src.get(k)
@@ -746,12 +749,16 @@ def _params(src: dict[str, Any]) -> dict[str, Any]:
     up, front = src.get("up") or "+Z", src.get("front") or "-Y"
     if up not in AXES or front not in AXES:
         raise BadRequest("up and front must be one of " + ", ".join(AXES))
+    image_set = str(src.get("image_set") or "standard")
+    if image_set not in IMAGE_SETS:
+        raise BadRequest("image_set must be one of " + ", ".join(IMAGE_SETS))
     return {
         "material": material or None,
         "density": density,
         "up": up,
         "front": front,
         "images": flag("images", True),
+        "image_set": image_set,
         "interference": flag("interference", True),
     }
 

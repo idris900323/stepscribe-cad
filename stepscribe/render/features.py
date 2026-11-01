@@ -137,7 +137,7 @@ def panel_lines(part: Part) -> list[str]:
     m = part.mass
     sx, sy, sz = part.obb.size_sorted[::-1] if part.obb.size_sorted else (0, 0, 0)
     lines = [
-        f"#{part.id}  {part.name}",
+        f"#{part.id}",
         f"Box (oriented) {fmt(sx)} x {fmt(sy)} x {fmt(sz)} mm",
         f"Volume {fmt(m.volume_mm3, 0)} mm3",
         f"Surface area {fmt(m.surface_area_mm2, 0)} mm2",

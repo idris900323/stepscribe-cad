@@ -13,8 +13,12 @@ import sys
 from pathlib import Path
 
 
-def run_build(*args: str, cwd: Path, timeout: int = 600) -> subprocess.CompletedProcess[str]:
-    """``python -m build --no-isolation *args``; fails with the full output when it does not work."""
+def run_build(*args: str, cwd: Path, timeout: int = 1800) -> subprocess.CompletedProcess[str]:
+    """``python -m build --no-isolation *args``; fails with the full output when it does not work.
+
+    A build takes a few seconds on a quiet machine; the generous timeout only guards against a hang
+    (one run on a machine saturated by other jobs overran the old 600 s).
+    """
     try:
         import hatchling  # noqa: F401 - the pinned dev dependency that does the build
     except ImportError as exc:

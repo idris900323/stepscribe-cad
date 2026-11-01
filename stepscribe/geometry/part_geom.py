@@ -24,6 +24,7 @@ class PartGeom:
     shape: TopoDS_Shape
     warnings: list[str] = field(default_factory=list)
     bores_cache: list[Any] | None = None  # filled by features.holes.find_bore_faces
+    bores_warnings: list[str] = field(default_factory=list)  # raised by bores found elsewhere
 
     @cached_property
     def table(self) -> FaceTable:

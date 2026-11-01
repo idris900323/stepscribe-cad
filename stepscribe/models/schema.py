@@ -4,9 +4,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 SCHEMA_VERSION = "0.6.0"
 
@@ -57,7 +58,7 @@ class MassProperties(_M):
     density_g_cm3: float | None = None
     mass_g: float | None = None
     material_assumed: str | None = None
-    material_source: Literal["user", "name_guess", "none"] = "none"
+    material_source: Literal["user", "step_file", "name_guess", "none"] = "none"
     inertia_tensor_g_mm2: list[list[float]] | None = None
 
 
@@ -585,6 +586,42 @@ class Understanding(_M):
     summary: str = ""
 
 
+class StepMaterial(_M):
+    """A material the STEP file assigns to a part (names are cleaned; they are labels)."""
+
+    name: str
+    description: str | None = None
+    density_stated: float | None = None  # the number in the file (its unit is not trusted)
+    density_g_cm3: float | None = None  # that number as g/cm3 when it is plausible (see step_apply)
+    density_used: bool = False  # True when it set the part's mass
+
+
+class PmiDimension(_M):
+    """A dimension the STEP file states, with the cross-check against the geometry where one exists."""
+
+    id: str  # "PMI001"
+    kind: str  # "linear_distance", "diameter", "radius", ... (the file's dimension type)
+    stated: float  # mm, or degrees for an angle
+    unit: Literal["mm", "deg"] = "mm"
+    plus: float | None = None
+    minus: float | None = None
+    face_ids: list[str] = Field(default_factory=list)
+    measured: float | None = None
+    status: Literal["within_tolerance", "outside_tolerance", "not_checked"] = "not_checked"
+    note: str = ""
+
+
+class StepData(_M):
+    """What the STEP file itself states about a part. Absent when it states none of this."""
+
+    product_name: str | None = None
+    description: str | None = None
+    color_rgb: list[float] | None = None
+    material: StepMaterial | None = None
+    layers: list[str] = Field(default_factory=list)
+    dimensions: list[PmiDimension] = Field(default_factory=list)
+
+
 class Part(_M):
     id: str
     name: str
@@ -614,6 +651,15 @@ class Part(_M):
     warnings: list[str] = Field(default_factory=list)
     understanding: PartUnderstanding | None = None
     name_cleaned: bool = False  # the name in the file was changed by cleaning; its text is not kept
+    from_step: StepData | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_step_data(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``from_step`` only for a part whose STEP file states something."""
+        data: dict[str, Any] = handler(self)
+        if data.get("from_step") is None:
+            data.pop("from_step", None)
+        return data
 
 
 # ---------- assembly ----------
@@ -646,16 +692,25 @@ class BOMLine(_M):
     category: Literal["fabricated", "purchased_hardware", "unknown"]
 
 
+_OLD_TOUCH = re.compile(r"touches (?:at a point|along a line)")
+
+
 class Contact(_M):
     id: str
     instance_a: str
     instance_b: str
-    kind: Literal["planar_face", "cylindrical_fit", "line", "point", "near_miss"]
+    kind: Literal["planar_face", "cylindrical_fit", "edge_or_point", "near_miss"]
     min_distance_mm: float
     contact_area_mm2: float | None = None
     normal: Vec3 | None = None
     fit: Literal["clearance", "line_to_line", "interference"] | None = None
     fit_value_mm: float | None = None
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _old_kinds(cls, value: Any) -> Any:
+        """Reports and cache entries written before 3571f9a say "point" or "line"."""
+        return "edge_or_point" if value in ("point", "line") else value
 
 
 class FastenerJoint(Inference):
@@ -690,6 +745,14 @@ class Relation(_M):
     via: list[str]
     sentence: str
     confidence: float
+
+    @field_validator("sentence", mode="before")
+    @classmethod
+    def _old_wording(cls, value: Any) -> Any:
+        """The sentence the older reports carry for a touch that is now one kind."""
+        if isinstance(value, str):
+            return _OLD_TOUCH.sub("touches at an edge or point", value)
+        return value
 
 
 class SpatialFact(_M):

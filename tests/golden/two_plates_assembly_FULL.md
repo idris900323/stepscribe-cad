@@ -244,27 +244,27 @@ Every part in full detail, most important first.
 
 ![exploded view of the assembly](images/assembly_exploded.png)
 
-Exploded view: the parts are moved apart so each one is visible. The caption states the assembled size. Labels are part IDs with names. Parts: PRT001 `Plate`.
+Exploded view: the parts are moved apart so each one is visible. The caption states the assembled size. Labels are part IDs (names are in the text). Parts: PRT001.
 
 ![front view of the assembly](images/assembly_front.png)
 
-Front orthographic view of the whole assembly with overall dimension lines. Labels are part IDs with names. Parts: PRT001 `Plate`.
+Front orthographic view of the whole assembly with overall dimension lines. Labels are part IDs (names are in the text). Parts: PRT001.
 
 ![iso view of the assembly](images/assembly_iso.png)
 
-Isometric view of the whole assembly. Labels are part IDs with names. Parts: PRT001 `Plate`.
+Isometric view of the whole assembly. Labels are part IDs (names are in the text). Parts: PRT001.
 
 ![top view of the assembly](images/assembly_top.png)
 
-Top orthographic view of the whole assembly with overall dimension lines. Labels are part IDs with names. Parts: PRT001 `Plate`.
+Top orthographic view of the whole assembly with overall dimension lines. Labels are part IDs (names are in the text). Parts: PRT001.
 
-![PRT001 Plate, axis view](images/parts/PRT001_axis.png)
+![PRT001, axis view](images/parts/PRT001_axis.png)
 
-Part PRT001 `Plate`, viewed along its hole axis; hole labels (H###) and ordinate dimensions are measured from the lower-left corner. The white panel on the right of the image repeats: overall size 60.0 × 60.0 × 5.0 mm; unknown (no material given); thinnest wall 5.00 mm; 4 holes.
+Part PRT001, viewed along its hole axis; hole labels (H###) and ordinate dimensions are measured from the lower-left corner. The white panel on the right of the image repeats: overall size 60.0 × 60.0 × 5.0 mm; unknown (no material given); thinnest wall 5.00 mm; 4 holes.
 
-![PRT001 Plate, iso view](images/parts/PRT001_iso.png)
+![PRT001, iso view](images/parts/PRT001_iso.png)
 
-Part PRT001 `Plate`, viewed in a iso view. The white panel on the right of the image repeats: overall size 60.0 × 60.0 × 5.0 mm; unknown (no material given); thinnest wall 5.00 mm; 4 holes.
+Part PRT001, viewed in a iso view. The white panel on the right of the image repeats: overall size 60.0 × 60.0 × 5.0 mm; unknown (no material given); thinnest wall 5.00 mm; 4 holes.
 
 ## Appendix
 

@@ -22,13 +22,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from stepscribe import __version__, cache, config
+from stepscribe import __version__, cache, config, timings
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.api import Analysis, analyze_full
 from stepscribe.describe.budget import estimate_tokens
 from stepscribe.exporter_text import clean, compose_full, compose_small
 from stepscribe.models.schema import SCHEMA_VERSION, Report, json_schema
 from stepscribe.pack.design_context import apply_context, load_context
+from stepscribe.pack.meshes import DEFAULT_MAX_TRIANGLES
 from stepscribe.pack.writer import _safe, write_pack_build
 from stepscribe.progress import Tracker
 
@@ -85,7 +86,7 @@ def export_key(
     if context_file:
         h.update(cache.file_digest(context_file).encode())
     h.update(json.dumps(params, sort_keys=True).encode())
-    h.update(__version__.encode())
+    h.update(f"{__version__}|{SCHEMA_VERSION}".encode())
     return h.hexdigest()
 
 
@@ -140,7 +141,15 @@ def _params(params: dict[str, Any]) -> dict[str, Any]:
         "make_zip": True,
         "images": True,
     }
-    return {k: params.get(k, defaults[k]) for k in keys}
+    out = {k: params.get(k, defaults[k]) for k in keys}
+    if params.get("meshes"):  # left out when off, so existing cache keys do not change
+        out["meshes"] = int(params.get("mesh_max_triangles", DEFAULT_MAX_TRIANGLES))
+        if params.get("mesh_visual_max_triangles") is not None:
+            out["mesh_visual"] = int(params["mesh_visual_max_triangles"])
+    if params.get("image_set") in ("standard", "full"):  # same: only when not the default set
+        out["image_set"] = params["image_set"]
+        out["image_max_side"] = int(params.get("image_max_side", 1200))
+    return out
 
 
 def _with_context(options: AnalyzeOptions, context_file: str | Path | None) -> AnalyzeOptions:
@@ -165,6 +174,11 @@ def export(
     images: bool = True,
     tracker: Tracker | None = None,
     analysis: Analysis | None = None,
+    meshes: bool = False,
+    mesh_max_triangles: int = DEFAULT_MAX_TRIANGLES,
+    mesh_visual_max_triangles: int | None = None,
+    image_set: str = "basic",
+    image_max_side: int = 1200,
 ) -> ExportResult:
     """Analyse *path* (unless the export is already on disk) and write the export folder."""
     p = Path(path)
@@ -177,6 +191,11 @@ def export(
             "embed_images": embed_images,
             "make_zip": make_zip,
             "images": images,
+            "meshes": meshes,
+            "mesh_max_triangles": mesh_max_triangles,
+            "mesh_visual_max_triangles": mesh_visual_max_triangles,
+            "image_set": image_set,
+            "image_max_side": image_max_side,
         }
     )
     opts = _with_context(options or AnalyzeOptions(), context_file)
@@ -195,6 +214,8 @@ def export(
         shutil.rmtree(folder)
     folder.mkdir(parents=True)
 
+    if timings.enabled():
+        timings.reset()
     tracker = tracker or Tracker()
     tracker.images_wanted = images
     if analysis is None:
@@ -204,15 +225,21 @@ def export(
         errors = "; ".join(str(e.get("error")) for e in report.errors)
         raise ValueError(f"nothing could be analysed: {errors or 'no parts found'}")
     tracker.stage("export", "writing the export")
-    build = write_pack_build(
-        analysis,
-        root,
-        compact_budget_tokens,
-        context_file,
-        images,
-        tracker,
-        folder=folder / "pack",
-    )
+    with timings.stage("export.pack"):
+        build = write_pack_build(
+            analysis,
+            root,
+            compact_budget_tokens,
+            context_file,
+            images,
+            tracker,
+            folder=folder / "pack",
+            meshes=meshes,
+            mesh_max_triangles=mesh_max_triangles,
+            mesh_visual_max_triangles=mesh_visual_max_triangles,
+            image_set=image_set,
+            image_max_side=image_max_side,
+        )
     pack = build.folder
     warnings: list[str] = []
     no_ts = bool(report.meta.options.get("no_timestamp"))
@@ -247,6 +274,8 @@ def export(
     if context_file and Path(context_file).is_file():
         shutil.copyfile(context_file, folder / "data" / "design_context.yaml")
 
+    if timings.enabled():
+        timings.write(folder / "data" / "timings.json")
     bundle, dropped = _chat_bundle(folder, name, img_rels, report, chat_max_images, chat_max_mb)
     files = _list_files(folder, name, bundle, dropped)
     manifest_md = _manifest_md(name, files, dropped, small_budget_tokens, compact_budget_tokens)
