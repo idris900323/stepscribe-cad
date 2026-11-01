@@ -15,7 +15,9 @@ def collect_sites(root: Path = ROOT) -> dict[str, str]:
     """Version of every site, by name. A site that cannot be read is an error, not a skip."""
     sites: dict[str, str] = {}
     init = (root / "stepscribe" / "__init__.py").read_text("utf-8")
-    sites["stepscribe/__init__.py __version__"] = re.search(r'__version__\s*=\s*"([^"]+)"', init).group(1)  # type: ignore[union-attr]
+    sites["stepscribe/__init__.py __version__"] = re.search(
+        r'__version__\s*=\s*"([^"]+)"', init
+    ).group(1)  # type: ignore[union-attr]
     plugin = json.loads((root / "plugins/stepscribe/.claude-plugin/plugin.json").read_text("utf-8"))
     sites["plugins/stepscribe/.claude-plugin/plugin.json"] = plugin["version"]
     market = json.loads((root / ".claude-plugin/marketplace.json").read_text("utf-8"))
@@ -43,7 +45,9 @@ def test_every_site_that_carries_the_version_agrees() -> None:
 
 def test_the_package_version_comes_from_one_place_in_pyproject() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))
-    assert "version" in project["project"].get("dynamic", []), "pyproject must not carry its own number"
+    assert "version" in project["project"].get("dynamic", []), (
+        "pyproject must not carry its own number"
+    )
     assert project["tool"]["hatch"]["version"]["path"] == "stepscribe/__init__.py"
 
 
