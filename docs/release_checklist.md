@@ -20,6 +20,7 @@ Together with the CHANGELOG and README, check each of these against the release 
 - `docs/images.md` (image sets and their time and size)
 - `docs/kinematics.md` (links, joints, pivots)
 - `docs/robot_validation.md` (the `[robot]` extra, MuJoCo, the macOS Intel limit)
+- `docs/step_data.md` (what a STEP file already carries: colour, material, layers)
 - `docs/mass_distribution.md` (principal inertia, static holding torque, which way gravity points)
 - `docs/release_checklist.md` (this page)
 
