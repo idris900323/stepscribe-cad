@@ -232,8 +232,8 @@ class _Walker:
                 shape,
                 _label_color(self.ct, label),
                 bool(raw_text) and raw_text != clean_name(raw_text),
-                None if _is_generic(raw) else raw,
-                None if meta.empty else meta,
+                product_name=None if _is_generic(raw) else raw,
+                meta=None if meta.empty else meta,
             )
         return self.model.protos[key]
 

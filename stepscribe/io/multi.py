@@ -14,7 +14,7 @@ import math
 import re
 import stat
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -293,8 +293,19 @@ def read_step_files(
             new_key = f"f{n:02d}:{key}"
             renamed[key] = new_key
             model.protos[new_key] = ProtoPart(
-                new_key, pname, proto.shape, proto.color_rgb, proto.name_cleaned, fname
+                new_key,
+                pname,
+                proto.shape,
+                proto.color_rgb,
+                proto.name_cleaned,
+                source_file=fname,
+                product_name=proto.product_name,
+                meta=proto.meta,
             )
+        model.dimensions += [  # what the file states about its own faces follows its parts
+            replace(d, owner_key=renamed.get(d.owner_key or "", d.owner_key))
+            for d in part.dimensions
+        ]
         several = len(part.instances) > 1
         for rec in part.instances:
             parts = rec.path.split("/")
