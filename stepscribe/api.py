@@ -248,6 +248,28 @@ def analyze_full(
     envcheck.check_occt()  # a clear one-liner instead of a crash deep inside OCCT calls
     opts = options or AnalyzeOptions()
     paths = [Path(path)] if isinstance(path, (str, Path)) else [Path(q) for q in path]
+    given = paths
+    work = None
+    if any(q.suffix.lower() == ".zip" for q in paths):
+        # a zip is expanded like on the command line (checked first: no path escapes, size limits)
+        import tempfile
+
+        from stepscribe.io.multi import InputError, InputLimits, expand_inputs
+
+        work = tempfile.TemporaryDirectory(prefix="stepscribe_zip_")
+        try:
+            paths = expand_inputs(paths, InputLimits(), Path(work.name))
+        except InputError as exc:
+            work.cleanup()
+            shown = sorted(clean_name(q.name) or "model" for q in given)
+            report = Report(
+                meta=_meta(shown, "mm", opts),
+                parts=[],
+                errors=[{"file": shown[0], "error": str(exc)}],
+            )
+            return Analysis(report, None)
+        if len(given) == 1 and len(paths) > 1 and name is None:
+            name = given[0].stem  # the zip's name is the name of the combined model
     p = paths[0]
     combined = len(paths) > 1
     try:
@@ -266,6 +288,9 @@ def analyze_full(
             meta=_meta(shown, "mm", opts), parts=[], errors=[{"file": bad, "error": str(exc)}]
         )
         return Analysis(report, None)
+    finally:
+        if work is not None:
+            work.cleanup()  # the shapes are in memory now
 
     tracker = tracker or Tracker()
     bodies = [
