@@ -17,20 +17,32 @@ links and too many entries are refused with a plain message.
 
 ### MCP: `combine`
 
-Every MCP tool that takes a `path` also takes `combine` (default `false`). A folder as `path` is refused
-unless `combine=true`; with it, the STEP files under the folder (symbolic links skipped, other files
+Every MCP tool that takes a `path` also takes `combine` (default `false`), and each tool's description
+says so. **A folder as `path` is always refused unless `combine=true`**, even when it holds only STEP files
+(the flag is your consent that every STEP file under it becomes one assembly); with it, the STEP files under the folder (symbolic links skipped, other files
 ignored) are packed into one deterministic zip in the cache and analysed like a zip. The same files give
 the same zip bytes and so the same cache key; a changed, added or removed file gives another one. A
 single file or a zip is unaffected by the flag. Folders are not accepted by `diff`.
 
-## Two files with one name
+## Two files with one name, or with one content
 
-Different files that end up with the same cleaned name (for example `left/link.step` and
-`right/link.step` in a zip) are **not merged and not dropped**. They are ordered by name and then by
-content hash, so the order you give them in never matters, and the later ones get a suffix: `link.step`,
-`link_2.step`. The pack says so in `00_READ_ME_FIRST.md` (and in the report warnings): "two different
-files are called link.step (sha256 ... and ...): the second is called link_2.step in this pack". Two
-files with the same bytes are the same file: one copy is kept, and the pack says that too.
+The rule, exactly. For every pair of input files, compare the **cleaned file name** (case ignored) and the
+**sha256 of the bytes**:
+
+| Name | Content | What happens |
+|---|---|---|
+| same | same | The same file copied into two folders: **one copy is kept**, the later ones are dropped, and the pack says "X is identical to X (same name and sha256): kept one copy". |
+| same | different | Both are kept; the later one gets a suffix (`link.step`, `link_2.step`, `link_3.step`), ordered by content hash so the order you list them in never matters. The pack says "two different files are called link.step (sha256 ... and ...): the second is called link_2.step in this pack". |
+| different | same | **Both are kept as separate parts**: four identical legs saved as `leg_FL.step`, `leg_FR.step`, `leg_RL.step`, `leg_RR.step` give four parts. Nothing is collapsed and nothing is reported. |
+| different | different | Two files, as usual. |
+
+Exception: if `files:` in `design_context.yaml` has an entry for the shared name, two same-name files
+with the same content are **both kept** (the entry would otherwise be ambiguous). The first keeps the
+name and gets the placement; the second is renamed `link_2.step`, is **not** placed ("as in file")
+unless `files:` also has an entry for `link_2.step`, and the pack says so ("two files called link.step
+have the same content ...; both are kept because files: gives link.step a placement ...").
+
+Where the pack says it: `00_READ_ME_FIRST.md` (notes under the sources table) and the report warnings.
 
 ## Do the files share a frame?
 
@@ -59,6 +71,8 @@ tying it to the ground link. Touching parts without such evidence are listed und
 "floating"; this is not a claim that they are separate.
 
 ## Placing a file: `files:` in `design_context.yaml`
+
+Placement is a command-line feature: `stepscribe pack a.step b.step --context design_context.yaml`. The web page and the MCP tools take no context file, so there a frame warning can only be answered by running the command line.
 
 ```yaml
 files:

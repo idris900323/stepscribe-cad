@@ -33,7 +33,11 @@ from stepscribe.io.step_reader import (
 from stepscribe.text_safety import clean_name
 
 CHUNK = 1 << 20
-FILE_NOTE_MARKERS = ("two different files are called", "(same sha256): kept one copy")
+FILE_NOTE_MARKERS = (
+    "two different files are called",
+    "(same name and sha256): kept one copy",
+    "have the same content",
+)
 MAX_ZIP_ENTRIES = 10_000  # entries of any kind: a zip of a million empty files is also a bomb
 
 
@@ -235,15 +239,22 @@ def read_step_files(
         items.append((clean_name(p.name) or "model.step", sha256_of(p), p))
     items.sort(key=lambda t: (t[0].lower(), t[1]))
     warnings: list[str] = []
+    placed_names = {str(k).lower() for k in (placements or {})}
     kept: list[tuple[str, str, Path]] = []
-    first_of: dict[str, str] = {}
+    first_of: dict[tuple[str, str], str] = {}
+    both_kept: set[tuple[str, str]] = set()
     for fname, digest, p in items:
-        if digest in first_of:
-            warnings.append(
-                f"{fname} is identical to {first_of[digest]} (same sha256): kept one copy"
-            )
-            continue
-        first_of[digest] = fname
+        ident = (fname.lower(), digest)
+        if ident in first_of:
+            if fname.lower() in placed_names or p.name.lower() in placed_names:
+                both_kept.add(ident)  # a placement is given for this name: never drop either file
+            else:
+                warnings.append(
+                    f"{fname} is identical to {first_of[ident]} (same name and sha256): kept one copy"
+                )
+                continue
+        else:
+            first_of[ident] = fname
         kept.append((fname, digest, p))
     used_files: set[str] = set()
     named: list[tuple[str, str, Path]] = []
@@ -253,10 +264,17 @@ def read_step_files(
         stem = fname[: -len(suffix)] if suffix else fname
         unique = _unique(stem, used_files)  # same cleaned name, different file: link, link_2
         if unique != stem:  # e.g. link.step in two zip folders: say so, never merge or drop
-            warnings.append(
-                f"two different files are called {fname} (sha256 {first_digest[stem.lower()][:12]} "
-                f"and {digest[:12]}): the second is called {unique + suffix} in this pack"
-            )
+            if (fname.lower(), digest) in both_kept and first_digest.get(stem.lower()) == digest:
+                warnings.append(
+                    f"two files called {fname} have the same content (sha256 {digest[:12]}); both are kept "
+                    f"because files: gives {fname} a placement. The second is called {unique + suffix} "
+                    f"in this pack and is not placed unless files: has an entry for {unique + suffix}"
+                )
+            else:
+                warnings.append(
+                    f"two different files are called {fname} (sha256 {first_digest[stem.lower()][:12]} "
+                    f"and {digest[:12]}): the second is called {unique + suffix} in this pack"
+                )
         else:
             first_digest[stem.lower()] = digest
         named.append((unique + suffix, digest, p))
@@ -282,7 +300,11 @@ def read_step_files(
             raise StepReadError(f"{fname}: {exc}") from exc
         units.add(part.original_unit)
         stem = stems_by_file[fname]
-        spec = wanted.get(fname.lower()) or wanted.get(p.name.lower())
+        renamed_file = fname.lower() != (clean_name(p.name) or "model.step").lower()
+        by_original = (
+            None if renamed_file else wanted.get(p.name.lower())
+        )  # a renamed file is only found under its new name
+        spec = wanted.get(fname.lower()) or by_original
         src = SourceRec(fname, digest, p.stat().st_size)
         shift = np.eye(4)
         if spec is not None:

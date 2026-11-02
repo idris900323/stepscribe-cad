@@ -137,15 +137,55 @@ def test_a_single_file_in_a_list_is_exactly_today(step_files) -> None:  # type: 
     assert '"sources"' not in one and '"source_file":null' not in one.replace(" ", "")
 
 
-def test_the_same_file_twice_keeps_one_copy_and_says_so(step_files, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+def test_the_same_file_copied_into_two_folders_collapses_to_one_and_says_so(
+    step_files, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
     src = files_of(step_files["multi_touching"])
     (tmp_path / "a").mkdir()
     (tmp_path / "b").mkdir()
     first = shutil.copy(src[0], tmp_path / "a" / "link1.step")
-    again = shutil.copy(src[0], tmp_path / "b" / "link1_copy.step")
+    again = shutil.copy(src[0], tmp_path / "b" / "link1.step")  # same name AND same content
     r = run([Path(first), Path(again), src[1]]).report
     assert len(r.parts) == 2
-    assert any("link1_copy.step" in w and "identical" in w for w in r.warnings), r.warnings
+    note = [w for w in r.warnings if "identical" in w and "same name and sha256" in w]
+    assert len(note) == 1 and "kept one copy" in note[0], r.warnings
+
+
+def test_identical_content_under_different_names_stays_separate_parts(
+    step_files, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    src = files_of(step_files["multi_touching"])[0]
+    legs = [Path(shutil.copy(src, tmp_path / f"leg_{c}.step")) for c in ("FL", "FR", "RL", "RR")]
+    r = run(legs).report
+    assert sorted(p.name for p in r.parts) == ["leg_FL", "leg_FR", "leg_RL", "leg_RR"]
+    assert len(r.sources) == 4
+    assert not [w for w in r.warnings if "kept one copy" in w], r.warnings
+
+
+def test_a_placement_for_two_same_name_identical_files_keeps_both_and_renames_the_second(
+    step_files, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    src = files_of(step_files["multi_touching"])[0]
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    one = Path(shutil.copy(src, tmp_path / "a" / "link.step"))
+    two = Path(shutil.copy(src, tmp_path / "b" / "link.step"))
+    opts = placed(tmp_path, tmp_path, "files:\n  link.step: {offset_mm: [50, 0, 0]}\n")
+    r = run([one, two], opts).report
+    assert [s.name for s in r.sources] == ["link.step", "link_2.step"]
+    assert [s.placement for s in r.sources] == ["designer-supplied", "as in file"]
+    assert len(r.parts) == 2
+    note = [w for w in r.warnings if "have the same content" in w]
+    assert len(note) == 1 and "link_2.step" in note[0] and "placement" in note[0], r.warnings
+    out = tmp_path / "pack"
+    assert (
+        pack_cli(
+            [str(one), str(two), "--context", str(tmp_path / "design_context.yaml"), "-o", str(out)]
+        ).exit_code
+        == 0
+    )
+    text = "\n".join(f.read_text(encoding="utf-8") for f in out.rglob("00_READ_ME_FIRST.md"))
+    assert "have the same content" in text
 
 
 def test_two_different_files_with_one_name_get_a_stable_suffix(step_files, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
