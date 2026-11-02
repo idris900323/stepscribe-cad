@@ -12,3 +12,15 @@ Nothing is tagged, bumped or uploaded to PyPI until every line below is true.
    or weakened to get there.
 4. The CHANGELOG lists every deliberate change and the schema file is regenerated.
 5. Only then: version bump, tag, build, PyPI upload, each as its own approved step.
+
+## Docs pages to refresh in the final release PR
+
+Together with the CHANGELOG and README, check each of these against the release (numbers, wording, commands):
+
+- `docs/images.md` (image sets and their time and size)
+- `docs/kinematics.md` (links, joints, pivots)
+- `docs/robot_validation.md` (the `[robot]` extra, MuJoCo, the macOS Intel limit)
+- `docs/step_data.md` (what a STEP file already carries: colour, material, layers)
+- `docs/mass_distribution.md` (principal inertia, static holding torque, which way gravity points)
+- `docs/release_checklist.md` (this page)
+
