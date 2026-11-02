@@ -16,6 +16,8 @@ You need **Python 3.11 or newer**. Check with `python --version`; get it from py
 python -m pip install "stepscribe-cad[mcp]"
 ```
 
+The package is `stepscribe-cad`; the command it installs is `stepscribe`.
+
 Then check it with `python -m stepscribe version` (on Windows `py -m stepscribe version` also works). This form works even when your shell says `stepscribe` is not found, which happens when pip's `Scripts` folder is not on your PATH; you can use `python -m stepscribe` in place of `stepscribe` everywhere below. `python -m stepscribe doctor` checks the rest of your setup and tells you how to fix what is wrong.
 
 **2. Pick how you want to use it:**

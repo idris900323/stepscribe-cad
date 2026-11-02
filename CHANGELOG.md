@@ -21,6 +21,10 @@ listed in full under "Everything new in 2.0.0". The report schema stays 0.6.0 an
 - **CLI image set default stays `basic`** (today's images, apart from the IDs-only change above).
 - **macOS.** Free memory is read through `vm_stat`; an unknown value caps the part-worker pool at 4 (it used to be unlimited).
 
+### Known limit
+
+- **Interference check.** It reports measured overlaps. A very shallow overlap over a large mating face can be within modelling tolerance, and a part modelled inside a housing is reported as an overlap. Read the reported volume and contact area before drawing a conclusion.
+
 ### Checked before release
 
 - An old saved report (the pre-change report of a six-axis robot-arm model, schema 0.6.0 as written then) loads with the current models.
@@ -33,7 +37,7 @@ Robot files from manufacturers (a six-axis industrial arm, for example): links, 
 - **macOS: free memory is now read (`vm_stat`), and an unknown value caps the pool.** `available_ram_bytes()` returned nothing on macOS, so the worker count followed the CPU rule alone (up to 8 workers, each 0.4 GB or much more for a big part) and the bore split used a fixed rule. It now reads free + inactive + speculative pages times the page size from `/usr/bin/vm_stat` (2 s timeout; an empty or garbled answer, a timeout or a missing command gives no value, never an error) and the usual memory rule applies. When the value is not known on any OS, the pool is capped at 4 processes shared between the jobs instead of being unlimited.
 - **`stepscribe --version`** prints the package version (only the number) and exits; `stepscribe version` still prints the version with the OpenCASCADE build.
 - **The JSON Schema of `report.json` ships in the wheel** as `stepscribe/schema/report.schema.json` (the same bytes as `schema/report.schema.json` in the repository; the schema stays 0.6.0). A test builds the wheel and compares the two.
-- **Install lines name the right package.** The skill files, the MCP and robot-validation messages and the docs said `pip install stepscribe` or `stepscribe[extra]`; the PyPI project of that name is a different one. They now say `stepscribe-cad` (`pip install "stepscribe-cad[mcp]"`, `stepscribe-cad[robot]`, `stepscribe-cad[llm]`).
+- **Install lines name the right package.** The skill files, the MCP and robot-validation messages and the docs named the package without its `-cad` suffix, which on PyPI is a different project. They now say `stepscribe-cad` (`pip install "stepscribe-cad[mcp]"`, `stepscribe-cad[robot]`, `stepscribe-cad[llm]`), and a test fails if any file in the repository gets this wrong again. The 0.1.0 to 0.1.4 releases carry the wrong name in some messages and in the skill files; their PyPI project page and README were already right.
 - **Names.** An instance labelled only with an assembly-tree occurrence id (`NAUO4`) now takes the product name (`LINK3`).
 - **Links from names.** `BASE`, `LINK<n>` and `AXIS<n>` are found anywhere in a part name, with any prefix and a `_body<k>` suffix. With three or more numbered groups in a chain, bodies of one group are one link and different groups are never merged because they rest on each other.
 - **Pivots and flanges.** A coaxial hole stack that matches no screw size, at least 20 mm wide and as long as it is wide, is a pivot candidate (revolute about the bore) instead of a confidence-0 fastener that locked two links together. A large planar contact between two link groups is a revolute candidate about its normal; a bore that agrees raises the confidence, one that disagrees wins with a lower confidence and the flange reading is listed. Change the limits with `--pivot-min-diameter` and `--pivot-min-length-ratio`; see `docs/kinematics.md`.
