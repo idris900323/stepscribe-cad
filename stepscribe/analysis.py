@@ -320,13 +320,83 @@ def macos_available_bytes(run: Any = None) -> int | None:
         return None  # UnicodeDecodeError is a ValueError
 
 
+PROC_MEMINFO = "/proc/meminfo"
+CGROUP_LIMITS = (  # (limit file, usage file): cgroup v2, then v1
+    ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+    ("/sys/fs/cgroup/memory/memory.limit_in_bytes", "/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+)
+CGROUP_UNLIMITED = 1 << 60  # cgroup v1 reports a huge number when no limit is set
+
+
+def parse_meminfo(text: str) -> int | None:
+    """``MemAvailable`` of /proc/meminfo in bytes (free plus reclaimable cache), or None."""
+    import re
+
+    m = re.search(r"^MemAvailable:\s+(\d+)\s*kB\s*$", text, flags=re.MULTILINE)
+    return int(m.group(1)) * 1024 if m else None
+
+
+def parse_cgroup_free(limit: str, usage: str) -> int | None:
+    """Memory left under a cgroup limit, or None when there is no limit or the text is odd."""
+    try:
+        if limit.strip() == "max":
+            return None
+        cap, used = int(limit.strip()), int(usage.strip())
+    except ValueError:
+        return None
+    if cap <= 0 or cap >= CGROUP_UNLIMITED:
+        return None
+    return max(0, cap - used)
+
+
+def _read_text(path: str) -> str | None:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def linux_available_bytes(read: Any = None) -> int | None:
+    """Available memory on Linux: ``MemAvailable``, capped by the cgroup limit when one is set.
+
+    ``MemAvailable`` counts the page cache that can be given back, which the free-page count of
+    ``sysconf`` leaves out. In a container the cgroup limit (minus what the cgroup already uses,
+    cache included, so the figure errs low) is the real ceiling. None when /proc/meminfo cannot be
+    read: the caller then uses the free pages as before.
+    """
+    reader = read or _read_text
+    text = reader(PROC_MEMINFO)
+    available = parse_meminfo(text) if text else None
+    if available is None:
+        return None
+    for limit_file, usage_file in CGROUP_LIMITS:
+        limit, usage = reader(limit_file), reader(usage_file)
+        if limit is None or usage is None:
+            continue
+        left = parse_cgroup_free(limit, usage)
+        if left is not None:
+            return min(available, left)
+        break  # this cgroup version exists and has no limit
+    return available
+
+
 def available_ram_bytes(platform: str | None = None) -> int | None:
-    """Free physical memory, or None if this OS does not say."""
+    """Available physical memory, or None if this OS does not say.
+
+    Windows: available physical memory (free plus standby). macOS: free plus inactive plus
+    speculative pages. Linux: ``MemAvailable`` capped by the cgroup limit; if /proc/meminfo cannot
+    be read, the free pages (which leave out the page cache).
+    """
     import os
     import sys
 
     if (platform or sys.platform) == "darwin":
         return macos_available_bytes()
+    if (platform or sys.platform).startswith("linux"):
+        found = linux_available_bytes()
+        if found is not None:
+            return found
     try:
         if (platform or sys.platform) == "win32":
             import ctypes
