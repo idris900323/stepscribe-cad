@@ -17,7 +17,7 @@
 | Handing the pack to an AI in chat | `standard` | adds the images that answer the questions people ask a model: hole map, three-view drawing, weak-spot overlay and, for assemblies, contact map, link colour map and the kinematic diagram with joint axes. Captions are plain facts in the text and in `images/INDEX.md`, so a model that cannot see images still gets them |
 | A human reviewing the design | `full` | adds feature highlight, section view, wall-thickness heat map and joint ranges (when the designer gave ranges): the pictures a reviewer wants to look at, at the price of the most files |
 
-Measured on the IRB1660 (16 parts, 7 links; render stage only, analysis restored from its report; Windows, nothing else running; times move by about 10 % between runs, sizes do not):
+Measured on a six-axis robot-arm model (not in the repository; 16 parts, 7 links; render stage only, analysis restored from its report; Windows, nothing else running; times move by about 10 % between runs, sizes do not):
 
 | Set | Render time | Images folder | Extra images |
 |---|---|---|---|
