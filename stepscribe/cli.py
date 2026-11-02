@@ -35,14 +35,30 @@ app = typer.Typer(
 )
 
 
+def _print_version(value: bool) -> None:
+    if value:
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
 @app.callback()
 def _main(
     ctx: typer.Context,
+    version_flag: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            help="Print the stepscribe version and exit.",
+            callback=_print_version,
+            is_eager=True,
+        ),
+    ] = False,
     debug: Annotated[
         bool, typer.Option("--debug", help="Show the full traceback when something fails.")
     ] = False,
 ) -> None:
     ctx.meta["stepscribe.debug"] = debug
+    del version_flag  # handled by its eager callback
 
 
 console = Console()

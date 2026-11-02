@@ -65,3 +65,13 @@ def test_the_installed_package_reports_the_same_version_as_the_source() -> None:
     import stepscribe
 
     assert stepscribe.__version__ == collect_sites()["stepscribe/__init__.py __version__"]
+
+
+def test_the_version_flag_prints_only_the_package_version() -> None:
+    from typer.testing import CliRunner
+
+    from stepscribe import __version__
+    from stepscribe.cli import app
+
+    result = CliRunner().invoke(app, ["--version"])
+    assert result.exit_code == 0 and result.output.strip() == __version__
