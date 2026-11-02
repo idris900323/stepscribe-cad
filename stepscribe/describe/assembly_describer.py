@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from stepscribe.assembly.file_frames import FRAME_WARNING, frame_hedge
 from stepscribe.describe.budget import rank_parts
 from stepscribe.describe.image_captions import caption_line
 from stepscribe.describe.part_describer import shape_label
@@ -90,6 +91,14 @@ def level0_context(
     shopping = report.assembly.fastener_shopping_list if report.assembly else []
     return {
         "root_name": root_name,
+        "sources_sentence": (
+            f" It was combined from {len(report.sources)} files (listed with their hashes in "
+            "`00_READ_ME_FIRST.md`); each keeps its own coordinates."
+            if report.sources
+            else ""
+        ),
+        "hedge": frame_hedge(report.warnings),
+        "frame_warning": next((w for w in report.warnings if FRAME_WARNING in w), None),
         "n_parts": len(parts),
         "n_instances": sum(qty.values()),
         "n_fabricated": len(parts) - hardware,
@@ -161,6 +170,7 @@ def assembly_core_context(report: Report) -> dict[str, Any]:
         return {"has_assembly": False}
     return {
         "has_assembly": True,
+        "hedge": frame_hedge(report.warnings),
         "relations": [f"{r.id}: {r.sentence}" for r in a.relations],
         "joints": [_joint_line(j) for j in a.fasteners],
         "pivots": [_pivot_line(j) for j in a.pivots],

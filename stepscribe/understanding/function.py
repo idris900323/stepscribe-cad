@@ -850,7 +850,7 @@ RISK_WORDS = {
     "thin_wall": "a wall thinner than the process guideline",
     "edge_distance": "a hole too close to an edge",
     "cutout_web": "a thin web beside a cut-out",
-    "floating_part": "a part not connected to the rest",
+    "floating_part": "a part with no fastener or joint evidence linking it to the rest",
     "joint_play": "a joint on a single bearing",
     "interference": "overlapping parts",
     "unfilleted_bend": "sharp internal corners on a printed bracket",

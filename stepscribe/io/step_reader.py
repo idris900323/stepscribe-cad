@@ -51,6 +51,7 @@ class ProtoPart:
     shape: TopoDS_Shape
     color_rgb: list[float] | None = None
     name_cleaned: bool = False  # the file's name was altered by cleaning (the text is dropped)
+    source_file: str | None = None  # set when several files are combined
     product_name: str | None = None  # the file's own product name, when it is not a generic one
     meta: StepMeta | None = None  # what the file states about the part (None: nothing)
 
@@ -64,6 +65,19 @@ class InstanceRec:
     matrix: np.ndarray  # 4x4 global transform (rigid)
     parent_path: str | None
     subassembly: str | None
+    source_file: str | None = None  # set when several files are combined
+
+
+@dataclass
+class SourceRec:
+    """One input file of a combined model."""
+
+    name: str  # cleaned file name, unique within the run
+    sha256: str
+    size_bytes: int
+    placement: str = "as in file"  # or "designer-supplied"
+    offset_mm: list[float] | None = None
+    rotation_deg: list[float] | None = None
 
 
 @dataclass
@@ -77,6 +91,7 @@ class StepModel:
     instances: list[InstanceRec] = field(default_factory=list)
     is_assembly: bool = False
     warnings: list[str] = field(default_factory=list)
+    sources: list[SourceRec] = field(default_factory=list)  # empty for a single file
     dimensions: list[RawDimension] = field(default_factory=list)  # PMI of the whole file
 
 
@@ -217,8 +232,8 @@ class _Walker:
                 shape,
                 _label_color(self.ct, label),
                 bool(raw_text) and raw_text != clean_name(raw_text),
-                None if _is_generic(raw) else raw,
-                None if meta.empty else meta,
+                product_name=None if _is_generic(raw) else raw,
+                meta=None if meta.empty else meta,
             )
         return self.model.protos[key]
 

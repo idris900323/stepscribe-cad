@@ -1348,7 +1348,9 @@ def description_extras(model: KinematicModel, soft_used: list[Conn]) -> list[str
     """Parts of the description about links that float or hang on a planar rest (often none)."""
     bits: list[str] = []
     if model.floating_groups:
-        bits.append(f"floating (not connected to ground): {', '.join(model.floating_groups)}")
+        bits.append(
+            f"floating (no fastener or joint evidence linking it to ground): {', '.join(model.floating_groups)}"
+        )
     if soft_used:
         bits.append(
             "attached only by a planar rest (no fasteners): "

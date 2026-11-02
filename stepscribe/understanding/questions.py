@@ -15,6 +15,7 @@ from collections import Counter
 from typing import Any
 
 from stepscribe import config
+from stepscribe.assembly.file_frames import FRAME_WARNING
 from stepscribe.models.schema import AnswerOption, Question, Report
 from stepscribe.understanding.arm_check import is_robot
 from stepscribe.understanding.process import is_complex_guess
@@ -106,6 +107,24 @@ def generate_questions(
         scored.append((_score(q, impact, uncertainty), q))
 
     # ---- global questions
+    if any(FRAME_WARNING in w for w in report.warnings):
+        add(
+            _q(
+                "files_frame",
+                "The files do not appear to share a coordinate frame. Are they placed correctly as they are?",
+                "Nothing was moved. If a file should sit elsewhere, give its offset_mm and rotation_deg "
+                "under files: in design_context.yaml and run again; contacts and joints depend on it.",
+                "single_choice",
+                options=[
+                    ("as_is", "yes, leave them where they are"),
+                    ("offsets", "no, I will add offsets under files: in design_context.yaml"),
+                ],
+                guess="as_is",
+                applies=["summary"],
+            ),
+            5.0,
+            1.0,
+        )
     if not ctx.get("purpose"):
         add(
             _q(
@@ -246,7 +265,7 @@ def generate_questions(
             add(
                 _q(
                     "missing_part",
-                    f"{link_id} ({link.description}) is not connected to anything. Is it loose, or is a part or fastener missing from the CAD?",
+                    f"{link_id} ({link.description}) has no fastener or joint evidence linking it to anything (it may still touch other parts). Is it loose, or is a part or fastener missing from the CAD?",
                     "A floating group usually means missing mates; the answer removes or confirms the warning.",
                     "single_choice",
                     refs=list(link.instance_ids),
