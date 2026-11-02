@@ -136,7 +136,9 @@ def test_available_ram_is_known_on_this_machine() -> None:
     assert ram is None or ram > 100 * 1024**2
 
 
-def test_available_ram_reads_posix_sysconf(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_available_ram_falls_back_to_posix_sysconf(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no readable /proc/meminfo (the new first choice on Linux) the free pages are used as before."""
+    monkeypatch.setattr(analysis_mod, "linux_available_bytes", lambda read=None: None)
     monkeypatch.setattr(
         os,
         "sysconf",

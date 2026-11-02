@@ -21,6 +21,7 @@ ENV = "STEPSCRIBE_TIMINGS"
 _stages: dict[str, float] = {}
 _parts: list[dict[str, Any]] = []
 _counts: dict[str, float] = {}
+_notes: dict[str, str] = {}
 _started = [0.0]
 
 
@@ -36,6 +37,7 @@ def reset() -> None:
     _stages.clear()
     _parts.clear()
     _counts.clear()
+    _notes.clear()
     _started[0] = time.perf_counter()
 
 
@@ -63,8 +65,19 @@ def count(name: str, value: float = 1) -> None:
         _counts[name] = _counts.get(name, 0) + value
 
 
+def note(name: str, text: str) -> None:
+    """A text fact of the run (for example the part-worker pool and the rule that chose it)."""
+    if enabled():
+        _notes[name] = text
+
+
 def snapshot() -> dict[str, Any]:
-    return {"stages_s": dict(_stages), "parts": list(_parts), "counts": dict(_counts)}
+    return {
+        "stages_s": dict(_stages),
+        "parts": list(_parts),
+        "counts": dict(_counts),
+        "notes": dict(_notes),
+    }
 
 
 def write(path: Path) -> None:
