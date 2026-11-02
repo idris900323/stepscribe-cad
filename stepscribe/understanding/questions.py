@@ -265,7 +265,7 @@ def generate_questions(
             add(
                 _q(
                     "missing_part",
-                    f"{link_id} ({link.description}) is not connected to anything. Is it loose, or is a part or fastener missing from the CAD?",
+                    f"{link_id} ({link.description}) has no fastener or joint evidence linking it to anything (it may still touch other parts). Is it loose, or is a part or fastener missing from the CAD?",
                     "A floating group usually means missing mates; the answer removes or confirms the warning.",
                     "single_choice",
                     refs=list(link.instance_ids),

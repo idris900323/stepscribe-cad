@@ -218,3 +218,65 @@ def test_the_mcp_tools_accept_a_zip_as_the_path(step_files, tmp_path: Path) -> N
     analysis = tools.get_analysis(str(z))
     assert len(analysis.report.sources) == 2
     tools.clear_cache()
+
+
+# ------------------------------------------------------------------ MCP: a folder with combine
+def _wait_job(job_id: str) -> dict:  # type: ignore[type-arg]
+    end = time.time() + 240
+    status = json.loads(tools.get_job_status(job_id))
+    while not status["done"] and time.time() < end:
+        time.sleep(0.3)
+        status = json.loads(tools.get_job_status(job_id))
+    assert status["done"] and status["error"] is None, status
+    return status  # type: ignore[no-any-return]
+
+
+def test_a_folder_needs_the_combine_flag(step_files) -> None:  # type: ignore[no-untyped-def]
+    folder = step_files["multi_touching"]
+    with pytest.raises(ValueError, match="combine=true"):
+        tools.start_analysis(str(folder))
+    with pytest.raises(ValueError, match="combine=true"):
+        tools.get_overview(str(folder))
+    with pytest.raises(ValueError, match="combine=true"):
+        tools.export_pack(str(folder))
+
+
+def test_a_folder_with_combine_is_analysed_as_one_assembly(step_files, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    import shutil
+
+    folder = tmp_path / "set"
+    folder.mkdir()
+    for f in sorted(step_files["multi_touching"].glob("*.step")):
+        shutil.copy(f, folder / f.name)
+    (folder / "notes.txt").write_text("not a STEP file", encoding="utf-8")
+    tools.clear_cache()
+    started = json.loads(tools.start_analysis(str(folder), combine=True))
+    _wait_job(started["job_id"])
+    text = tools.get_overview(str(folder), combine=True)
+    assert "PRT003" in text, text
+    assert "notes.txt" not in text
+    # the same files give the same zip (same cache key); a changed file gives another one
+    before = tools.folder_zip(folder)
+    assert tools.folder_zip(folder) == before
+    (folder / "link1.step").write_bytes((folder / "link1.step").read_bytes() + b"\n")
+    assert tools.folder_zip(folder) != before
+    tools.clear_cache()
+
+
+def test_a_folder_with_no_step_files_or_too_many_is_refused(tmp_path: Path) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    (empty / "readme.txt").write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError, match="no STEP files"):
+        tools.get_overview(str(empty), combine=True)
+    many = tmp_path / "many"
+    many.mkdir()
+    for n in range(41):
+        (many / f"p{n}.step").write_bytes(b"ISO-10303-21;")
+    with pytest.raises(ValueError, match="at most 40"):
+        tools.get_overview(str(many), combine=True)
+
+
+def test_a_single_file_is_unchanged_by_the_flag(step_files) -> None:  # type: ignore[no-untyped-def]
+    p = str(step_files["cube_10"])
+    assert tools.resolve_input(p) == p == tools.resolve_input(p, True)

@@ -11,9 +11,18 @@ from __future__ import annotations
 from stepscribe.models.schema import AssemblyInfo, BBox
 
 FRAME_WARNING = "do not appear to share a coordinate frame"
+FRAME_HEDGE = (
+    "The files may not share a coordinate frame; these results may be meaningless "
+    "(they depend on where each file sits)."
+)
 NEAR_MM = 3.0  # boxes closer than this count as touching
 OVERLAP_SHARE = 0.5  # of the smaller box: this much inside the other is heavy overlap
 FILES_SHARE = 0.5  # of the file pairs that overlap heavily before the files are called piled up
+
+
+def frame_hedge(warnings: list[str]) -> str:
+    """The hedge line when a frame warning is active, else an empty string."""
+    return FRAME_HEDGE if any(FRAME_WARNING in w for w in warnings) else ""
 
 
 def _box(boxes: list[BBox]) -> tuple[list[float], list[float]]:

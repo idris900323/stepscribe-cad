@@ -11,6 +11,8 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from stepscribe.assembly.file_frames import frame_hedge
+
 
 def job_options(job: dict[str, Any]) -> Any:
     """The AnalyzeOptions a UI job runs with (imports lazily: the page server never loads OCC)."""
@@ -387,6 +389,7 @@ def summarise_pack(folder: Path) -> dict[str, Any]:
         if asm
         else [],
         "total_mass_g": asm["total_mass_g"] if asm else None,
+        "frame_hedge": frame_hedge(report["warnings"]),
         "warnings": report["warnings"],
         "errors": report["errors"],
         "images": images,

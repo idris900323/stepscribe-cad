@@ -33,6 +33,7 @@ from stepscribe.io.step_reader import (
 from stepscribe.text_safety import clean_name
 
 CHUNK = 1 << 20
+FILE_NOTE_MARKERS = ("two different files are called", "(same sha256): kept one copy")
 MAX_ZIP_ENTRIES = 10_000  # entries of any kind: a zip of a million empty files is also a bomb
 
 
@@ -246,11 +247,19 @@ def read_step_files(
         kept.append((fname, digest, p))
     used_files: set[str] = set()
     named: list[tuple[str, str, Path]] = []
+    first_digest: dict[str, str] = {}
     for fname, digest, p in kept:
         suffix = Path(fname).suffix
         stem = fname[: -len(suffix)] if suffix else fname
-        stem = _unique(stem, used_files)  # same cleaned name, different file: link, link_2
-        named.append((stem + suffix, digest, p))
+        unique = _unique(stem, used_files)  # same cleaned name, different file: link, link_2
+        if unique != stem:  # e.g. link.step in two zip folders: say so, never merge or drop
+            warnings.append(
+                f"two different files are called {fname} (sha256 {first_digest[stem.lower()][:12]} "
+                f"and {digest[:12]}): the second is called {unique + suffix} in this pack"
+            )
+        else:
+            first_digest[stem.lower()] = digest
+        named.append((unique + suffix, digest, p))
     stems_by_file = {f: (f[: -len(Path(f).suffix)] if Path(f).suffix else f) for f, _d, _p in named}
 
     place = dict(placements or {})

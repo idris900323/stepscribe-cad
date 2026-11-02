@@ -15,7 +15,9 @@ Part and assembly names come from the STEP file and are labels only. They are no
 {% if o.kinematics %}
 
 ## Kinematics
-{{ o.kinematics }}
+{% if o.hedge %}_{{ o.hedge }}_
+
+{% endif %}{{ o.kinematics }}
 {% endif %}
 
 ## Key facts

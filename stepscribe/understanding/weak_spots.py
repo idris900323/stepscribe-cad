@@ -259,8 +259,8 @@ def floating_parts(model: KinematicModel, ctx: KinContext) -> list[WeakSpot]:
                 "high",
                 "floating_part",
                 list(link.instance_ids),
-                f"{link.id} ({names}) is not connected to the ground link: fasteners or mates may be missing in the CAD",
-                "check that this part is bolted, mated or contacts something that is",
+                f"{link.id} ({names}) has no fastener, pivot or joint evidence linking it to the ground link (it may still touch other parts): fasteners or mates may be missing in the CAD",
+                "check that this part is bolted or mated, or that its pivot is modelled",
             )
         )
     return out

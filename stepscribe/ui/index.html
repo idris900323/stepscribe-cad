@@ -334,7 +334,8 @@ function show(s) {
   const holes = r.parts.reduce((a, p) => a + p.holes, 0);
   $('stats').innerHTML = [['Different parts', r.parts.length], ['Total parts', r.instances], ['Holes', holes], ['Relations', r.relations.length],
     ['Mass', r.total_mass_g == null ? 'unknown' : r.total_mass_g.toFixed(1) + ' g'], ['Unit in file', r.unit]]
-    .map(([k, v]) => `<div class="stat"><span class="mute">${k}</span><b>${esc(v)}</b></div>`).join('');
+    .map(([k, v]) => `<div class="stat"><span class="mute">${k}</span><b>${esc(v)}</b></div>`).join('')
+    + (r.frame_hedge ? `<div role="alert" style="flex-basis:100%;border:1px solid #c0392b;padding:8px 10px;border-radius:6px"><b>Warning:</b> ${esc(r.frame_hedge)} See the Warnings tab.</div>` : '');
   const tabs = {
     'Context pack': ['Everything an AI model needs, in one text. Copy it into any chat.', () => codebox(r.context_pack)],
     'Understanding': ['How the design works: motion, drives, part roles and risks.', understandingTab],

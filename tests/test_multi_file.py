@@ -381,3 +381,114 @@ def test_the_pack_overview_carries_the_frame_warning_only_when_there_is_one(
     assert FRAME_WARNING not in texts["multi_touching"]
     assert "**Warning:" in texts["multi_origin"] and FRAME_WARNING in texts["multi_origin"]
     assert "Nothing was moved" in texts["multi_origin"]
+
+
+# ---------------------------------------------------------------- frame hedge in every output
+HEDGE = "The files may not share a coordinate frame; these results may be meaningless"
+
+
+def test_a_frame_warning_puts_one_hedge_line_over_every_dependent_section(
+    step_files, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    texts: dict[str, dict[str, str]] = {}
+    for name in ("multi_touching", "multi_origin"):
+        out = tmp_path / name
+        assert pack_cli([str(step_files[name]), "--combine", "-o", str(out)]).exit_code == 0
+        texts[name] = {
+            f.name: f.read_text(encoding="utf-8")
+            for f in out.rglob("*.md")
+            if f.name
+            in ("00_READ_ME_FIRST.md", "01_overview.md", "02_assembly.md", "05_understanding.md")
+        }
+    bad = texts["multi_origin"]
+    assert HEDGE in bad["00_READ_ME_FIRST.md"][:700], "the warning is at the top of the read-me"
+    assert HEDGE in bad["01_overview.md"]
+    for heading in ("## Relations", "## Fastener joints"):
+        after = bad["02_assembly.md"].split(heading, 1)[1].lstrip()
+        assert after.startswith("_" + HEDGE), heading
+    for doc in ("01_overview.md", "05_understanding.md"):
+        if "## Kinematics" in bad[doc]:
+            assert bad[doc].split("## Kinematics", 1)[1].lstrip().startswith("_" + HEDGE), doc
+    if "## Load paths" in bad["05_understanding.md"]:
+        after = bad["05_understanding.md"].split("## Load paths", 1)[1].lstrip()
+        assert after.startswith("_" + HEDGE)
+    for doc, text in texts["multi_touching"].items():
+        assert HEDGE not in text, doc  # a good set carries no hedge anywhere
+
+
+def test_the_hedge_helper_and_the_ui_field(step_files) -> None:  # type: ignore[no-untyped-def]
+    from stepscribe.assembly.file_frames import frame_hedge
+
+    bad = run(files_of(step_files["multi_origin"])).report
+    good = run(files_of(step_files["multi_touching"])).report
+    assert frame_hedge(bad.warnings).startswith(HEDGE)
+    assert frame_hedge(good.warnings) == ""
+    page = (Path(__file__).resolve().parent.parent / "stepscribe/ui/index.html").read_text("utf-8")
+    assert "r.frame_hedge" in page
+
+
+# ---------------------------------------------------------------- rotation convention
+def test_the_designer_rotation_is_x_then_y_then_z_about_the_file_origin_then_the_offset() -> None:
+    import numpy as np
+
+    from stepscribe.io.multi import _matrix
+
+    m = _matrix([5.0, 6.0, 7.0], [90.0, 0.0, 90.0])
+    # hand computed: Rx(90) first, then Rz(90), about the file's own origin, then + offset
+    assert m @ [1, 0, 0, 1] == pytest.approx([5, 7, 7, 1])
+    assert m @ [0, 1, 0, 1] == pytest.approx([5, 6, 8, 1])
+    assert m @ [0, 0, 1, 1] == pytest.approx([6, 6, 7, 1])
+    # the other order (Z first, then X) would put the x axis at (5, 6, 8): the order is pinned
+    assert not np.allclose(m @ [1, 0, 0, 1], [5, 6, 8, 1])
+
+
+def test_a_90_degree_rotation_puts_the_box_where_the_hand_calculation_says(
+    step_files, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    folder = step_files["multi_origin"]
+    # link3 alone is x -20..20, y -10..10, z -5..5 about its own origin.
+    # 90 deg about Z: (x, y) -> (-y, x), so x' -10..10, y' -20..20; then offset (100, 20, 3).
+    opts = placed(
+        tmp_path,
+        folder,
+        "files:\n  link3.step: {offset_mm: [100, 20, 3], rotation_deg: [0, 0, 90]}\n",
+    )
+    r = run(files_of(folder), opts).report
+    assert r.assembly is not None
+    box = next(i for i in r.assembly.instances if i.source_file == "link3.step").global_bbox
+    got = [box.min.x, box.max.x, box.min.y, box.max.y, box.min.z, box.max.z]
+    assert got == pytest.approx([90, 110, 0, 40, -2, 8], abs=0.01)
+    # 90 deg about X: (y, z) -> (-z, y): y' -5..5, z' -10..10 (no offset)
+    opts = placed(tmp_path, folder, "files:\n  link3.step: {rotation_deg: [90, 0, 0]}\n")
+    r = run(files_of(folder), opts).report
+    assert r.assembly is not None
+    box = next(i for i in r.assembly.instances if i.source_file == "link3.step").global_bbox
+    got = [box.min.x, box.max.x, box.min.y, box.max.y, box.min.z, box.max.z]
+    assert got == pytest.approx([-20, 20, -5, 5, -10, 10], abs=0.01)
+
+
+# ---------------------------------------------------------------- same name, different folders
+def test_two_zip_folders_with_one_file_name_are_renamed_and_the_pack_says_so(
+    step_files, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    src = files_of(step_files["multi_touching"])
+    z = make_zip(
+        tmp_path / "dup.zip",
+        {"left/link.step": src[0].read_bytes(), "right/link.step": src[1].read_bytes()},
+    )
+    r = analyze_full(z, AnalyzeOptions(no_timestamp=True)).report
+    assert not r.errors
+    assert [s.name for s in r.sources] == ["link.step", "link_2.step"]
+    note = [w for w in r.warnings if "two different files are called link.step" in w]
+    assert len(note) == 1 and "link_2.step" in note[0], r.warnings
+    out = tmp_path / "pack"
+    assert pack_cli([str(z), "-o", str(out)]).exit_code == 0
+    text = "\n".join(f.read_text(encoding="utf-8") for f in out.rglob("*.md"))
+    assert "two different files are called link.step" in text
+    # the order of the entries in the zip does not change which one is called link_2
+    z2 = make_zip(
+        tmp_path / "dup2.zip",
+        {"right/link.step": src[1].read_bytes(), "left/link.step": src[0].read_bytes()},
+    )
+    r2 = analyze_full(z2, AnalyzeOptions(no_timestamp=True)).report
+    assert [(s.name, s.sha256) for s in r2.sources] == [(s.name, s.sha256) for s in r.sources]
