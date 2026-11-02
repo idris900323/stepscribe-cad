@@ -46,6 +46,10 @@ path = "stepscribe/__init__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["stepscribe"]
 
+# The JSON Schema of report.json ships inside the package (same bytes as schema/report.schema.json).
+[tool.hatch.build.targets.wheel.force-include]
+"schema/report.schema.json" = "stepscribe/schema/report.schema.json"
+
 [tool.hatch.build.targets.sdist]
 exclude = [
     "/docs/media",

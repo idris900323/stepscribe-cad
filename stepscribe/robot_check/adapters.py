@@ -2,7 +2,7 @@
 # Copyright (C) 2026 idris sadiq
 """The library adapters of the optional robot support.
 
-* **MuJoCo** (Apache-2.0, ``pip install 'stepscribe[robot]'``) does both jobs. It compiles the URDF
+* **MuJoCo** (Apache-2.0, ``pip install 'stepscribe-cad[robot]'``) does both jobs. It compiles the URDF
   into a physical model and refuses what a physics engine cannot use; :func:`mujoco_readiness` turns
   that answer into readiness findings. Its forward kinematics (:class:`MujocoBackend`) are compared
   with stepscribe's own at the zero pose and at fixed random joint values.

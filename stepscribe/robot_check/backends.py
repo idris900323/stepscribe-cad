@@ -2,7 +2,7 @@
 # Copyright (C) 2026 idris sadiq
 """Layer 2: the plug-in structure for an optional robotics library, and the cross-check itself.
 
-No library is a dependency of stepscribe. ``pip install 'stepscribe[robot]'`` adds MuJoCo, which does
+No library is a dependency of stepscribe. ``pip install 'stepscribe-cad[robot]'`` adds MuJoCo, which does
 both the forward-kinematics cross-check and the simulator-readiness check. The adapter for yourdfpy is
 registered as well and is used when you install yourdfpy yourself. A backend is any object with the shape of
 :class:`FkBackend`, registered here (``register_backend``) or published by another package under the
@@ -30,7 +30,7 @@ POSITION_TOL_M = 1e-6
 ROTATION_TOL_RAD = 1e-6
 DEFAULT_BACKEND = "mujoco"  # used when none is named; yourdfpy only if it is the one installed
 INSTALL_HINT = (
-    "Layer 2 needs an optional robotics library: pip install 'stepscribe[robot]' "
+    "Layer 2 needs an optional robotics library: pip install 'stepscribe-cad[robot]' "
     "(MuJoCo: kinematics cross-check and simulator readiness). yourdfpy is also supported: "
     "install it yourself and pass --backend yourdfpy. A library "
     f"packaged as a stepscribe plug-in (entry-point group {ENTRY_POINT_GROUP}) is found automatically."

@@ -2,7 +2,7 @@
 name: stepscribe
 description: Analyze STEP CAD files (.step/.stp) of mechanical designs and robots - dimensions, holes, fasteners, assembly structure, how the design moves, weak spots - and hand over portable Markdown. Use when the user shares or mentions a STEP file, asks what a CAD model is or how it works, wants a design review, or wants a text description of a 3D model.
 license: AGPL-3.0-only
-compatibility: Needs Python 3.11+ with the stepscribe package (pip install stepscribe, or "stepscribe[mcp]" for the MCP server). Works offline.
+compatibility: Needs Python 3.11+ with the stepscribe package (pip install stepscribe-cad, or "stepscribe-cad[mcp]" for the MCP server). Works offline.
 ---
 
 # stepscribe: understand a STEP file
@@ -22,8 +22,8 @@ MCP server dependencies are present and, when stepscribe is installed, the resul
 `python -m stepscribe doctor` with a fix for each problem. It never installs anything. If the plain
 `stepscribe` command is not found, use `python -m stepscribe` (on Windows `py -m stepscribe`) instead.
 
-If stepscribe is missing, **ask the user before installing** (`pip install stepscribe`, or
-`pip install "stepscribe[mcp]"` for the MCP server). If installing is not possible here, say so plainly and
+If stepscribe is missing, **ask the user before installing** (`pip install stepscribe-cad`, or
+`pip install "stepscribe-cad[mcp]"` for the MCP server). If installing is not possible here, say so plainly and
 suggest running `stepscribe export robot.step` on their own machine and uploading the exported files
 (`robot_FULL.md`, or the `chat_bundle/` folder for small chats) instead.
 

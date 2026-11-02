@@ -49,7 +49,7 @@ With the optional extra installed, MuJoCo does both layer-2 jobs. Its forward ki
 Measured on the generated six-axis arm (7 links, 6 joints, 5 poses): the largest difference between MuJoCo and stepscribe is 5.7e-17 m in position and 3.0e-8 rad in rotation. A deliberately flipped axis (the axis of one joint reversed in a copy of the URDF, compared with the kinematics of the original) is detected: 0.355 m and 2.69 rad at the worst link, with `X003` findings naming the links. The zero pose cannot show a reversed axis, which is why the random joint values are part of the check.
 
 ```
-pip install 'stepscribe[robot]'
+pip install 'stepscribe-cad[robot]'
 ```
 
 | Library | Pinned | Used for | Licence (package metadata) |

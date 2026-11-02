@@ -1,6 +1,6 @@
 """Item B, layer 2 with the real libraries.
 
-* MuJoCo comes with ``pip install 'stepscribe[robot]'`` and does both jobs: the forward-kinematics
+* MuJoCo comes with ``pip install 'stepscribe-cad[robot]'`` and does both jobs: the forward-kinematics
   cross-check and simulator readiness. Its tests need the extra. Without it they are skipped with a
   reason scripts/check_skips.py allows; the ``robot`` CI job installs the extra and sets
   STEPSCRIBE_REQUIRE_ROBOT=1, and there a skip is a failure.
@@ -124,7 +124,7 @@ def test_validate_runs_the_cross_check_and_readiness_through_mujoco(pack_dir: Pa
 def test_a_backend_that_is_named_but_not_installed_is_said_so(pack_dir: Path) -> None:
     report = validate(pack_dir, backend="no-such-library")
     assert report.layer2.status == "not_run" and "not installed" in report.layer2.detail
-    assert "stepscribe[robot]" in report.layer2.detail
+    assert "stepscribe-cad[robot]" in report.layer2.detail
 
 
 # ------------------------------------------------------------------ readiness (MuJoCo)

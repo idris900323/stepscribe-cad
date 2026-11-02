@@ -376,7 +376,7 @@ def test_validate_uses_an_installed_backend_and_says_how_to_install_otherwise(
 ) -> None:
     path = write_urdf(tmp_path, GOOD)
     none = validate(path, backends={})
-    assert none.layer2.status == "not_run" and "stepscribe[robot]" in none.layer2.detail
+    assert none.layer2.status == "not_run" and "stepscribe-cad[robot]" in none.layer2.detail
     named = validate(path, "nope", backends={"mirror": Mirror()})
     assert named.layer2.status == "not_run" and "nope" in named.layer2.detail
     ok = validate(path, backends={"mirror": Mirror()})
@@ -417,7 +417,7 @@ def test_the_command_reports_and_sets_the_exit_code(pack_dir: Path, tmp_path: Pa
     )
     # with or without the extra installed: a library that is not there says how to install it
     named = runner.invoke(app, ["validate-robot", str(pack_dir), "--backend", "no-such-library"])
-    assert "stepscribe[robot]" in named.output
+    assert "stepscribe-cad[robot]" in named.output
     strict = runner.invoke(app, ["validate-robot", str(pack_dir), "--require-ready"])
     assert strict.exit_code == 2
     bad = runner.invoke(

@@ -3,7 +3,7 @@
 # mypy: disable-error-code=no-any-return
 """MCP server (``stepscribe mcp``): follow-up questions about a STEP file from an AI assistant.
 
-Needs the optional extra: ``pip install stepscribe[mcp]``. The analysis tools are read-only; submit_answer only changes the in-memory session.
+Needs the optional extra: ``pip install stepscribe-cad[mcp]``. The analysis tools are read-only; submit_answer only changes the in-memory session.
 """
 
 # No `from __future__ import annotations`: the SDK reads real annotations (Image is a local import).
@@ -34,7 +34,7 @@ def build_server() -> "MCPServer":
     try:
         from mcp.server.mcpserver import Image, MCPServer
     except ImportError as exc:  # pragma: no cover - depends on the optional extra
-        raise SystemExit("The MCP server needs the extra: pip install stepscribe[mcp]") from exc
+        raise SystemExit("The MCP server needs the extra: pip install stepscribe-cad[mcp]") from exc
 
     set_headless()
     server = MCPServer("stepscribe", instructions=INSTRUCTIONS)

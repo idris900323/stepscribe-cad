@@ -1053,7 +1053,7 @@ def mcp(
         float, typer.Option(help="Size the result cache is trimmed to, in GB.")
     ] = cache_mod.DEFAULT_MAX_GB,
 ) -> None:
-    """Run the read-only MCP server over stdio (needs: pip install stepscribe[mcp])."""
+    """Run the read-only MCP server over stdio (needs: pip install stepscribe-cad[mcp])."""
     from stepscribe.mcp.server import main
     from stepscribe.runner import RUNNER
 

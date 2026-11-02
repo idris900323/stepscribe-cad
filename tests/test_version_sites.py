@@ -75,3 +75,19 @@ def test_the_version_flag_prints_only_the_package_version() -> None:
 
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0 and result.output.strip() == __version__
+
+
+def test_the_built_wheel_ships_the_json_schema_unchanged(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import zipfile
+
+    import hatchling.build
+
+    root = Path(__file__).resolve().parent.parent
+    monkeypatch.chdir(root)
+    name = hatchling.build.build_wheel(str(tmp_path))
+    with zipfile.ZipFile(tmp_path / name) as zf:
+        shipped = zf.read("stepscribe/schema/report.schema.json")
+    assert shipped == (root / "schema" / "report.schema.json").read_bytes()
+    from stepscribe.exporter import json_schema
+
+    assert json.loads(shipped) == json_schema()  # still the schema the code produces (0.6.0)
