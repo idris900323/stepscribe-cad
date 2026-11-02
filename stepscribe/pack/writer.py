@@ -13,9 +13,11 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from stepscribe import config, timings
 from stepscribe.api import Analysis
+from stepscribe.assembly.file_frames import frame_hedge
 from stepscribe.describe.assembly_describer import assembly_core_context, level0_context
 from stepscribe.describe.budget import PackSections, compose_budgeted, rank_parts
 from stepscribe.describe.part_describer import level1, level1_short, level2_context
+from stepscribe.io.multi import FILE_NOTE_MARKERS
 from stepscribe.io.report_writer import write_report
 from stepscribe.models.schema import Part, Report
 from stepscribe.pack.design_context import context_text, load_context
@@ -222,7 +224,10 @@ def write_pack_build(
         else str(report.meta.options.get("front", "-Y"))
     )
     env = _env()
-    folder = folder or out_dir / f"{_safe(Path(report.meta.source_files[0]).stem)}_context_pack"
+    stem = (
+        root_name if len(report.meta.source_files) > 1 else Path(report.meta.source_files[0]).stem
+    )
+    folder = folder or out_dir / f"{_safe(stem)}_context_pack"
     (folder / "03_parts").mkdir(parents=True, exist_ok=True)
     ctx: dict[str, Any] = load_context(context_file) if context_file else {}
     images_written: list[str] = []
@@ -255,6 +260,9 @@ def write_pack_build(
             front=front,
             has_images=bool(images_written),
             image_set=image_set if images and image_set in ("standard", "full") else None,
+            sources=report.sources,
+            frame_hedge=frame_hedge(report.warnings),
+            file_notes=[w for w in report.warnings if any(m in w for m in FILE_NOTE_MARKERS)],
         ),
     )
     put("01_overview.md", sections.level0 + "\n")

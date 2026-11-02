@@ -16,6 +16,9 @@ This file contains a single part, so there are no assembly relationships.
 {% endfor %}
 
 ## Relations
+{% if a.hedge %}
+_{{ a.hedge }}_
+{% endif %}
 {% for r in a.relations %}
 - {{ r }}
 {% else %}
@@ -23,6 +26,9 @@ This file contains a single part, so there are no assembly relationships.
 {% endfor %}
 
 ## Fastener joints
+{% if a.hedge %}
+_{{ a.hedge }}_
+{% endif %}
 {% for j in a.joints %}
 - {{ j }}
 {% else %}
@@ -66,6 +72,9 @@ This file contains a single part, so there are no assembly relationships.
 {% if a.interferences %}
 
 ## Interferences
+{% if a.hedge %}
+_{{ a.hedge }}_
+{% endif %}
 {% for i in a.interferences %}
 - {{ i }}
 {% endfor %}

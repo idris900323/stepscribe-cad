@@ -15,6 +15,7 @@ import json
 import math
 import multiprocessing as mp
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -135,7 +136,13 @@ class App:
         return find_step_files(self.sample_dir) if self.sample_dir else []
 
     # ------------------------------------------------------------- starting
-    def start(self, path: Path, display_name: str, params: dict[str, Any]) -> JobState:
+    def start(
+        self,
+        path: Path,
+        display_name: str,
+        params: dict[str, Any],
+        paths: list[Path] | None = None,
+    ) -> JobState:
         job_id = uuid.uuid4().hex[:10]
         out = self.workdir / job_id / "out"
         out.mkdir(parents=True, exist_ok=True)
@@ -143,6 +150,7 @@ class App:
         state.job = {
             **params,
             "path": str(path),
+            **({"paths": [str(p) for p in paths]} if paths else {}),
             "out": str(out),
             "session_idle_s": self.session_idle_s,
         }
@@ -386,7 +394,11 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             origin = self.headers.get("Origin")
             if origin is not None and origin not in self._origins():
                 raise BadRequest("forbidden", 403)
-            want = "application/octet-stream" if url.path == "/api/upload" else "application/json"
+            want = (
+                "application/octet-stream"
+                if url.path in ("/api/upload", "/api/stage")
+                else "application/json"
+            )
             if _content_type(self) != want:
                 raise BadRequest(f"Content-Type must be {want}", 415)
 
@@ -401,7 +413,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 if post:
                     self._check_post(url)
             except BadRequest as e:
-                if post and url.path != "/api/upload":
+                if post and url.path not in ("/api/upload", "/api/stage"):
                     self._drain_small_body()  # else the client may see a reset, not the 403
                 self._fail(e)
                 return None
@@ -633,6 +645,14 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             q = {k: v[0] for k, v in parse_qs(url.query).items()}
             if url.path == "/api/upload":
                 self._upload(q)
+            elif url.path == "/api/stage":
+                self._stage(q)
+            elif url.path == "/api/start_files":
+                body = self._read_json()
+                params = _params(body)
+                files = _input_files(app, body)
+                state = app.start(files[0], _combined_label(files), params, paths=files)
+                _json(self, {"id": state.id})
             elif url.path == "/api/start_path":
                 body = self._read_json()
                 params = _params(body)
@@ -674,6 +694,65 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             else:
                 self.send_error(404)
 
+        def _stage(self, q: dict[str, str]) -> None:
+            """Receive one file of several (STEP or zip) into a batch; /api/start_files runs them."""
+            length = self._content_length()
+            if length <= 0:
+                raise BadRequest("the upload is empty")
+            if length > app.max_upload_bytes:
+                raise BadRequest(f"the file is larger than {app.max_upload_bytes >> 20} MB", 413)
+            batch = q.get("batch", "")
+            if batch:
+                if not BATCH_ID.fullmatch(batch):
+                    raise BadRequest("unknown batch")
+                folder = app.workdir / "staged" / batch
+                if not folder.is_dir():
+                    raise BadRequest("unknown batch")
+            else:
+                batch = uuid.uuid4().hex[:8]
+                folder = app.workdir / "staged" / batch
+                folder.mkdir(parents=True, exist_ok=True)
+            count = len(list(folder.iterdir()))
+            if count >= MAX_BATCH_FILES:
+                raise BadRequest(f"at most {MAX_BATCH_FILES} files at once")
+            name = Path(unquote(q.get("name", ""))).name or "upload"
+            lower = name.lower()
+            is_zip = lower.endswith(".zip")
+            if not (is_zip or lower.endswith(STEP_SUFFIXES)):
+                raise BadRequest("only .step, .stp and .zip files can be combined", 415)
+            dest = folder / f"{count + 1:02d}_{name}"
+            ok = False
+            try:
+                remaining, first = length, True
+                with dest.open("wb") as fh:
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(1 << 20, remaining))
+                        if not chunk:
+                            break
+                        if first:
+                            good = (
+                                chunk.startswith(b"PK")
+                                if is_zip
+                                else chunk.lstrip().startswith(STEP_MAGIC)
+                            )
+                            if not good:
+                                raise BadRequest(
+                                    "this is not a zip file"
+                                    if is_zip
+                                    else "this is not a STEP file",
+                                    415,
+                                )
+                            first = False
+                        fh.write(chunk)
+                        remaining -= len(chunk)
+                if remaining:
+                    raise BadRequest("the upload ended early")
+                ok = True
+            finally:
+                if not ok:
+                    dest.unlink(missing_ok=True)
+            _json(self, {"batch": batch, "name": name, "files": count + 1})
+
         def _upload(self, q: dict[str, str]) -> None:
             length = self._content_length()
             if length <= 0:
@@ -710,6 +789,47 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             _json(self, {"id": state.id})
 
     return Handler
+
+
+BATCH_ID = re.compile(r"[0-9a-f]{8}")
+MAX_BATCH_FILES = 40  # as the command line (InputLimits.max_files)
+INPUT_SUFFIXES = (*STEP_SUFFIXES, ".zip")
+
+
+def _input_files(app: App, body: dict[str, Any]) -> list[Path]:
+    """The files of a combined job: a staged batch, or paths on this computer (read in place)."""
+    batch = body.get("batch")
+    if batch is not None:
+        if not isinstance(batch, str) or not BATCH_ID.fullmatch(batch):
+            raise BadRequest("unknown batch")
+        folder = app.workdir / "staged" / batch
+        if not folder.is_dir():
+            raise BadRequest("unknown batch")
+        files = sorted(p for p in folder.iterdir() if p.is_file())
+        if not files:
+            raise BadRequest("no files were uploaded")
+        return files
+    raw = body.get("paths")
+    if not isinstance(raw, list) or not raw or len(raw) > MAX_BATCH_FILES:
+        raise BadRequest(f"give 1 to {MAX_BATCH_FILES} paths of .step, .stp or .zip files")
+    out: list[Path] = []
+    for item in raw:
+        if not isinstance(item, str) or not item.strip():
+            raise BadRequest("every path must be text")
+        try:
+            p = Path(item.strip()).expanduser().resolve()
+            usable = p.is_file() and p.suffix.lower() in INPUT_SUFFIXES
+        except (OSError, ValueError):
+            raise BadRequest("that path cannot be read") from None
+        if not usable:
+            raise BadRequest(f"not an existing .step, .stp or .zip file: {Path(item.strip()).name}")
+        out.append(p)
+    return out
+
+
+def _combined_label(files: list[Path]) -> str:
+    """The name shown for a job of several files."""
+    return files[0].name if len(files) == 1 else f"{len(files)} files"
 
 
 def _step_path(raw: Any) -> Path:

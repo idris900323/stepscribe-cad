@@ -5,10 +5,13 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import time
 import traceback
 from pathlib import Path
 from typing import Any
+
+from stepscribe.assembly.file_frames import frame_hedge
 
 
 def job_options(job: dict[str, Any]) -> Any:
@@ -23,6 +26,25 @@ def job_options(job: dict[str, Any]) -> Any:
         check_interference=bool(job.get("interference")),
         no_timestamp=True,
     )
+
+
+def job_inputs(
+    job: dict[str, Any], work: tempfile.TemporaryDirectory[str]
+) -> tuple[Any, str | None]:
+    """What to analyse and the name of a combined model.
+
+    A job has one ``path``, or ``paths`` (several STEP files, folders or zips): those are expanded
+    like on the command line and, when they give more than one file, combined into one assembly.
+    """
+    paths = job.get("paths")
+    if not paths:
+        return job["path"], None
+    from stepscribe.io.multi import InputLimits, expand_inputs
+
+    files = expand_inputs([Path(p) for p in paths], InputLimits(), Path(work.name))
+    if len(files) == 1:
+        return files[0], None
+    return files, (Path(paths[0]).stem if len(paths) == 1 else "")
 
 
 def job_cache_key(path: Path, job: dict[str, Any]) -> str:
@@ -52,6 +74,7 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
         )
 
     started = time.time()
+    work = tempfile.TemporaryDirectory(prefix="stepscribe_ui_in_")
     try:
         opts = job_options(job)
         context_file = job.get("context_file")
@@ -60,7 +83,8 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
             apply_context(opts, ctx)
         tracker = Tracker(push)
         tracker.images_wanted = bool(job.get("images", True))
-        analysis = analyze_full(job["path"], opts, tracker)
+        target, combined_name = job_inputs(job, work)
+        analysis = analyze_full(target, opts, tracker, combined_name)
         if not analysis.parts:
             raise RuntimeError(
                 "; ".join(str(e.get("error")) for e in analysis.report.errors)
@@ -100,6 +124,8 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
                 "trace": traceback.format_exc(limit=6),
             }
         )
+    finally:
+        work.cleanup()
 
 
 DEFAULT_IMAGE_SET = (
@@ -130,6 +156,14 @@ def restore_session(job: dict[str, Any], cmd_q: Any, reply_q: Any) -> None:
     from stepscribe.api import restore_analysis
     from stepscribe.pack.design_context import apply_context, load_context
 
+    if job.get("paths"):  # a combined model is not rebuilt from one file
+        reply_q.put(
+            {
+                "error": "the interview of a combined model cannot be restarted after it ended: "
+                "analyse the files again"
+            }
+        )
+        return
     try:
         pack = Path(job["pack"])
         opts = job_options(job)
@@ -355,6 +389,7 @@ def summarise_pack(folder: Path) -> dict[str, Any]:
         if asm
         else [],
         "total_mass_g": asm["total_mass_g"] if asm else None,
+        "frame_hedge": frame_hedge(report["warnings"]),
         "warnings": report["warnings"],
         "errors": report["errors"],
         "images": images,

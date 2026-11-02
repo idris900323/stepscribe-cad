@@ -76,6 +76,70 @@ def _report_tool(fn: Callable[..., str]) -> Callable[..., str]:
     return wrapper
 
 
+def folder_zip(folder: Path) -> Path:
+    """The STEP files of *folder* as one deterministic zip, so a folder is analysed like a zip.
+
+    Same bytes for the same files, so the cache key (the zip's digest) follows the contents; only
+    ``*.step`` / ``*.stp`` files that really lie under the folder are taken (a symlink is skipped),
+    within the same file-count and size limits as a zip or a list of files.
+    """
+    import zipfile
+
+    from stepscribe.io.discovery import find_step_files
+    from stepscribe.io.multi import InputLimits
+    from stepscribe.text_safety import clean_name
+
+    root = folder.resolve()
+    files = [f for f in find_step_files(root) if not f.is_symlink() and root in f.resolve().parents]
+    limits_ = InputLimits()
+    if not files:
+        raise ValueError(f"{folder.name}: the folder holds no STEP files")
+    if len(files) > limits_.max_files:
+        raise ValueError(f"{folder.name}: at most {limits_.max_files} STEP files per run")
+    if sum(f.stat().st_size for f in files) > limits_.max_total_bytes:
+        raise ValueError(f"{folder.name}: the STEP files are too large in total")
+    entries = [(f.relative_to(root).as_posix(), f) for f in files]
+    h = hashlib.sha256()
+    for rel, f in entries:
+        h.update(rel.encode() + b"\0" + cache.file_digest(f).encode() + b"\0")
+    dest = cache.cache_root() / "folders" / h.hexdigest()[:16]
+    zpath = dest / f"{clean_name(folder.name) or 'folder'}.zip"
+    if not zpath.is_file():
+        dest.mkdir(parents=True, exist_ok=True)
+        tmp = zpath.with_suffix(".tmp")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+            for rel, f in entries:
+                info = zipfile.ZipInfo(rel, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o644 << 16
+                zf.writestr(info, f.read_bytes())
+        tmp.replace(zpath)
+    return zpath
+
+
+def resolve_input(path: str, combine: bool = False) -> str:
+    """*path* as given, or, for a folder, the zip of its STEP files (only with ``combine=True``)."""
+    p = Path(path)
+    if not p.is_dir():
+        return path
+    if not combine:
+        raise ValueError(
+            f"{p.name} is a folder: pass combine=true to analyse all the STEP files in it as "
+            "one assembly (other files in the folder are ignored), or give one STEP file or a zip"
+        )
+    return str(folder_zip(p))
+
+
+def _folder_aware(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Let a tool take ``combine=True`` with a folder as its path."""
+
+    @functools.wraps(fn)
+    def wrapper(path: str, *args: Any, combine: bool = False, **kwargs: Any) -> Any:
+        return fn(resolve_input(path, combine), *args, **kwargs)
+
+    return wrapper
+
+
 def _prune_sessions() -> None:
     while len(_sessions) > MAX_SESSIONS:
         _sessions.pop(next(iter(_sessions)))
@@ -120,6 +184,7 @@ def _find_part(report: Report, token: str) -> Part:
 
 
 # ------------------------------------------------------------------ tools
+@_folder_aware
 @_report_tool
 def get_overview(path: str) -> str:
     """Level 0 overview: size, parts, headline features, fasteners."""
@@ -132,6 +197,7 @@ def get_overview(path: str) -> str:
     return build_sections(rep, root, _env(), up, front).level0
 
 
+@_folder_aware
 @_report_tool
 def get_part(path: str, part: str) -> str:
     """Level 2 detail for one part (by ID such as PRT003, or by name)."""
@@ -143,6 +209,7 @@ def get_part(path: str, part: str) -> str:
     return _env().get_template("part.md.j2").render(c=level2_context(p, rel)).rstrip() + "\n"
 
 
+@_folder_aware
 @_report_tool
 def list_holes(
     path: str, part: str | None = None, min_d: float | None = None, max_d: float | None = None
@@ -170,6 +237,7 @@ def list_holes(
     return head + "\n".join(rows)
 
 
+@_folder_aware
 @_report_tool
 def list_cutouts(path: str, part: str | None = None) -> str:
     """Cut-out table (ID, kind, each level's shape, size, depth, centre, edge distance)."""
@@ -193,6 +261,7 @@ def list_cutouts(path: str, part: str | None = None) -> str:
     return head + "\n".join(rows)
 
 
+@_folder_aware
 @_report_tool
 def get_relations(path: str, part: str | None = None) -> str:
     """Relation sentences, optionally only those involving one part."""
@@ -205,7 +274,11 @@ def get_relations(path: str, part: str | None = None) -> str:
         lines = relations_by_part(rep).get(_find_part(rep, part).id, [])
     else:
         lines = [f"{r.id}: {r.sentence}" for r in rep.assembly.relations]
-    return "\n".join(f"- {s}" for s in lines) or "No relations found."
+    from stepscribe.assembly.file_frames import frame_hedge
+
+    body = "\n".join(f"- {s}" for s in lines) or "No relations found."
+    hedge = frame_hedge(rep.warnings)
+    return f"{hedge}\n\n{body}" if hedge else body
 
 
 def _resolve_instance(a: Analysis, token: str) -> InstanceData:
@@ -222,6 +295,7 @@ def _resolve_instance(a: Analysis, token: str) -> InstanceData:
     return hits[0]
 
 
+@_folder_aware
 def measure_distance(path: str, a: str, b: str) -> str:
     """Minimum distance between two instances (ID, name, path, or a part ID used once)."""
     an = get_analysis(path)
@@ -247,6 +321,7 @@ def measure_distance(path: str, a: str, b: str) -> str:
     )
 
 
+@_folder_aware
 @_report_tool
 def find_parts(path: str, query: str) -> str:
     """Parts whose name, shape class, hardware guess or semantic tags contain *query*."""
@@ -270,6 +345,7 @@ def find_parts(path: str, query: str) -> str:
     return "\n".join(out) or f"No part matches '{query}'."
 
 
+@_folder_aware
 @_report_tool
 def get_shopping_list(path: str) -> str:
     """Fastener shopping list derived from the joints."""
@@ -338,6 +414,7 @@ def _digest(*parts: object) -> str:
     return hashlib.sha1(repr(parts).encode()).hexdigest()[:12]  # noqa: S324
 
 
+@_folder_aware
 def render_view_result(
     path: str, view: str = "iso", part: str | None = None, highlight: list[str] | None = None
 ) -> tuple[str, bytes]:
@@ -354,6 +431,7 @@ def render_view_result(
     return "\n".join(lines), png
 
 
+@_folder_aware
 def section_result(path: str, plane: str, part: str | None = None) -> tuple[str, bytes]:
     """(text, PNG <= 1200 px) of a cut."""
     text, png = section(path, plane, part)
@@ -364,6 +442,7 @@ def section_result(path: str, plane: str, part: str | None = None) -> tuple[str,
     return f"{text}\nSaved at {saved}", png
 
 
+@_folder_aware
 def question_result(path: str) -> tuple[str, bytes]:
     """(questions text, highlight PNG <= 1200 px of the first question's parts, or b"")."""
     text = get_questions(path)
@@ -377,6 +456,7 @@ def question_result(path: str) -> tuple[str, bytes]:
         return text, b""
 
 
+@_folder_aware
 def start_analysis(path: str, material: str | None = None) -> str:
     """Begin the analysis in the background; returns job id, whether it is cached, and an ETA."""
     import json
@@ -436,6 +516,7 @@ def export_pack(
     chat_max_mb: float = 10.0,
     material: str | None = None,
     copy_to: str | None = None,
+    combine: bool = False,
 ) -> str:
     """Write (or reuse) the portable export; returns paths, token estimates and the SMALL text.
 
@@ -446,6 +527,8 @@ def export_pack(
     from stepscribe.jobs import MANAGER, job_out_dir
 
     options = AnalyzeOptions(material=material, no_timestamp=True)
+    if path_or_job_id not in MANAGER.jobs:
+        path_or_job_id = resolve_input(path_or_job_id, combine)
     if path_or_job_id in MANAGER.jobs:
         state = MANAGER.poll(path_or_job_id)
         if not state.done:
@@ -588,6 +671,7 @@ def _format_question(q: Any) -> str:
     return "\n".join(lines)
 
 
+@_folder_aware
 def get_questions(path: str) -> str:
     """The open questions about a design, most valuable first, with the summary so far."""
     s = _session(path)
@@ -600,6 +684,7 @@ def get_questions(path: str) -> str:
     )
 
 
+@_folder_aware
 def submit_answer(
     path: str,
     question_id: str,

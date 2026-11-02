@@ -250,6 +250,15 @@ def sharp_corners(part: Part, geom, label: str, load_bearing: bool) -> list[Weak
 
 def floating_parts(model: KinematicModel, ctx: KinContext) -> list[WeakSpot]:
     out = []
+    # "ground link" only where the file or the designer names it; otherwise it is the tool's own pick
+    # (the lowest or widest group), which a reader of a plain assembly would not recognise
+    named = any(
+        e.code.startswith(("name:", "designer"))
+        for g in model.links
+        if g.is_ground
+        for e in g.ground_evidence
+    )
+    anchor = "the ground link" if named else "the rest of the assembly"
     for link in model.links:
         if link.id not in model.floating_groups:
             continue
@@ -259,8 +268,8 @@ def floating_parts(model: KinematicModel, ctx: KinContext) -> list[WeakSpot]:
                 "high",
                 "floating_part",
                 list(link.instance_ids),
-                f"{link.id} ({names}) is not connected to the ground link: fasteners or mates may be missing in the CAD",
-                "check that this part is bolted, mated or contacts something that is",
+                f"{link.id} ({names}) has no fastener, pivot or joint evidence linking it to {anchor} (it may still touch other parts): fasteners or mates may be missing in the CAD",
+                "check that this part is bolted or mated, or that its pivot is modelled",
             )
         )
     return out

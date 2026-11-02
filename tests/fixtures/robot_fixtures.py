@@ -28,16 +28,8 @@ def _box(x: tuple[float, float], y: tuple[float, float], z: tuple[float, float])
     )
 
 
-def arm_6_axis(
-    out: Path = FIXTURE_DIR, prefix: str = "ARM_rev0_", occurrence: bool = False
-) -> Path:
-    """BASE + LINK1..LINK6 with planar flange interfaces and perpendicular pivot bores.
-
-    Ground truth: axes Z, Y, Y, X, Y, X.  Every interface is a large planar contact whose normal
-    equals the pivot axis, and each pivot is a Ø30 bore pair (no screw size) on its own line.
-    With *occurrence* the odd instances carry assembly-tree labels NAUO<n>, as vendor files do.
-    The geometry is placed in global coordinates, so every instance sits at the identity.
-    """
+def arm_parts() -> dict[str, Shape]:
+    """The seven solids of the generated arm, in global coordinates."""
     base = _box((-70, 70), (-40, 40), (-20, 0))
     link1 = _box((-50, 50), (-40, 40), (0, 80))
     link2 = _box((-50, 50), (40, 120), (0, 80))
@@ -62,6 +54,20 @@ def arm_6_axis(
         "LINK5": link5,
         "LINK6": link6,
     }
+    return parts
+
+
+def arm_6_axis(
+    out: Path = FIXTURE_DIR, prefix: str = "ARM_rev0_", occurrence: bool = False
+) -> Path:
+    """BASE + LINK1..LINK6 with planar flange interfaces and perpendicular pivot bores.
+
+    Ground truth: axes Z, Y, Y, X, Y, X.  Every interface is a large planar contact whose normal
+    equals the pivot axis, and each pivot is a Ø30 bore pair (no screw size) on its own line.
+    With *occurrence* the odd instances carry assembly-tree labels NAUO<n>, as vendor files do.
+    The geometry is placed in global coordinates, so every instance sits at the identity.
+    """
+    parts = arm_parts()
     labels = {
         n: (f"NAUO{k}" if occurrence and k % 2 and k > 1 else f"{prefix}{n}")
         for k, n in enumerate(parts, 1)

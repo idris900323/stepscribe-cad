@@ -16,7 +16,7 @@ import os
 import shutil
 import sys
 import tempfile
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -122,12 +122,24 @@ def file_digest(path: str | Path) -> str:
     return _digests[memo]
 
 
-def cache_key(path: str | Path, options: AnalyzeOptions, context: str | Path | None = None) -> str:
-    """sha256 over the file's bytes, the options that change results, the context file and versions."""
+def cache_key(
+    path: str | Path | Sequence[str | Path],
+    options: AnalyzeOptions,
+    context: str | Path | None = None,
+) -> str:
+    """sha256 over the file's bytes, the options that change results, the context file and versions.
+
+    Several files hash their sorted digests, so the order they are given in does not matter; the
+    context file carries any designer offsets, so a changed offset changes the key.
+    """
     from stepscribe.models.schema import SCHEMA_VERSION
 
     h = hashlib.sha256()
-    h.update(file_digest(path).encode())
+    files = [path] if isinstance(path, (str, Path)) else list(path)
+    if len(files) == 1:
+        h.update(file_digest(files[0]).encode())
+    else:
+        h.update(b"files:" + "|".join(sorted(file_digest(p) for p in files)).encode())
     h.update(json.dumps(asdict(options), sort_keys=True, default=str).encode())
     if context:
         h.update(file_digest(context).encode())

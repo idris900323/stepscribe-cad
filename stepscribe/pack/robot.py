@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 
+from stepscribe.assembly.file_frames import frame_hedge
 from stepscribe.models.schema import AxisLabel, KinJoint, Part, Report
 from stepscribe.understanding.mass_distribution import (
     ASSUMPTIONS,
@@ -280,6 +281,9 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
         "Models of this kind are often hollow or simplified outer skins: link masses and inertias "
         "taken from them are not reliable. Check them against the datasheet before use.",
     ]
+    hedge = frame_hedge(report.warnings)
+    if hedge:
+        warnings.insert(0, hedge)
     if any(link["mass_g"] is None for link in links):
         warnings.insert(
             0,

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections import Counter
 
+from stepscribe.assembly.file_frames import frame_hedge
 from stepscribe.describe.phrases import fmt
 from stepscribe.models.schema import Part, Report, Understanding, WeakSpot
 from stepscribe.understanding.process import is_complex_guess
@@ -148,6 +149,7 @@ def understanding_markdown(report: Report) -> str:
         else {}
     )
     lines = ["# Understanding: how the design works", ""]
+    hedge = frame_hedge(report.warnings)
     learned = report.meta.options.get("ml_models") or []
     if learned:
         lines += ["## Learned role models used", ""]
@@ -162,6 +164,7 @@ def understanding_markdown(report: Report) -> str:
         u.summary,
         "",
         "## Kinematics",
+        *([f"_{hedge}_", ""] if hedge else []),
         k.description,
         "",
         "```mermaid",
@@ -207,7 +210,9 @@ def understanding_markdown(report: Report) -> str:
         for e in g.ground_evidence:
             lines.append(f"  - ground evidence: {e.text}")
     if k.floating_groups:
-        lines.append(f"- Floating (not connected to ground): {', '.join(k.floating_groups)}")
+        lines.append(
+            f"- Floating (no fastener or joint evidence linking it to ground): {', '.join(k.floating_groups)}"
+        )
     lines.append("")
     if u.subassembly_roles:
         lines += ["### Structures", ""]
@@ -241,6 +246,8 @@ def understanding_markdown(report: Report) -> str:
     lines.append("")
     if u.load_paths:
         lines += ["## Load paths", ""]
+        if hedge:
+            lines += [f"_{hedge}_", ""]
         lines += [f"- {lp.id}: {lp.description}" for lp in u.load_paths]
         if u.load_path_note:
             lines += ["", u.load_path_note]
@@ -249,7 +256,7 @@ def understanding_markdown(report: Report) -> str:
     lines += spots_table(u.weak_spots) if u.weak_spots else ["No rule fired."]
     lines.append("")
     if u.stability:
-        lines += ["## Stability", u.stability.description, ""]
+        lines += ["## Stability", *([f"_{hedge}_"] if hedge else []), u.stability.description, ""]
     if u.questions:
         lines += ["## Questions for the designer", ""]
         for q in u.questions:
