@@ -258,10 +258,24 @@ def write_pack_build(
         ),
     )
     put("01_overview.md", sections.level0 + "\n")
+    from stepscribe.pack.robot import build_robot
+    from stepscribe.understanding.mass_distribution import (
+        mass_distribution,
+        mass_markdown,
+        payload_from_context,
+    )
+
     if report.understanding is not None:
         from stepscribe.understanding.describe import understanding_markdown
 
-        put("05_understanding.md", understanding_markdown(report))
+        payload, payload_note = payload_from_context(ctx)
+        robot_data = build_robot(report, payload)
+        put(
+            "05_understanding.md",
+            understanding_markdown(report)
+            + "\n"
+            + mass_markdown(mass_distribution(report), robot_data, payload_note),
+        )
     if (
         report.meta.options.get("debug_kinematics")
         and report.understanding is not None
@@ -273,7 +287,7 @@ def write_pack_build(
         put("data/kinematics_debug.md", debug_markdown(report.understanding.kinematics_debug))
     from stepscribe.pack.robot import robot_json
 
-    robot = robot_json(report)
+    robot = robot_json(report, payload_from_context(ctx)[0])
     if robot is not None:
         put("robot.json", robot)
         from stepscribe.pack.urdf import urdf_text

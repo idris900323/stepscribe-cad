@@ -20,7 +20,10 @@ material: ""           # default material for every part, e.g. "aluminium 6061" 
 parts:                 # per-part material override, keyed by part name as shown in the pack
   # TopPlate:
   #   material: alu
-loads: ""              # expected forces, torques, payload
+loads: ""              # expected forces, torques, payload (free text)
+# payload:             # a mass carried at the end of a robot arm: used for the static joint loads
+#   mass_kg: 2.5
+#   offset_mm: [0, 0, 150]   # from the last joint's axis point, in the file's axes
 environment: ""        # indoor, outdoor, temperature, dust, water
 constraints:           # hard limits the design must meet
   # - "max mass 2 kg"

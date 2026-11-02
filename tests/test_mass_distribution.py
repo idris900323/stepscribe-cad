@@ -1,0 +1,333 @@
+"""Mass distribution and static holding loads on the generated six-axis arm: the numbers are checked
+against a hand formula that reads only robot.json, and the cases that must refuse do refuse."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from stepscribe.analysis import AnalyzeOptions
+from stepscribe.api import analyze_full
+from stepscribe.pack.robot import build_robot
+from stepscribe.pack.writer import write_pack
+from stepscribe.understanding import mass_distribution as md
+from stepscribe.understanding.rigid_body import STATIC_LABEL, G, Payload
+
+
+@pytest.fixture(scope="module")
+def steel_arm(step_files):  # type: ignore[no-untyped-def]
+    return analyze_full(
+        step_files["arm_6_axis"], AnalyzeOptions(no_timestamp=True, material="steel")
+    )
+
+
+@pytest.fixture(scope="module")
+def bare_arm(step_files):  # type: ignore[no-untyped-def]
+    return analyze_full(step_files["arm_6_axis"], AnalyzeOptions(no_timestamp=True))
+
+
+def by_joint(data: dict) -> dict:  # type: ignore[type-arg]
+    return {j["joint"]: j for j in data["static_holding_loads"]["joints"]}
+
+
+def hand_torque(data: dict, joint_id: str, payload: Payload | None = None) -> float:  # type: ignore[type-arg]
+    """The holding torque of one joint from robot.json alone: minus a . sum (c - o) x (m g)."""
+    joints = data["joints"]
+    ids = [j["id"] for j in joints]
+    k = ids.index(joint_id)
+    axis = np.array(joints[k]["axis"])
+    origin = np.array(joints[k]["origin_mm"]) / 1000
+    up = {"+X": (1, 0, 0), "+Y": (0, 1, 0), "+Z": (0, 0, 1)}[
+        data["static_holding_loads"]["up_axis"]
+    ]
+    g = -np.array(up, float) * G
+    below = {joints[k]["child"]}
+    for j in joints[k + 1 :]:
+        if j["parent"] in below:
+            below.add(j["child"])
+    moment = np.zeros(3)
+    for link in data["links"]:
+        if link["id"] in below:
+            moment += np.cross(np.array(link["com_mm"]) / 1000 - origin, link["mass_g"] / 1000 * g)
+    if payload is not None:
+        tip = (np.array(joints[-1]["origin_mm"]) + payload.offset_mm) / 1000
+        moment += np.cross(tip - origin, payload.mass_kg * g)
+    return float(-(axis @ moment))
+
+
+def test_every_joint_matches_the_hand_formula(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    data = build_robot(steel_arm.report)
+    assert data is not None
+    loads = by_joint(data)
+    assert len(loads) == 6
+    for jid, row in loads.items():
+        assert row["value"] == pytest.approx(hand_torque(data, jid), abs=2e-6), jid
+        assert row["unit"] == "N*m" and row["reason"] is None
+    assert data["static_holding_loads"]["label"] == STATIC_LABEL
+    assert data["static_holding_loads"]["payload"] is None
+
+
+def test_the_payload_adds_exactly_its_own_moment(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    payload = Payload(2.5, np.array([0.0, 0.0, 150.0]))
+    plain = build_robot(steel_arm.report)
+    loaded = build_robot(steel_arm.report, payload)
+    assert plain is not None and loaded is not None
+    for jid, row in by_joint(loaded).items():
+        assert row["value"] == pytest.approx(hand_torque(loaded, jid, payload), abs=2e-6), jid
+    assert loaded["static_holding_loads"]["payload"]["mass_kg"] == 2.5
+    changed = [
+        jid
+        for jid in by_joint(loaded)
+        if abs(by_joint(loaded)[jid]["value"] - by_joint(plain)[jid]["value"]) > 1e-6
+    ]
+    assert changed, "a 2.5 kg payload must change some joint"
+
+
+def test_assembly_and_links_agree_with_the_reports_own_mass_and_centre(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    report = steel_arm.report
+    asm = report.assembly
+    whole = md.assembly_body(report)
+    assert not isinstance(whole, str)
+    assert whole.mass_g == pytest.approx(asm.total_mass_g, rel=1e-9)
+    c = asm.center_of_mass
+    assert whole.com_mm == pytest.approx([c.x, c.y, c.z], abs=1e-6)
+    links = [md.link_body(report, g.instance_ids) for g in report.understanding.kinematics.links]
+    assert all(not isinstance(b, str) for b in links)
+    again = md.combine(links)  # type: ignore[arg-type]
+    assert again.inertia_g_mm2 == pytest.approx(whole.inertia_g_mm2, rel=1e-9, abs=1e-3)
+
+
+def test_the_distribution_lists_parts_links_and_the_assembly(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    dist = md.mass_distribution(steel_arm.report)
+    assert dist["assembly"]["status"] == "computed" and len(dist["links"]) == 7
+    assert [p["id"] for p in dist["parts"]] == [p.id for p in steel_arm.report.parts]
+    for entry in (*dist["parts"], dist["assembly"]):
+        m = entry["moments_g_mm2"]
+        assert m == sorted(m) and min(m) > 0 and all(k > 0 for k in entry["radii_of_gyration_mm"])
+    assert "not measured" in dist["label"]
+
+
+def test_no_material_means_not_computed_with_the_reason(bare_arm) -> None:  # type: ignore[no-untyped-def]
+    dist = md.mass_distribution(bare_arm.report)
+    assert dist["assembly"] == {"status": "not computed", "reason": "material or density unknown"}
+    assert all(p["status"] == "not computed" for p in dist["parts"])
+    data = build_robot(bare_arm.report)
+    assert data is not None
+    for row in by_joint(data).values():
+        assert row["value"] is None and "not computed: mass unknown or unreliable" in row["reason"]
+
+
+def test_a_part_that_is_not_a_closed_solid_is_refused(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    report = steel_arm.report.model_copy(deep=True)
+    shell = report.parts[2]  # a link in the middle of the chain
+    shell.is_valid_solid = False
+    shell.topology.solids = 0
+    assert md.part_body(shell) == "not computed: not a valid closed solid"
+    data = build_robot(report)
+    assert data is not None
+    loads = by_joint(data)
+    # the joints that carry that link, and everything below it, refuse; the base side is unaffected
+    refused = [j for j, row in loads.items() if row["value"] is None]
+    assert refused and "KJ1" in refused
+    assert all("mass unknown or unreliable" in loads[j]["reason"] for j in refused)
+    dist = md.mass_distribution(report)
+    assert dist["parts"][2]["reason"] == "not a valid closed solid"
+    assert dist["assembly"]["status"] == "not computed"
+
+
+def test_complex_geometry_is_refused_for_loads_but_not_for_inertia(  # type: ignore[no-untyped-def]
+    steel_arm, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flagged = steel_arm.report.parts[2].id  # a part of a moving link
+    monkeypatch.setattr(
+        md,
+        "complex_geometry_reason",
+        lambda p: "free-form" if p.id == flagged else None,
+    )
+    data = build_robot(steel_arm.report)
+    assert data is not None
+    loads = by_joint(data)
+    assert loads["KJ1"]["value"] is None
+    assert "complex or free-form geometry" in loads["KJ1"]["reason"]
+    assert md.mass_distribution(steel_arm.report)["parts"][2]["status"] == "computed"
+
+
+# ------------------------------------------------------------------ the designer's payload
+def test_the_payload_is_read_from_the_design_context() -> None:
+    p, note = md.payload_from_context({"payload": {"mass_kg": 2.5, "offset_mm": [0, 0, 150]}})
+    assert note is None and p is not None and p.mass_kg == 2.5 and list(p.offset_mm) == [0, 0, 150]
+    assert md.payload_from_context({}) == (None, None)
+    assert md.payload_from_context({"payload": {"mass_kg": 1}})[0].offset_mm.tolist() == [0, 0, 0]  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "heavy",
+        {"offset_mm": [0, 0, 0]},
+        {"mass_kg": 0},
+        {"mass_kg": -1, "offset_mm": [0, 0, 0]},
+        {"mass_kg": "x"},
+        {"mass_kg": 1, "offset_mm": [0, 0]},
+        {"mass_kg": float("inf")},
+        {"mass_kg": 1, "offset_mm": [0, 0, float("nan")]},
+    ],
+)
+def test_a_bad_payload_is_ignored_and_says_so(raw: object) -> None:
+    p, note = md.payload_from_context({"payload": raw})
+    assert p is None and note is not None and note.startswith("payload ignored")
+
+
+# ------------------------------------------------------------------ the pack
+def test_the_pack_has_the_section_robot_json_and_no_names(  # type: ignore[no-untyped-def]
+    steel_arm, tmp_path: Path
+) -> None:
+    ctx = tmp_path / "ctx.yaml"
+    ctx.write_text("payload:\n  mass_kg: 2.5\n  offset_mm: [0, 0, 150]\n", encoding="utf-8")
+    folder = write_pack(steel_arm, tmp_path / "pack", context_file=ctx)
+    text = (folder / "05_understanding.md").read_text("utf-8")
+    assert "## Mass distribution and static load (estimates)" in text
+    assert STATIC_LABEL in text and "Payload (given by the designer): 2.5 kg" in text
+    assert "KJ2 (revolute): holding" in text
+    robot = json.loads((folder / "robot.json").read_text("utf-8"))
+    assert robot["static_holding_loads"]["payload"]["mass_kg"] == 2.5
+    assert robot["links"][1]["principal_inertia"]["status"] == "computed"
+    section = text.split("## Mass distribution and static load (estimates)")[1]
+    for part in steel_arm.report.parts:
+        assert part.name not in section
+
+
+def test_a_bad_payload_in_the_pack_is_named_in_the_section(  # type: ignore[no-untyped-def]
+    steel_arm, tmp_path: Path
+) -> None:
+    ctx = tmp_path / "ctx.yaml"
+    ctx.write_text("payload:\n  mass_kg: 0\n", encoding="utf-8")
+    folder = write_pack(steel_arm, tmp_path / "pack", context_file=ctx)
+    text = (folder / "05_understanding.md").read_text("utf-8")
+    assert "payload ignored: mass_kg must be above 0" in text
+    robot = json.loads((folder / "robot.json").read_text("utf-8"))
+    assert robot["static_holding_loads"]["payload"] is None
+
+
+# ------------------------------------------------------------------ wording and sign
+def section_text(report, payload=None, note=None) -> str:  # type: ignore[no-untyped-def]
+    return md.mass_markdown(md.mass_distribution(report), build_robot(report, payload), note)
+
+
+def test_the_disclaimer_comes_with_every_torque_value(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    for payload in (None, Payload(2.5, np.array([0.0, 0.0, 150.0]))):
+        text = section_text(steel_arm.report, payload)
+        first_value = text.index("holding ")
+        assert text.index(STATIC_LABEL) < first_value, "the label must precede the first value"
+        assert "estimates" in text.split("\n")[0] and "they are not measured values" in text
+        data = build_robot(steel_arm.report, payload)
+        assert data["static_holding_loads"]["label"] == STATIC_LABEL  # type: ignore[index]
+    # a value is never shown without the label, whatever the robot dict holds
+    fake = {
+        "static_holding_loads": {
+            "up_axis": "+Z",
+            "payload": None,
+            "joints": [
+                {"joint": "KJ1", "type": "revolute", "value": -1.5, "unit": "N*m", "reason": None}
+            ],
+        }
+    }
+    text = md.mass_markdown(md.mass_distribution(steel_arm.report), fake, None)
+    assert STATIC_LABEL in text and "holding -1.500 N*m" in text
+
+
+def test_a_value_that_is_not_computed_shows_only_its_reason(bare_arm) -> None:  # type: ignore[no-untyped-def]
+    text = section_text(bare_arm.report)
+    lines = text.split("\n")
+    joint_lines = [ln for ln in lines if ln.startswith("- KJ")]
+    assert len(joint_lines) == 6
+    for ln in joint_lines:
+        assert ln.startswith("- KJ") and "): not computed: mass unknown or unreliable" in ln
+        assert "holding" not in ln and "N*m" not in ln and "magnitude" not in ln
+    assert "- Assembly: not computed: material or density unknown" in lines
+    for ln in lines:
+        if "not computed" in ln:
+            assert "g*mm^2" not in ln and "radii" not in ln
+    data = build_robot(bare_arm.report)
+    assert data is not None
+    for row in data["static_holding_loads"]["joints"]:
+        assert row["value"] is None and row["reason"].startswith("not computed")
+    for link in data["links"]:
+        assert link["principal_inertia"]["status"] == "not computed"
+        assert set(link["principal_inertia"]) == {"status", "reason"}
+
+
+def test_a_clockwise_answer_flips_the_sign_of_that_joints_torque(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    before = build_robot(steel_arm.report)
+    assert before is not None
+    flipped = steel_arm.report.model_copy(deep=True)
+    joint = next(j for j in flipped.understanding.kinematics.joints if j.id == "KJ2")
+    assert joint.positive_direction is None
+    joint.positive_direction = "cw"  # what a "cw" answer in the interview sets
+    after = build_robot(flipped)
+    assert after is not None
+    b, a = by_joint(before), by_joint(after)
+    assert a["KJ2"]["value"] == pytest.approx(-b["KJ2"]["value"], abs=1e-9)
+    assert abs(b["KJ2"]["value"]) > 1.0  # a real value, not a zero that flips to a zero
+    for jid in ("KJ1", "KJ3", "KJ4", "KJ5", "KJ6"):  # the other joints do not move
+        assert a[jid]["value"] == pytest.approx(b[jid]["value"], abs=1e-9), jid
+    flags = {j["id"]: j["axis_flipped"] for j in after["joints"]}
+    assert flags["KJ2"] is True and not any(v for k, v in flags.items() if k != "KJ2")
+    # and the text says the same number with the opposite sign
+    text = section_text(flipped)
+    assert f"KJ2 (revolute): holding {md.fmt(a['KJ2']['value'], 3)} N*m" in text
+
+
+def test_the_wording_is_the_agreed_one_in_the_pack_and_in_robot_json(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    assert (
+        STATIC_LABEL
+        == "static holding torque, gravity only, at this pose; not dynamic, not a motor selection"
+    )
+    data = build_robot(steel_arm.report)
+    assert data is not None
+    s = data["static_holding_loads"]
+    assert s["label"] == STATIC_LABEL
+    assert s["estimate"] == "estimate from geometry and density; not measured"
+    assert s["assumptions"] == md.ASSUMPTIONS and "prismatic" in s["unit_note"]
+    assert section_text(steel_arm.report).count(f"### Joint loads: {STATIC_LABEL}") == 1
+
+
+def test_the_pack_and_robot_json_say_which_way_gravity_points(steel_arm) -> None:  # type: ignore[no-untyped-def]
+    text = section_text(steel_arm.report)
+    assert "Gravity (9.80665 m/s^2) is taken along the file's -Z axis (up axis used: +Z)." in text
+    assert "--up" not in text and "design_context.yaml" not in text  # how to set it is in the docs
+    assert "what the joint must supply to hold the pose" in text
+    data = build_robot(steel_arm.report)
+    assert data is not None
+    s = data["static_holding_loads"]
+    assert s["gravity_direction"] == "-Z" and s["up_axis"] == "+Z"
+    assert "along the file's -Z axis" in s["gravity_note"]
+    assert "what the joint must supply to hold the pose" in s["sign"]
+
+
+def test_the_gravity_line_follows_the_up_axis_that_was_used(step_files) -> None:  # type: ignore[no-untyped-def]
+    analysis = analyze_full(
+        step_files["arm_6_axis"],
+        AnalyzeOptions(no_timestamp=True, material="steel", up="+Y", front="+Z"),
+    )
+    text = section_text(analysis.report)
+    assert "is taken along the file's -Y axis (up axis used: +Y)." in text
+    data = build_robot(analysis.report)
+    assert data is not None and data["static_holding_loads"]["gravity_direction"] == "-Y"
+
+
+ASSUMPTION_1 = (
+    "Mass and inertia are estimated from CAD volume and the material or density named for each part; "
+    "they are not measured values."
+)
+
+
+def test_the_assumptions_use_the_agreed_wording() -> None:
+    assert len(md.ASSUMPTIONS) == 4
+    joined = " ".join(md.ASSUMPTIONS)
+    assert ASSUMPTION_1 == md.ASSUMPTIONS[0]
+    assert "they are not measured values" in joined and "will not match the real part" in joined
+    assert "nothing is measured" not in joined and "are wrong" not in joined
