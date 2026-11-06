@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 (TBD)
+## 2.0.0 (2026-11-06)
 
 This release is compared with **0.1.4**, the last release: it is on PyPI (`pip index versions stepscribe-cad` lists 0.1.0 to 0.1.4, so nothing was published since) and tagged `v0.1.4`.
 
