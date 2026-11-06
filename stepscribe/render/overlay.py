@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -99,11 +99,14 @@ def place_labels(
     draw: ImageDraw.ImageDraw,
     size: tuple[int, int],
     font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+    avoid: Sequence[Box] = (),
 ) -> list[tuple[Label, tuple[float, float, float, float]]]:
-    """Choose a box for each label: try 8 directions per radius, first non-overlapping wins."""
+    """Choose a box for each label: try 8 directions per radius, first non-overlapping wins.
+
+    Boxes in *avoid* (a dimension drawn before the labels) count as already taken."""
     w, h = size
     placed: list[tuple[Label, tuple[float, float, float, float]]] = []
-    boxes: list[tuple[float, float, float, float]] = []
+    boxes: list[tuple[float, float, float, float]] = list(avoid)
     for lab in sorted(labels, key=lambda lb: (lb.y, lb.x, lb.text)):
         tb = draw.textbbox((0, 0), lab.text, font=font)
         tw, th = tb[2] - tb[0] + 2 * PAD, tb[3] - tb[1] + 2 * PAD
@@ -134,13 +137,16 @@ def place_labels(
 
 
 def draw_labels(
-    image: Image.Image, labels: list[Label], legend: list[str] | None = None
+    image: Image.Image,
+    labels: list[Label],
+    legend: list[str] | None = None,
+    avoid: Sequence[Box] = (),
 ) -> Image.Image:
     """Draw anchor dots, leader lines, label boxes and an optional legend; returns a new image."""
     out = image.convert("RGB").copy()
     draw = ImageDraw.Draw(out)
     font = _font()
-    for lab, box in place_labels(labels, draw, out.size, font):
+    for lab, box in place_labels(labels, draw, out.size, font, avoid):
         cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
         draw.line([(lab.x, lab.y), (cx, cy)], fill=(0, 0, 0), width=2)
         draw.ellipse(

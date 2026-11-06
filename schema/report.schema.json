@@ -535,6 +535,58 @@
       "title": "Contact",
       "type": "object"
     },
+    "CounterboreFlat": {
+      "additionalProperties": false,
+      "description": "A flat cut into the wall of a round counterbore (a D-shaped bore), measured on the flat's own face.",
+      "properties": {
+        "face_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Face Ids",
+          "type": "array"
+        },
+        "normal": {
+          "$ref": "#/$defs/Vec3"
+        },
+        "distance_from_axis_mm": {
+          "title": "Distance From Axis Mm",
+          "type": "number"
+        },
+        "across_flats_mm": {
+          "title": "Across Flats Mm",
+          "type": "number"
+        },
+        "chord_length_mm": {
+          "title": "Chord Length Mm",
+          "type": "number"
+        },
+        "depth_mm": {
+          "title": "Depth Mm",
+          "type": "number"
+        },
+        "hole_wall_to_flat_mm": {
+          "title": "Hole Wall To Flat Mm",
+          "type": "number"
+        },
+        "hole_wall_to_round_wall_mm": {
+          "title": "Hole Wall To Round Wall Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "face_ids",
+        "normal",
+        "distance_from_axis_mm",
+        "across_flats_mm",
+        "chord_length_mm",
+        "depth_mm",
+        "hole_wall_to_flat_mm",
+        "hole_wall_to_round_wall_mm"
+      ],
+      "title": "CounterboreFlat",
+      "type": "object"
+    },
     "Cutout": {
       "additionalProperties": false,
       "properties": {
@@ -1208,6 +1260,17 @@
           },
           "title": "Warnings",
           "type": "array"
+        },
+        "counterbore_flat": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CounterboreFlat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

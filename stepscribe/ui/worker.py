@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from stepscribe.assembly.file_frames import frame_hedge
+from stepscribe.describe.phrases import flat_phrase
 
 
 def job_options(job: dict[str, Any]) -> Any:
@@ -260,6 +261,11 @@ def _dims(p: dict[str, Any]) -> dict[str, Any]:
         if h.get("counterbore_diameter_mm"):
             extra.append(
                 f"counterbore dia {h['counterbore_diameter_mm']:.2f} x {h['counterbore_depth_mm'] or 0:.2f}"
+                + (
+                    " " + flat_phrase(f["across_flats_mm"], f["distance_from_axis_mm"])
+                    if (f := h.get("counterbore_flat"))
+                    else ""
+                )
             )
         if h.get("countersink_diameter_mm"):
             extra.append(f"countersink dia {h['countersink_diameter_mm']:.2f}")

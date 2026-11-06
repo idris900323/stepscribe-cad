@@ -16,6 +16,7 @@ listed in full under "Unreleased" (to be renamed to this version in the release 
 - **Headline wording and confidence.** Every `Likely:` headline now carries a confidence and its evidence; a chain of revolute joints reads `Likely: 6-axis serial arm (confidence X; evidence ...)` and its confidence is capped by the weakest joint; a single part's role phrase says "probably" from 0.60 and "possibly" from 0.30.
 - **Fasteners.** Pivot candidates and large coaxial bore pairs are no longer fasteners: they leave the "bolted to" relations, the fastener counts and the "fasteners missing?" questions and have their own sections in `02_assembly.md`.
 - **Hole edge distance** is measured from the hole's side walls (a drill-point tip no longer counts).
+- **Hole edge distance for a counterbored or countersunk hole** no longer counts the hole's own counterbore, countersink or the rounded mouth round it (a fillet at the mouth used to leave a corner touching the bore, so the distance read 0.0 mm). A counterbore with a flat in its wall (a D-shaped bore) is measured against that flat: the wall of the hole in the floor to the flat. Plain holes and plain round counterbores keep their numbers.
 - **Process guesses.** A part with complex or free-form geometry gets no process guess instead of a confident one.
 - **UI image sets.** The page builds its pack with the chosen image set (basic, standard or full); the default is **standard**, so the UI now draws more images (hole map, three views, weak spots, ...) than before and takes longer on big files.
 - **CLI image set default stays `basic`** (today's images, apart from the IDs-only change above).
@@ -27,6 +28,8 @@ listed in full under "Unreleased" (to be renamed to this version in the release 
 - Version strings: see `docs/release_prep_2.0.0.md` for every site and `tests/test_version_sites.py` for the check.
 
 ## Unreleased
+
+- **Counterbore with a flat.** A round counterbore that has one flat in its wall (a D-shaped bore) is described as such: "cbore dia 4.2 x 8.6 with a flat (3.6 across flats, flat 1.5 from the axis)", with the measured numbers in an optional `counterbore_flat` field of the hole in `report.json` (absent for every other hole; schema stays 0.6.0). The axis-view image draws the across-flats dimension beside the hole label. Two or more flats (a double D, a hexagon) are not described.
 
 Robot files from manufacturers (a six-axis industrial arm, for example): links, joints and a robot description.
 

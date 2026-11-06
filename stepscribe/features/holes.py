@@ -10,25 +10,35 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from OCP.BRep import BRep_Builder
+from OCP.BRep import BRep_Builder, BRep_Tool
 from OCP.BRepExtrema import BRepExtrema_DistShapeShape
 from OCP.BRepTools import BRepTools
+from OCP.TopAbs import TopAbs_VERTEX
 from OCP.TopoDS import TopoDS_Compound, TopoDS_Face
 
 from stepscribe import config
 from stepscribe.features.hole_standards import is_likely_threaded, match_standards
 from stepscribe.geometry.occ_utils import (
     Vec,
+    as_vertex,
     canonical_dir,
     interior_uv,
     make_vertex,
     outward_normal,
     surface_point,
+    unique_subshapes,
 )
 from stepscribe.geometry.part_geom import PartGeom
 from stepscribe.geometry.properties import vec3
 from stepscribe.geometry.surfaces import cone_params, cylinder_params, plane_normal_origin
-from stepscribe.models.schema import Axis, Hole, HoleSegment
+from stepscribe.models.schema import Axis, CounterboreFlat, Hole, HoleSegment
+
+FLAT_SPAN_TOL_MM = 0.1  # how far a flat's depth may differ from the counterbore's, at least
+FLAT_SPAN_TOL = 0.03  # ... or this share of it
+CORNER_BLEND_RADIUS_SHARE = (
+    0.25  # a rounded corner is a cylinder up to this share of the bore radius
+)
+FLAT_MIN_CHORD_SHARE = 0.5  # a flat's face is at least this share of the chord it cuts off
 
 
 # ---------------------------------------------------------------- 7.1 / 7.2 candidates
@@ -393,6 +403,103 @@ def _entry_and_bottom(
     return kind, cb_d, cb_depth, csk_d, csk_angle
 
 
+def _corner_blends(
+    part: PartGeom, around: Iterable[int], axis: np.ndarray, bore_radius: float, skip: set[int]
+) -> set[int]:
+    """Small cylinders parallel to the bore axis next to the faces in *around*: rounded corners.
+
+    The corners where a flat meets the round wall of a counterbore are often rounded; the rounding
+    is a small concave cylinder on the same axis direction. It belongs to the counterbore."""
+    out: set[int] = set()
+    for i in around:
+        for j in part.table.faces[i].neighbors:
+            fj = part.table.faces[j]
+            if j in skip or fj.kind != "cylinder":
+                continue
+            cp = cylinder_params(fj.face)
+            if (
+                abs(abs(float(np.dot(cp.direction, axis))) - 1.0) <= 1e-3
+                and cp.radius <= CORNER_BLEND_RADIUS_SHARE * bore_radius
+            ):
+                out.add(j)
+    return out
+
+
+def _counterbore_flat(
+    part: PartGeom,
+    g: AxisGroup,
+    cb_face_ids: list[str],
+    cb_d: float,
+    cb_depth: float | None,
+    main_d: float,
+) -> CounterboreFlat | None:
+    """The one flat cut into a round counterbore wall (a D-shaped bore), or None.
+
+    A flat is a plane parallel to the axis that shares an edge with the counterbore cylinder and
+    cuts a chord off its circle (it lies closer to the axis than the bore radius). The axis must
+    stay inside the bore, so the cylinder is the major arc and the flat is the cut-off side. The
+    flat must span most of the chord of the circle (rounded corners shorten it a little) and the
+    whole depth of the counterbore, so a wall of a larger pocket, a step or a rib is not taken for
+    one. Two or more such planes (a double D,
+    a hexagon, a slot) are not described.
+    """
+    axis = g.direction / np.linalg.norm(g.direction)
+    radius = cb_d / 2
+    found: dict[int, tuple[np.ndarray, float]] = {}
+    cb_idx = [int(fid[1:]) - 1 for fid in cb_face_ids]
+    blends = _corner_blends(part, cb_idx, axis, radius, set(cb_idx))
+    for ci in cb_idx:
+        candidates = part.table.faces[ci].neighbors.union(
+            *(part.table.faces[b].neighbors for b in blends)
+        )
+        for j in sorted(candidates):
+            fj = part.table.faces[j]
+            if fj.kind != "plane":
+                continue
+            n, o = plane_normal_origin(fj.face)
+            if abs(float(np.dot(n, axis))) > 1e-3:
+                continue  # not parallel to the axis
+            off = float(np.dot(o - g.origin, n))
+            if not (config.LINEAR_TOL < abs(off) < radius - config.LINEAR_TOL):
+                continue  # through the axis, or does not cut the circle
+            toward = n if off > 0 else -n
+            cyl_c = part.table.faces[ci].centroid
+            if float(np.dot(cyl_c - g.origin, toward)) >= 0:
+                continue  # the cylinder lies on the flat's side: a small cap, not a D bore
+            found[j] = (toward, abs(off))
+    if len(found) != 1:
+        return None
+    ((j, (toward, dist)),) = found.items()
+    verts = [
+        BRep_Tool.Pnt_s(as_vertex(v))
+        for v in unique_subshapes(part.table.faces[j].face, TopAbs_VERTEX)
+    ]
+    pts = np.array([[p.X(), p.Y(), p.Z()] for p in verts])
+    along = np.cross(axis, toward)
+    if not len(pts):
+        return None
+    chord = float(np.ptp(pts @ along))
+    depth = float(np.ptp(pts @ axis))
+    full_chord = 2 * math.sqrt(radius**2 - dist**2)
+    if not FLAT_MIN_CHORD_SHARE * full_chord <= chord <= full_chord + FLAT_SPAN_TOL_MM:
+        return None  # a short wall inside a bigger pocket, not a flat across the bore
+    if cb_depth is not None and abs(depth - cb_depth) > max(
+        FLAT_SPAN_TOL_MM, FLAT_SPAN_TOL * cb_depth
+    ):
+        return None  # a step or rib along part of the depth, not a flat along the bore
+    r_hole = main_d / 2
+    return CounterboreFlat(
+        face_ids=[part.table.faces[j].id],
+        normal=vec3(toward),
+        distance_from_axis_mm=dist,
+        across_flats_mm=dist + radius,
+        chord_length_mm=chord,
+        depth_mm=depth,
+        hole_wall_to_flat_mm=dist - r_hole,
+        hole_wall_to_round_wall_mm=radius - r_hole,
+    )
+
+
 def _flat_bottom(part: PartGeom, g: AxisGroup, t_end: float, radius: float) -> bool:
     """Is there a planar face perpendicular to the axis closing the hole at ``t_end``?"""
     centre = make_vertex(_axis_pt(g, t_end))
@@ -484,6 +591,14 @@ def build_hole(part: PartGeom, g: AxisGroup, stack: list[Segment]) -> Hole | Non
         warnings.append(
             "STEP files rarely carry thread data; threaded status is inferred from the diameter only"
         )
+    flat = None
+    if cb_d is not None:
+        cb_seg = next(
+            s
+            for s in segs
+            if s.kind == "cylinder" and s.diameter_mm == cb_d  # the segment cb_d came from
+        )
+        flat = _counterbore_flat(part, g, cb_seg.face_ids, cb_d, cb_depth, main_d)
     return Hole(
         id="",
         axis=Axis(origin=vec3(_axis_pt(g, t_entry)), direction=vec3(direction)),
@@ -502,6 +617,7 @@ def build_hole(part: PartGeom, g: AxisGroup, stack: list[Segment]) -> Hole | Non
         entry_face_id=_entry_face_id(part, g, bore_idx, t_entry),
         edge_distance_mm=None,
         warnings=warnings,
+        counterbore_flat=flat,
     )
 
 
@@ -525,10 +641,45 @@ def _hole_face_sets(holes: list[Hole]) -> tuple[dict[str, set[int]], set[int]]:
     return hole_faces, all_hole_idx
 
 
-def _edge_dss(
+def _own_entry_faces(
+    part: PartGeom, h: Hole, mine: set[int], adjacent: set[int], all_hole_idx: set[int]
+) -> set[int]:
+    """Faces that belong to a counterbored or countersunk hole's own entry, beyond its edge neighbours.
+
+    A fillet (torus) round the mouth of the bore separates the bore from the part's entry face, and
+    the entry face and anything else the fillet runs into are then one step away from the hole's own
+    faces. Faces that touch the hole's own faces only at a vertex (the end of a flat's mouth
+    rounding, for example) are not edge neighbours either, and sit at distance 0. None of these is
+    the nearest edge of the hole. A plain hole is left as it was.
+    """
+    if h.entry_type == "plain":
+        return set()
+    table = part.table
+    own: set[int] = set()
+    for j in adjacent:
+        if j not in all_hole_idx and table.faces[j].kind == "torus":
+            own.add(j)
+            own |= table.faces[j].neighbors
+    for i in mine:
+        own |= part.vertex_neighbors[i]
+    if h.counterbore_diameter_mm is not None:
+        axis = np.array([h.axis.direction.x, h.axis.direction.y, h.axis.direction.z])
+        for b in _corner_blends(part, mine, axis, h.counterbore_diameter_mm / 2, all_hole_idx):
+            own.add(b)
+            own |= part.table.faces[b].neighbors
+    return own
+
+
+def _edge_measures(
     part: PartGeom, h: Hole, hole_faces: dict[str, set[int]], all_hole_idx: set[int]
-) -> BRepExtrema_DistShapeShape | None:
-    """The distance computation behind a hole's edge distance (None when there is nothing to measure)."""
+) -> list[BRepExtrema_DistShapeShape]:
+    """The distance computations behind a hole's edge distance (empty when there is nothing to measure).
+
+    The first is the hole's walls against the faces that are not the hole's own: the counterbore or
+    countersink round the hole, its mouth and everything it touches never count as an edge. When the
+    counterbore has a flat, the flat is an edge of the counterbore floor, so the wall of the hole
+    in that floor is measured against the flat as well.
+    """
     table = part.table
     mine = hole_faces[h.id]
     adjacent = set().union(*(table.faces[i].neighbors for i in mine)) if mine else set()
@@ -541,21 +692,43 @@ def _edge_dss(
         for fid in seg.face_ids
     }
     measured = (mine - tip) or mine
+    skip = adjacent | _own_entry_faces(part, h, mine, adjacent, all_hole_idx)
     outer = [
         table.faces[i].face
         for i in range(len(table.faces))
-        if i not in all_hole_idx and i not in adjacent
+        if i not in all_hole_idx and i not in skip
     ]
-    if not outer:
-        return None
-    dss = BRepExtrema_DistShapeShape(
-        _compound([table.faces[i].face for i in sorted(measured)]), _compound(outer)
-    )
-    return dss if dss.IsDone() else None
+    out: list[BRepExtrema_DistShapeShape] = []
+    if outer:
+        dss = BRepExtrema_DistShapeShape(
+            _compound([table.faces[i].face for i in sorted(measured)]), _compound(outer)
+        )
+        if dss.IsDone():
+            out.append(dss)
+    flat = h.counterbore_flat
+    if flat is not None:
+        walls = {
+            int(fid[1:]) - 1
+            for seg in h.segments
+            if seg.kind == "cylinder" and abs(seg.diameter_mm - h.diameter_mm) < config.LINEAR_TOL
+            for fid in seg.face_ids
+        }
+        flats = [table.faces[int(fid[1:]) - 1].face for fid in flat.face_ids]
+        if walls and flats:
+            d2 = BRepExtrema_DistShapeShape(
+                _compound([table.faces[i].face for i in sorted(walls)]), _compound(flats)
+            )
+            if d2.IsDone():
+                out.append(d2)
+    return out
+
+
+def _nearest(measures: list[BRepExtrema_DistShapeShape]) -> BRepExtrema_DistShapeShape | None:
+    return min(measures, key=lambda d: float(d.Value())) if measures else None
 
 
 def compute_edge_distances(part: PartGeom, holes: list[Hole]) -> None:
-    """Wall left around each hole: min distance from the bore to non-hole, non-adjacent faces."""
+    """Wall left around each hole: its bore against the part's non-hole faces, and a counterbore flat."""
     if len(part.table.faces) > config.EDGE_DISTANCE_MAX_FACES:
         part.warnings.append(
             f"edge distance skipped: more than {config.EDGE_DISTANCE_MAX_FACES} faces"
@@ -563,9 +736,9 @@ def compute_edge_distances(part: PartGeom, holes: list[Hole]) -> None:
         return
     hole_faces, all_hole_idx = _hole_face_sets(holes)
     for h in holes:
-        dss = _edge_dss(part, h, hole_faces, all_hole_idx)
-        if dss is not None:
-            h.edge_distance_mm = float(dss.Value())
+        best = _nearest(_edge_measures(part, h, hole_faces, all_hole_idx))
+        if best is not None:
+            h.edge_distance_mm = float(best.Value())
 
 
 def edge_distance_segment(
@@ -577,7 +750,7 @@ def edge_distance_segment(
     h = next((x for x in holes if x.id == hole_id), None)
     if h is None:
         return None
-    dss = _edge_dss(part, h, *_hole_face_sets(holes))
+    dss = _nearest(_edge_measures(part, h, *_hole_face_sets(holes)))
     if dss is None or dss.NbSolution() < 1:
         return None
     a, b = dss.PointOnShape1(1), dss.PointOnShape2(1)

@@ -13,6 +13,14 @@ def fmt(x: float, nd: int = 1) -> str:
     return s[1:] if s.startswith("-") and float(s) == 0 else s
 
 
+def flat_phrase(across_flats_mm: float, distance_from_axis_mm: float) -> str:
+    """'with a flat (3.6 across flats, flat 1.5 from the axis)': a counterbore with a flat in its wall."""
+    return (
+        f"with a flat ({fmt(across_flats_mm)} across flats, "
+        f"flat {fmt(distance_from_axis_mm)} from the axis)"
+    )
+
+
 def hole_callout(h: Hole) -> str:
     """Drawing-style callout: ``Ø5.5 THRU ⌴ Ø9.5 ↧ 5.4``."""
     parts = [f"Ø{fmt(h.diameter_mm)}"]
@@ -24,6 +32,10 @@ def hole_callout(h: Hole) -> str:
         cb = f"⌴ Ø{fmt(h.counterbore_diameter_mm)}"
         if h.counterbore_depth_mm is not None:
             cb += f" ↧ {fmt(h.counterbore_depth_mm)}"
+        if h.counterbore_flat is not None:
+            cb += " " + flat_phrase(
+                h.counterbore_flat.across_flats_mm, h.counterbore_flat.distance_from_axis_mm
+            )
         parts.append(cb)
     if h.countersink_diameter_mm is not None:
         ang = h.countersink_angle_deg
