@@ -10,6 +10,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from build_helper import run_build
 from typer.testing import CliRunner
 
 from stepscribe import __version__, envcheck
@@ -173,13 +174,7 @@ def test_readme_links_are_absolute() -> None:
 # ----------------------------------------------------------------------- the sdist
 def test_the_sdist_stays_small(tmp_path: Path) -> None:
     pytest.importorskip("build")
-    subprocess.run(
-        [sys.executable, "-m", "build", "--sdist", "--outdir", str(tmp_path)],
-        check=True,
-        capture_output=True,
-        cwd=ROOT,
-        timeout=600,
-    )
+    run_build("--sdist", "--outdir", str(tmp_path), cwd=ROOT)
     sdist = next(tmp_path.glob("*.tar.gz"))
     assert sdist.stat().st_size < 3 * 1024 * 1024, f"{sdist.stat().st_size / 1e6:.1f} MB"
     import tarfile
@@ -207,13 +202,7 @@ def test_large_media_never_ends_up_in_the_sdist(tmp_path: Path) -> None:
     (proj / "docs" / "media" / "demo.mp4").write_bytes(os.urandom(5 * 1024 * 1024))
     (proj / "tests" / "golden" / "shot.png").write_bytes(os.urandom(200_000))
     (proj / "docs" / "guide.md").write_text("# guide\n", encoding="utf-8")
-    subprocess.run(
-        [sys.executable, "-m", "build", "--sdist", "--outdir", str(tmp_path / "out")],
-        check=True,
-        capture_output=True,
-        cwd=proj,
-        timeout=600,
-    )
+    run_build("--sdist", "--outdir", str(tmp_path / "out"), cwd=proj)
     sdist = next((tmp_path / "out").glob("*.tar.gz"))
     with tarfile.open(sdist) as tf:
         names = tf.getnames()

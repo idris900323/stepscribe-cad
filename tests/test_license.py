@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import re
 import subprocess
-import sys
 import tarfile
 import zipfile
 from pathlib import Path
 
 import pytest
+from build_helper import run_build
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -73,12 +73,7 @@ def test_gitattributes_forces_lf() -> None:
 
 def test_build_metadata_and_no_step_files(tmp_path: Path) -> None:
     pytest.importorskip("build")
-    res = subprocess.run(
-        [sys.executable, "-m", "build", "--outdir", str(tmp_path), str(ROOT)],
-        capture_output=True,
-        text=True,
-    )
-    assert res.returncode == 0, res.stdout[-2000:] + res.stderr[-2000:]
+    run_build("--outdir", str(tmp_path), str(ROOT), cwd=ROOT)
     wheel = next(tmp_path.glob("*.whl"))
     sdist = next(tmp_path.glob("*.tar.gz"))
     with zipfile.ZipFile(wheel) as z:

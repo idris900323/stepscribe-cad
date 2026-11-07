@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from build123d import Box, Cylinder, Location, Pos, Rot, Shape
+from build123d import Axis, Box, Cylinder, Location, Pos, Rot, Shape
 from generate_fixtures import FIXTURE_DIR
 from OCP.STEPCAFControl import STEPCAFControl_Writer
 from OCP.STEPControl import STEPControl_AsIs
@@ -81,6 +81,21 @@ def two_plates_assembly(out: Path = FIXTURE_DIR) -> Path:
         ],
     )
     return write_assembly(out / "two_plates_assembly.step", {"Plate": _plate()}, root)
+
+
+def plates_with_clip_assembly(out: Path = FIXTURE_DIR) -> Path:
+    """The two plates with a 6 x 6 x 3 clip resting on the top plate: far under 5 % of the volume."""
+    root = Node(
+        "PlatesAndClip",
+        children=[
+            Node("BasePlate", "Plate", Location()),
+            Node("TopPlate", "Plate", Location((0, 0, 5))),
+            Node("Clip", "Clip", Location((0, 0, 11.5))),
+        ],
+    )
+    return write_assembly(
+        out / "plates_with_clip_assembly.step", {"Plate": _plate(), "Clip": Box(6, 6, 3)}, root
+    )
 
 
 def tapped_assembly(out: Path = FIXTURE_DIR) -> Path:
@@ -182,6 +197,46 @@ def pilot_thin_assembly(out: Path = FIXTURE_DIR) -> Path:
     return write_assembly(out / "pilot_thin_assembly.step", {"Block": block, "Cover": cover}, root)
 
 
+def occurrence_label_assembly(out: Path = FIXTURE_DIR) -> Path:
+    """Three bars; two instances carry assembly-tree occurrence labels (NAUO4, NAUO7) like vendor files."""
+    root = Node(
+        "Arm",
+        children=[
+            Node("NAUO4", "LINK3", Pos(0, 0, 0)),
+            Node("Holder", "LINK2", Pos(0, 0, 10)),
+            Node("NAUO7", "LINK6", Pos(0, 0, 20)),
+        ],
+    )
+    return write_assembly(
+        out / "occurrence_label_assembly.step",
+        {"LINK3": Box(20, 20, 10), "LINK2": Box(20, 20, 10), "LINK6": Box(20, 20, 10)},
+        root,
+    )
+
+
+def pivot_pair_assembly(out: Path = FIXTURE_DIR) -> Path:
+    """Two blocks side by side on the X axis, each with a coaxial Ø50 bore (a pivot, no screw size)."""
+    a = Box(40, 80, 80) - Cylinder(25, 50).rotate(Axis.Y, 90)
+    b = Box(20, 80, 80) - Cylinder(25, 30).rotate(Axis.Y, 90)
+    root = Node(
+        "Pivot",
+        children=[Node("LINK1", "A", Pos(0, 0, 0)), Node("LINK2", "B", Pos(30, 0, 0))],
+    )
+    return write_assembly(out / "pivot_pair_assembly.step", {"A": a, "B": b}, root)
+
+
+def bore_pair_assembly(out: Path = FIXTURE_DIR) -> Path:
+    """The pivot pair with 10 mm Ø50 recesses instead of through bores: a 20 mm coaxial stack, shorter
+    than its diameter (a locating feature or bearing seat, not a pivot)."""
+    a = Box(40, 80, 80) - Pos(15, 0, 0) * Cylinder(25, 10).rotate(Axis.Y, 90)
+    b = Box(20, 80, 80) - Pos(-5, 0, 0) * Cylinder(25, 10).rotate(Axis.Y, 90)
+    root = Node(
+        "BorePair",
+        children=[Node("LINK1", "A", Pos(0, 0, 0)), Node("LINK2", "B", Pos(30, 0, 0))],
+    )
+    return write_assembly(out / "bore_pair_assembly.step", {"A": a, "B": b}, root)
+
+
 def shaft_in_bearing_assembly(out: Path = FIXTURE_DIR) -> Path:
     """Ø8 shaft in a Ø8.06 bore (diametral clearance 0.06)."""
     block = Box(30, 30, 20) - Cylinder(4.03, 22)
@@ -216,15 +271,45 @@ def generate_assemblies(out: Path = FIXTURE_DIR) -> dict[str, Path]:
     """Write all assembly fixtures; returns name -> path."""
     builders = (
         two_plates_assembly,
+        plates_with_clip_assembly,
         tapped_assembly,
         blind_clearance_assembly,
         blind_thin_stack_assembly,
+        occurrence_label_assembly,
+        pivot_pair_assembly,
+        bore_pair_assembly,
         pilot_over_blind_assembly,
         pilot_thin_assembly,
         shaft_in_bearing_assembly,
         nested_assembly,
     )
-    return {fn.__name__: fn(out) for fn in builders}
+    from robot_fixtures import (
+        arm_6_axis,
+        arm_axis_disagree,
+        named_links_resting,
+        named_two_links,
+    )
+
+    out_map = {fn.__name__: fn(out) for fn in builders}
+    out_map["arm_6_axis"] = arm_6_axis(out)
+    out_map["arm_6_axis_occurrence"] = arm_6_axis(out, occurrence=True)
+    out_map["arm_axis_disagree"] = arm_axis_disagree(out)
+    out_map["named_links_resting"] = named_links_resting(out)
+    out_map["named_two_links"] = named_two_links(out)
+    from shell_fixtures import (
+        bossed_plate,
+        freeform_housing,
+        ribbed_housing,
+        ribbed_sculpted,
+        tip_over_cavity,
+    )
+
+    out_map["freeform_housing"] = freeform_housing(out)
+    out_map["bossed_plate"] = bossed_plate(out)
+    out_map["ribbed_housing"] = ribbed_housing(out)
+    out_map["tip_over_cavity"] = tip_over_cavity(out)
+    out_map["ribbed_sculpted"] = ribbed_sculpted(out)
+    return out_map
 
 
 if __name__ == "__main__":

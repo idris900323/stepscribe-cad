@@ -16,6 +16,8 @@ You need **Python 3.11 or newer**. Check with `python --version`; get it from py
 python -m pip install "stepscribe-cad[mcp]"
 ```
 
+The package is `stepscribe-cad`; the command it installs is `stepscribe`.
+
 Then check it with `python -m stepscribe version` (on Windows `py -m stepscribe version` also works). This form works even when your shell says `stepscribe` is not found, which happens when pip's `Scripts` folder is not on your PATH; you can use `python -m stepscribe` in place of `stepscribe` everywhere below. `python -m stepscribe doctor` checks the rest of your setup and tells you how to fix what is wrong.
 
 **2. Pick how you want to use it:**
@@ -50,8 +52,8 @@ stepscribe init-context                            # template for design intent 
 <!-- cli-defaults:start -->
 Defaults (generated from the command line, `python scripts/update_readme_defaults.py`):
 
-- `stepscribe export`: `--out` = `stepscribe_export`, `--small-budget-tokens` = `12000`, `--compact-budget-tokens` = `40000`, `--chat-max-images` = `4`, `--chat-max-mb` = `10.0`, `--up` = `+Z`, `--front` = `-Y`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
-- `stepscribe pack`: `--out` = `out`, `--up` = `+Z`, `--front` = `-Y`, `--budget-tokens` = `40000`, `--motion-budget-s` = `120`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
+- `stepscribe export`: `--out` = `stepscribe_export`, `--small-budget-tokens` = `12000`, `--compact-budget-tokens` = `40000`, `--chat-max-images` = `4`, `--chat-max-mb` = `10.0`, `--images` = `basic`, `--image-max-side` = `1200`, `--up` = `+Z`, `--front` = `-Y`, `--mesh-max-triangles` = `5000`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
+- `stepscribe pack`: `--out` = `out`, `--up` = `+Z`, `--front` = `-Y`, `--budget-tokens` = `40000`, `--images` = `basic`, `--image-max-side` = `1200`, `--motion-budget-s` = `120`, `--mesh-max-triangles` = `5000`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
 - `stepscribe analyze`: `--out` = `out`, `--jobs` = `1`, `--timeout-s` = `300`, `--precision` = `4`
 - `stepscribe ui`: `--port` = `8765`, `--max-upload-mb` = `500`, `--max-jobs` = `1`, `--session-idle-min` = `15.0`, `--cache-max-gb` = `2.0`, `--idle-exit-min` = `10.0`
 - `stepscribe mcp`: `--max-jobs` = `1`, `--cache-max-gb` = `2.0`
@@ -131,6 +133,22 @@ stepscribe mcp
 ```
 
 Tools: `start_analysis`, `get_job_status`, `export_pack` (for big assemblies that outlast a client's call timeout), `get_overview`, `get_part`, `list_holes`, `list_cutouts`, `get_relations`, `measure_distance`, `section`, `render_view`, `find_parts`, `get_shopping_list`, `diff`, `get_questions`, `submit_answer`. Pass the absolute path of a STEP file. Images come back as PNG content of at most 1200 px; results are cached by file hash.
+
+## What is in 2.0
+
+**The three layers.** Layer 1 *measures* (faces, holes, patterns, contacts), layer 2 *interprets* with fixed rules (shape classes, standard parts, joints, mechanisms; every "Likely:" statement carries a confidence and evidence IDs), and layer 3, judging the design, is done by your own AI outside this tool. Layers 1 and 2 run offline on your computer.
+
+**Several files as one design.** Give `stepscribe pack` several STEP files, a folder with `--combine`, or a `.zip`: you get one combined assembly and one pack. The web page takes several files or a zip too, and every MCP tool takes a zip, or a folder with `combine=true`. Each file keeps its own coordinates and nothing is moved; if the files do not seem to share a coordinate frame the pack says so at the top and hedges the sections that depend on it. Placement (`files:` with `offset_mm` and `rotation_deg`) is a command-line option (`--context`). Same-name files are renamed and reported. Details and the exact rules: [docs/multi_file.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/multi_file.md).
+
+**Robots: link meshes, URDF, validation.** For a model with revolute or prismatic joints the pack holds `robot.json` (link frames, joint axes and origins, a DH-style table, estimates of mass and inertia per link) and a draft `robot.urdf` in SI units with no invented limits. `--meshes` adds one visual and one collision STL per link. `stepscribe validate-robot` checks the files for consistency (layer 1 needs nothing extra; the optional extra `stepscribe-cad[robot]` adds a MuJoCo cross-check of the forward kinematics and a simulator-readiness check), and `stepscribe doctor --robot` says what is available. See [docs/robot_validation.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/robot_validation.md) and [docs/kinematics.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/kinematics.md).
+
+**Images: three sets.** `--images basic` (the default on the command line), `standard` (adds a hole map, three views, weak spots, ...) or `full`. The web page uses `standard`. Images carry IDs only, never part names. More images take longer on big files. See [docs/images.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/images.md).
+
+**Data the STEP file carries.** Product descriptions, colours, materials, presentation layers and dimensions with tolerances that the file states are read and shown as "From the STEP file"; where a file states none of it, nothing is invented. See [docs/step_data.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/step_data.md).
+
+**Load estimates (estimates only).** For a robot with known joints the pack includes the principal inertia of each part, link and the whole assembly, and a *static holding torque* per joint: gravity only, at the pose of the file, with an optional payload. It is not dynamic and not a motor selection. Mass and inertia are estimated from CAD volume and the material or density named for each part; they are not measured values. See [docs/mass_distribution.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/mass_distribution.md).
+
+**Speed depends on free memory.** Parts are analysed by a pool of worker processes. The pool size is the smaller of what the CPU allows and what the free memory allows (60 % of the free memory divided by an estimate per worker), so the same model can run faster on a machine with more free memory and slower when other programs hold it. When memory is the limit the progress line says: "Using N of M possible part workers because free memory (X GiB now) is the limit; closing other programs frees memory and speeds this up." The result does not depend on the pool size. `stepscribe export --timings` writes the time of each stage. No fixed speed-up is promised.
 
 ## What is in a pack
 
@@ -231,6 +249,7 @@ Much of this code was written with AI assistance and then tested against generat
 
 ## Project docs
 
+- Guides: [multi-file](https://github.com/idris900323/stepscribe-cad/blob/main/docs/multi_file.md), [images](https://github.com/idris900323/stepscribe-cad/blob/main/docs/images.md), [kinematics](https://github.com/idris900323/stepscribe-cad/blob/main/docs/kinematics.md), [robot validation](https://github.com/idris900323/stepscribe-cad/blob/main/docs/robot_validation.md), [STEP-carried data](https://github.com/idris900323/stepscribe-cad/blob/main/docs/step_data.md), [mass and static load estimates](https://github.com/idris900323/stepscribe-cad/blob/main/docs/mass_distribution.md)
 - [CHANGELOG.md](https://github.com/idris900323/stepscribe-cad/blob/main/CHANGELOG.md), [CONTRIBUTING.md](https://github.com/idris900323/stepscribe-cad/blob/main/CONTRIBUTING.md), [docs/plugin_testing.md](https://github.com/idris900323/stepscribe-cad/blob/main/docs/plugin_testing.md)
 - [examples/README.md](https://github.com/idris900323/stepscribe-cad/blob/main/examples/README.md) (where to get open robot STEP files)
 

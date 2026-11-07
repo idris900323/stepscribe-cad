@@ -207,7 +207,51 @@ def _existing_fastener(instances: list[InstanceData], origin: Vec, d: Vec) -> st
     return None
 
 
-def detect_joints(instances: list[InstanceData]) -> list[FastenerJoint]:
+PIVOT_JOINT_CONFIDENCE = 0.5  # the stack is probably not a fastener; the kinematic stage decides
+
+
+def is_pivot_size(
+    diameter: float,
+    length: float,
+    min_diameter: float | None = None,
+    min_length_ratio: float | None = None,
+) -> bool:
+    """A hole stack that matches no screw is a pivot candidate when it is wide and long.
+
+    Both limits are inclusive: a Ø20 stack (the default minimum) qualifies, and so does a stack
+    exactly one diameter long. Defaults come from ``roles.yaml`` (``kinematics.pivot``); the
+    ``--pivot-min-diameter`` / ``--pivot-min-length-ratio`` options override them.
+    """
+    cfg = load_table("roles.yaml")["kinematics"]["pivot"]
+    lo_d = float(cfg["min_diameter_mm"]) if min_diameter is None else min_diameter
+    ratio = float(cfg["min_length_over_diameter"]) if min_length_ratio is None else min_length_ratio
+    return diameter >= lo_d and length >= ratio * diameter
+
+
+def stack_kind(
+    diameter: float,
+    length: float,
+    min_diameter: float | None = None,
+    min_length_ratio: float | None = None,
+) -> str | None:
+    """What an unmatched coaxial stack is: 'pivot', 'bore_pair' or None.
+
+    At or above the minimum diameter a stack that matches no screw is never a fastener joint:
+    long enough (:func:`is_pivot_size`) it is a pivot candidate, too short it is a large coaxial
+    bore pair (a locating feature or a bearing seat). Below the minimum it is left alone.
+    """
+    cfg = load_table("roles.yaml")["kinematics"]["pivot"]
+    lo_d = float(cfg["min_diameter_mm"]) if min_diameter is None else min_diameter
+    if diameter < lo_d:
+        return None
+    return "pivot" if is_pivot_size(diameter, length, lo_d, min_length_ratio) else "bore_pair"
+
+
+def detect_joints(
+    instances: list[InstanceData],
+    pivot_min_diameter: float | None = None,
+    pivot_min_length_ratio: float | None = None,
+) -> list[FastenerJoint]:
     """Joints between instances; IDs J001... sorted by first instance and position."""
     joints: list[tuple[tuple[object, ...], FastenerJoint]] = []
     for group in _coaxial_groups(_global_holes(instances)):
@@ -240,6 +284,26 @@ def detect_joints(instances: list[InstanceData]) -> list[FastenerJoint]:
                 why += "; the stack ends in a blind hole that is not tap-drill size, so it needs tapping or an insert"
             origin = ref.origin + d * t_lo
             existing = _existing_fastener(instances, origin, d)
+            kind = (
+                stack_kind(float(common), grip, pivot_min_diameter, pivot_min_length_ratio)
+                if desig is None and existing is None
+                else None
+            )
+            pivot, bore_pair = kind == "pivot", kind == "bore_pair"
+            if pivot:
+                threaded = False
+                conf = PIVOT_JOINT_CONFIDENCE / JOINT_CONF_FACTOR
+                why = (
+                    f"no standard screw size matches Ø{fmt(float(common), 2)}; a bore this wide and at "
+                    "least as long as it is wide is more likely a pivot or press fit than a screw"
+                )
+            elif bore_pair:
+                threaded = False
+                conf = PIVOT_JOINT_CONFIDENCE / JOINT_CONF_FACTOR
+                why = (
+                    f"no standard screw size matches Ø{fmt(float(common), 2)}; a large coaxial bore pair "
+                    "shorter than its diameter is a locating feature or bearing seat, not a fastener"
+                )
             key = (ids[0], *(round(float(c), 2) for c in origin))
             joints.append(
                 (
@@ -261,6 +325,8 @@ def detect_joints(instances: list[InstanceData]) -> list[FastenerJoint]:
                         suggested_fastener=text,
                         has_threaded_end=threaded,
                         existing_fastener_instance_id=existing,
+                        pivot_candidate=pivot,
+                        bore_pair=bore_pair,
                     ),
                 )
             )

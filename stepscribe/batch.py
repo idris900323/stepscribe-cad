@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from stepscribe import limits
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.procutil import kill_tree
 from stepscribe.progress import ProgressFn, Tracker
@@ -28,6 +29,8 @@ class Job:
     budget_tokens: int = 12000
     images: bool = False
     export: dict[str, Any] = field(default_factory=dict)  # extra export() parameters
+    paths: list[str] | None = None  # several files combined into one pack (path is the first)
+    name: str | None = None  # name of the combined model
 
 
 def options_from_dict(d: dict[str, Any]) -> AnalyzeOptions:
@@ -47,7 +50,7 @@ def _summarise(
         "status": status,
         "parts": len(report.parts),
         "holes": sum(len(p.holes) for p in report.parts),
-        "joints": len(a.fastener_joints) if a else 0,
+        "joints": len(a.fasteners) if a else 0,
         "relations": len(a.relations) if a else 0,
         "mass_g": None if mass is None else round(mass, 2),
         "warnings": len(report.warnings) + sum(len(p.warnings) for p in report.parts),
@@ -74,7 +77,7 @@ def process_file(job: Job, callback: ProgressFn | None = None) -> dict[str, Any]
         tracker.images_wanted = job.images and job.mode == "pack"
         if job.mode == "export":
             return _export_file(job, opts, tracker, start)
-        analysis = analyze_full(job.path, opts, tracker)
+        analysis = analyze_full(job.paths if job.paths else job.path, opts, tracker, job.name)
         out = Path(job.out_dir)
         pack_dir: str | None = None
         if analysis.report.errors and not analysis.report.parts:
@@ -86,7 +89,21 @@ def process_file(job: Job, callback: ProgressFn | None = None) -> dict[str, Any]
             status = "ok"
         else:
             pack_dir = str(
-                write_pack(analysis, out, job.budget_tokens, job.context_file, job.images, tracker)
+                write_pack(
+                    analysis,
+                    out,
+                    job.budget_tokens,
+                    job.context_file,
+                    job.images,
+                    tracker,
+                    meshes=bool(job.export.get("meshes")),
+                    mesh_max_triangles=int(
+                        job.export.get("mesh_max_triangles", limits.LINK_MESH_MAX_TRIANGLES)
+                    ),
+                    mesh_visual_max_triangles=job.export.get("mesh_visual_max_triangles"),
+                    image_set=str(job.export.get("image_set", "basic")),
+                    image_max_side=int(job.export.get("image_max_side", 1200)),
+                )
             )
             status = "ok"
         tracker.finish("finished")

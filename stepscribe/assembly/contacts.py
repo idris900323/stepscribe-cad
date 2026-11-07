@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 idris sadiq
-"""Contacts between instances: planar faces, cylindrical fits, line/point, near misses (10.2)."""
+"""Contacts between instances: planar faces, cylindrical fits, edge or point, near misses (10.2)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from OCP.BRepGProp import BRepGProp
 from OCP.GProp import GProp_GProps
 from OCP.TopoDS import TopoDS_Compound, TopoDS_Shape
 
-from stepscribe import config
+from stepscribe import config, timings
 from stepscribe.assembly.tree import InstanceData, to_trsf
 from stepscribe.features.bosses import _is_convex_full_cylinder
 from stepscribe.features.holes import find_bore_faces
@@ -133,21 +133,23 @@ def part_faces(geom: PartGeom) -> PartFaces:
     return pf
 
 
-def _overlap_area(a: InstanceData, b: InstanceData, fa: int, fb: int) -> float:
+def _overlap(a: InstanceData, b: InstanceData, fa: int, fb: int) -> tuple[float, Vec]:
+    """(area, centroid) of the overlap of two planar faces, in the assembly frame."""
     face_a = transform_shape(a.ap.geom.table.faces[fa].face, to_trsf(a.matrix))
     face_b = transform_shape(b.ap.geom.table.faces[fb].face, to_trsf(b.matrix))
     common = BRepAlgoAPI_Common(face_a, face_b)
     if not common.IsDone():
-        return 0.0
+        return 0.0, np.zeros(3)
     props = GProp_GProps()
     BRepGProp.SurfaceProperties_s(common.Shape(), props)
-    return float(props.Mass())
+    area = float(props.Mass())
+    return area, (to_np(props.CentreOfMass()) if area > 0.0 else np.zeros(3))
 
 
-def planar_contact(
+def planar_contact_detail(
     a: InstanceData, b: InstanceData, fa: PartFaces, fb: PartFaces
-) -> tuple[float, Vec] | None:
-    """(total overlap area, normal from A to B) of opposing coplanar faces, or None."""
+) -> tuple[float, Vec, Vec] | None:
+    """(total overlap area, normal from A to B, area-weighted centroid) of opposing coplanar faces."""
     if not fa.planes or not fb.planes:
         return None
     na = np.array([a.rotation @ p.normal for p in fa.planes])
@@ -162,16 +164,26 @@ def planar_contact(
         return None
     pairs = sorted(cand.tolist(), key=lambda ij: -min(fa.planes[ij[0]].area, fb.planes[ij[1]].area))
     total = 0.0
+    weighted = np.zeros(3)
     best: tuple[float, Vec] | None = None
     for i, j in pairs[:MAX_FACE_PAIRS]:
-        area = _overlap_area(a, b, fa.planes[i].index, fb.planes[j].index)
+        area, centre = _overlap(a, b, fa.planes[i].index, fb.planes[j].index)
         if area > MIN_CONTACT_AREA:
             total += area
+            weighted += area * centre
             if best is None or area > best[0]:
                 best = (area, na[i])
     if best is None:
         return None
-    return total, best[1]
+    return total, best[1], weighted / total
+
+
+def planar_contact(
+    a: InstanceData, b: InstanceData, fa: PartFaces, fb: PartFaces
+) -> tuple[float, Vec] | None:
+    """(total overlap area, normal from A to B) of opposing coplanar faces, or None."""
+    found = planar_contact_detail(a, b, fa, fb)
+    return None if found is None else (found[0], found[1])
 
 
 def _global_cyl(inst: InstanceData, c: CylFace) -> tuple[Vec, Vec]:
@@ -217,7 +229,8 @@ def detect_contacts(instances: list[InstanceData], tracker: Tracker | None = Non
     """All contacts and near misses between instance pairs."""
     if len(instances) < 2:
         return []
-    cache = {i.part_id: part_faces(i.ap.geom) for i in instances}
+    with timings.stage("assembly.contacts.part_faces"):
+        cache = {i.part_id: part_faces(i.ap.geom) for i in instances}
     lo = np.array([i.bounds[0] for i in instances]) - config.NEAR_MISS_MAX
     hi = np.array([i.bounds[1] for i in instances]) + config.NEAR_MISS_MAX
     candidates = [
@@ -228,15 +241,18 @@ def detect_contacts(instances: list[InstanceData], tracker: Tracker | None = Non
     ]
     if tracker is not None:
         tracker.plan_pairs(len(candidates))
+    timings.count("contact_pairs_all", len(instances) * (len(instances) - 1) // 2)
+    timings.count("contact_pairs_tested", len(candidates))
     raw: list[tuple[str, str, Contact]] = []
-    for i, j in candidates:
-        started = time.time()
-        raw.extend(
-            (instances[i].id, instances[j].id, c)
-            for c in _pair_contacts(instances[i], instances[j], cache)
-        )
-        if tracker is not None:
-            tracker.pair_done(time.time() - started)
+    with timings.stage("assembly.contacts.pairs"):
+        for i, j in candidates:
+            started = time.time()
+            raw.extend(
+                (instances[i].id, instances[j].id, c)
+                for c in _pair_contacts(instances[i], instances[j], cache)
+            )
+            if tracker is not None:
+                tracker.pair_done(time.time() - started)
     raw.sort(key=lambda t: (t[0], t[1], t[2].kind))
     contacts = []
     for n, (_a, _b, c) in enumerate(raw, 1):
@@ -304,26 +320,27 @@ def _sub_shape(inst: InstanceData, indices: np.ndarray) -> TopoDS_Shape:
     return transform_shape(comp, to_trsf(inst.matrix))
 
 
-def _line_or_point(dss: BRepExtrema_DistShapeShape) -> str:
-    """'line' if the closest points spread over more than the contact tolerance, else 'point'.
+def _distance(a: TopoDS_Shape, b: TopoDS_Shape) -> BRepExtrema_DistShapeShape:
+    """Minimum distance between two shapes, computed once.
 
-    Geometric and deterministic: it does not depend on how many extrema solutions OCCT reports,
-    which varies with how much geometry is passed in.
+    ``BRepExtrema_DistShapeShape(a, b)`` already runs the computation (single-threaded), so calling
+    ``Perform()`` after it repeated all of it. Loading the shapes into a default object and
+    performing once, with the thread setting in place first, gives the same value, solution count
+    and closest points (tests/test_contact_distance.py) in a fraction of the time.
     """
-    pts = np.array([to_np(dss.PointOnShape1(i)) for i in range(1, dss.NbSolution() + 1)])
-    if len(pts) < 2:
-        return "point"
-    spread = float(np.max(np.linalg.norm(pts[:, None, :] - pts[None, :, :], axis=2)))
-    return "line" if spread > config.CONTACT_TOL else "point"
+    dss = BRepExtrema_DistShapeShape()
+    dss.LoadS1(a)
+    dss.LoadS2(b)
+    dss.SetMultiThread(MULTITHREAD)
+    dss.Perform()
+    return dss
 
 
 def _pair_contacts(a: InstanceData, b: InstanceData, cache: dict[str, PartFaces]) -> list[Contact]:
     shapes = _candidate_shapes(a, b, cache[a.part_id], cache[b.part_id])
     if shapes is None:
         return []
-    dss = BRepExtrema_DistShapeShape(*shapes)
-    dss.SetMultiThread(MULTITHREAD)
-    dss.Perform()
+    dss = _distance(*shapes)
     if not dss.IsDone():
         return []
     dist = float(dss.Value())
@@ -370,9 +387,18 @@ def _pair_contacts(a: InstanceData, b: InstanceData, cache: dict[str, PartFaces]
                 )
             )
         else:
-            kind = _line_or_point(dss)
+            # Touching, but not over a face and not as a shaft in a bore: along an edge or at a
+            # point. Telling the two apart took the number of closest-point solutions the solver
+            # returned, which depends on the thread count, so the same input gave different
+            # reports. One kind is the same every time.
             found.append(
-                Contact(id="", instance_a=a.id, instance_b=b.id, kind=kind, min_distance_mm=dist)
+                Contact(
+                    id="",
+                    instance_a=a.id,
+                    instance_b=b.id,
+                    kind="edge_or_point",
+                    min_distance_mm=dist,
+                )
             )
     return found
 

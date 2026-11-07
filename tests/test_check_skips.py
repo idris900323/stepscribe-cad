@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import xml.etree.ElementTree as ET  # noqa: S405 - pytest's own output
 from pathlib import Path
 from types import ModuleType
 
@@ -74,3 +75,80 @@ def test_ci_runs_the_guard_and_provides_node_and_psutil() -> None:
     assert "--junitxml=junit.xml" in ci and "scripts/check_skips.py junit.xml" in ci
     assert "actions/setup-node" in ci
     assert "psutil" in (root / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_ci_and_release_run_the_whole_suite_not_the_fast_subset() -> None:
+    """`-m "not slow"` is for local runs only: nothing may deselect tests by default or in CI."""
+    root = Path(__file__).parent.parent
+    for flow in ("ci.yml", "release.yml"):
+        text = (root / ".github" / "workflows" / flow).read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if "pytest" in line:
+                assert "-m " not in line and "slow" not in line, f"{flow}: {line.strip()}"
+    options = (
+        (root / "pyproject.toml").read_text(encoding="utf-8").split("[tool.pytest.ini_options]")[1]
+    )
+    options = options.split("\n[", 1)[0]
+    addopts = [line for line in options.splitlines() if line.startswith("addopts")]
+    assert addopts == ['addopts = "-q"'], addopts
+
+
+def test_deselected_tests_are_not_counted_as_skips(tmp_path: Path) -> None:
+    """A deselected test is absent from the junit file, so it is neither a skip nor a failure."""
+    import subprocess
+    import sys
+
+    mod = _load()
+    (tmp_path / "test_two.py").write_text(
+        "import pytest\n\n@pytest.mark.slow\ndef test_slow(): pass\n\ndef test_fast(): pass\n",
+        encoding="utf-8",
+    )
+    junit = tmp_path / "junit.xml"
+    subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-m", "not slow",
+         f"--junitxml={junit}", "-o", "markers=slow: x", str(tmp_path / "test_two.py")],
+        check=True, capture_output=True, cwd=tmp_path,
+    )  # fmt: skip
+    names = [
+        c.get("name")
+        for c in ET.parse(junit).iter("testcase")  # noqa: S314 - pytest's own output
+    ]
+    assert names == ["test_fast"]
+    assert mod.unexpected_skips(str(junit), "linux") == []
+    assert mod.main(["check_skips.py", str(junit)]) == 0
+
+
+def test_the_optional_yourdfpy_test_may_be_skipped_everywhere(tmp_path: Path) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, "yourdfpy is not installed (optional: install it yourself)")
+    for platform in ("linux", "darwin", "win32"):
+        assert mod.unexpected_skips(xml, platform) == []
+
+
+def test_robot_extra_skips_are_allowed_except_in_the_robot_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, "the robot extra is not installed")
+    monkeypatch.delenv("STEPSCRIBE_REQUIRE_ROBOT", raising=False)
+    for platform in ("linux", "darwin", "win32"):
+        assert mod.unexpected_skips(xml, platform) == []
+    monkeypatch.setenv("STEPSCRIBE_REQUIRE_ROBOT", "1")  # the `robot` CI job
+    for platform in ("linux", "darwin", "win32"):
+        assert len(mod.unexpected_skips(xml, platform)) == 1
+
+
+def test_the_macos_only_memory_test_may_not_be_skipped_on_macos(tmp_path: Path) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, "only on macOS: it reads the real vm_stat")
+    assert mod.unexpected_skips(xml, "linux") == []
+    assert mod.unexpected_skips(xml, "win32") == []
+    assert len(mod.unexpected_skips(xml, "darwin")) == 1  # on macOS it must run
+
+
+def test_the_linux_only_memory_test_may_not_be_skipped_on_linux(tmp_path: Path) -> None:
+    mod = _load()
+    xml = _junit(tmp_path, "only on Linux: it reads the real /proc/meminfo")
+    assert mod.unexpected_skips(xml, "darwin") == []
+    assert mod.unexpected_skips(xml, "win32") == []
+    assert len(mod.unexpected_skips(xml, "linux")) == 1  # on Linux it must run

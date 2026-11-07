@@ -44,11 +44,11 @@ def main() -> int:
     if info["stepscribe_importable"]:
         print(f"stepscribe: installed ({info['stepscribe'] or 'version unknown'})")
     else:
-        print("stepscribe: NOT installed. Ask the user before running: pip install stepscribe")
+        print("stepscribe: NOT installed. Ask the user before running: pip install stepscribe-cad")
     print("OpenCASCADE (OCP): " + ("available" if info["opencascade"] else "missing"))
     print(
         "MCP server dependencies: "
-        + ("available" if info["mcp_server"] else 'missing (pip install "stepscribe[mcp]")')
+        + ("available" if info["mcp_server"] else 'missing (pip install "stepscribe-cad[mcp]")')
     )
     if info["stepscribe_importable"]:
         # the full report (versions, rendering, cache, memory) with a fix for each problem

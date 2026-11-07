@@ -5,7 +5,9 @@
 Worker memory (`estimate_worker_mb`): a part-pool worker needs about WORKER_BASE_MB plus
 WORKER_MB_PER_KFACE per thousand faces of the largest part (MB per worker). The constants come
 from hardening/H3/worker_rss.py run on SO_5DOF_ARM100_Assembly.step and SO101 Assembly.step;
-`worker_count` keeps the estimate under RAM_SHARE of the memory that is free.
+`worker_count` keeps the estimate under RAM_SHARE of the memory that is free. On macOS the free figure
+is an approximation (`vm_stat`: free + inactive + speculative pages; inactive pages are reclaimable, not
+free), and the 60 % share absorbs the difference.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from OCP.TopoDS import TopoDS_Shape
 from stepscribe.features.bosses import detect_bosses
 from stepscribe.features.cutouts import detect_cutouts
 from stepscribe.features.fillets_chamfers import detect_chamfers, detect_fillets
-from stepscribe.features.holes import detect_holes
+from stepscribe.features.holes import BoreResult, detect_holes
 from stepscribe.features.patterns import detect_patterns
 from stepscribe.features.shape_class import classify_shape
 from stepscribe.features.slots_pockets import detect_pockets, detect_slots
@@ -65,6 +67,9 @@ class AnalyzeOptions:
     check_motion: bool = False
     motion_budget_s: int = 120
     debug_graphs: bool = False
+    debug_kinematics: bool = False
+    pivot_min_diameter_mm: float | None = None  # None: roles.yaml (kinematics.pivot)
+    pivot_min_length_ratio: float | None = None
     precision: int = 4
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -202,32 +207,69 @@ def analyze_geom(
     return part
 
 
+_chunk_part: list[tuple[str, PartGeom]] = []  # the one part this worker last cast rays for
+
+
+def _load_geom(brep_path: str, name: str) -> PartGeom:
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepTools import BRepTools
+
+    shape = TopoDS_Shape()
+    if not BRepTools.Read_s(shape, brep_path, BRep_Builder()):
+        raise RuntimeError(f"could not reload part '{name}' for parallel analysis")
+    return PartGeom(name, shape)
+
+
+def bore_chunk(brep_path: str, name: str, lo: int, hi: int) -> list[BoreResult]:
+    """Pool entry point: the bore results of faces ``lo..hi-1`` of a part saved as BREP.
+
+    The ray casts of hole detection are independent per face, so the pool spreads the faces of a
+    big part over its workers; :func:`stepscribe.features.holes.assemble_bores` puts them back.
+    A worker keeps the part it loaded for its next chunk of the same part.
+    """
+    from stepscribe.features.holes import bore_candidate
+
+    if not _chunk_part or _chunk_part[0][0] != brep_path:
+        _chunk_part[:] = [(brep_path, _load_geom(brep_path, name))]
+    geom = _chunk_part[0][1]
+    hi = min(hi, len(geom.table.faces))
+    return [r for idx in range(lo, hi) if (r := bore_candidate(geom, idx)) is not None]
+
+
 def analyze_brep_file(
     brep_path: str,
     name: str,
     source_file: str,
     opts: AnalyzeOptions,
     color: list[float] | None,
-) -> tuple[Part, float]:
-    """Process-pool entry point: load a solid saved as BREP and analyse it (returns Part, seconds)."""
-    import time
+    bores: tuple[list[Any], list[str]] | None = None,
+) -> tuple[Part, float, list[Any] | None]:
+    """Process-pool entry point: load a solid saved as BREP and analyse it.
 
-    from OCP.BRep import BRep_Builder
-    from OCP.BRepTools import BRepTools
+    Returns the Part, the seconds taken and the bore faces found on the way, which the contact
+    stage reuses instead of finding them again on its own copy of the shape. *bores* are the bore
+    faces and warnings other workers already found for this part (see :func:`bore_chunk`).
+    """
+    import time
 
     from stepscribe.semantics import run_semantics
 
     started = time.time()
-    shape = TopoDS_Shape()
-    if not BRepTools.Read_s(shape, brep_path, BRep_Builder()):
-        raise RuntimeError(f"could not reload part '{name}' for parallel analysis")
-    part = analyze_geom(PartGeom(name, shape), source_file, opts, color, run_semantics)
-    return part, time.time() - started
+    _chunk_part.clear()  # this worker is about to analyse; give the memory back
+    geom = _load_geom(brep_path, name)
+    if bores is not None:
+        geom.bores_cache, geom.bores_warnings = bores
+    part = analyze_geom(geom, source_file, opts, color, run_semantics)
+    return part, time.time() - started, geom.bores_cache
 
 
 WORKER_BASE_MB = 340.0  # interpreter + OCC + numpy, measured 341 MB at 10 faces
 WORKER_MB_PER_KFACE = 45.0  # measured about 43 MB per 1000 faces (pool worker: 383 MB at 617 faces)
 RAM_SHARE = 0.6  # of the free memory that the part workers may use
+UNKNOWN_RAM_MAX_WORKERS = 4  # pool size when the OS does not say how much memory is free
+VM_STAT = "/usr/bin/vm_stat"
+VM_STAT_TIMEOUT_S = 2.0
+MAX_PAGE_SIZE = 1 << 20
 _UNSET: Any = object()
 
 
@@ -236,11 +278,125 @@ def estimate_worker_mb(max_faces: int) -> float:
     return WORKER_BASE_MB + WORKER_MB_PER_KFACE * max_faces / 1000.0
 
 
+def parse_vm_stat(text: str) -> int | None:
+    """Reclaimable memory in bytes from the output of macOS ``vm_stat``, or None if it is not that.
+
+    Free + inactive + speculative pages times the page size on the first line
+    (``Mach Virtual Memory Statistics: (page size of 16384 bytes)``). Anything else, a missing
+    line, a count that is not a plain number: None, never an exception.
+    """
+    import re
+
+    size = re.search(r"page size of (\d+) bytes", text)
+    if size is None or not 0 < int(size.group(1)) <= MAX_PAGE_SIZE:
+        return None
+    pages: dict[str, int] = {}
+    for line in text.splitlines():
+        m = re.fullmatch(r"\s*Pages (free|inactive|speculative):\s*(\d+)\.?\s*", line)
+        if m:
+            pages[m.group(1)] = int(m.group(2))
+    if len(pages) != 3:
+        return None
+    total = sum(pages.values()) * int(size.group(1))
+    return total if total > 0 else None
+
+
+def _run_vm_stat(cmd: list[str], **kwargs: Any) -> Any:
+    import subprocess
+
+    return subprocess.run(cmd, capture_output=True, check=False, **kwargs)  # noqa: S603
+
+
+def macos_available_bytes(run: Any = None) -> int | None:
+    """Free memory on macOS from ``vm_stat``; None on a timeout, a missing command or odd output."""
+    import subprocess
+
+    try:
+        result = (run or _run_vm_stat)([VM_STAT], timeout=VM_STAT_TIMEOUT_S)
+        if result.returncode != 0:
+            return None
+        return parse_vm_stat(result.stdout.decode("utf-8"))
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        return None  # UnicodeDecodeError is a ValueError
+
+
+PROC_MEMINFO = "/proc/meminfo"
+CGROUP_LIMITS = (  # (limit file, usage file): cgroup v2, then v1
+    ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+    ("/sys/fs/cgroup/memory/memory.limit_in_bytes", "/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+)
+CGROUP_UNLIMITED = 1 << 60  # cgroup v1 reports a huge number when no limit is set
+
+
+def parse_meminfo(text: str) -> int | None:
+    """``MemAvailable`` of /proc/meminfo in bytes (free plus reclaimable cache), or None."""
+    import re
+
+    m = re.search(r"^MemAvailable:\s+(\d+)\s*kB\s*$", text, flags=re.MULTILINE)
+    return int(m.group(1)) * 1024 if m else None
+
+
+def parse_cgroup_free(limit: str, usage: str) -> int | None:
+    """Memory left under a cgroup limit, or None when there is no limit or the text is odd."""
+    try:
+        if limit.strip() == "max":
+            return None
+        cap, used = int(limit.strip()), int(usage.strip())
+    except ValueError:
+        return None
+    if cap <= 0 or cap >= CGROUP_UNLIMITED:
+        return None
+    return max(0, cap - used)
+
+
+def _read_text(path: str) -> str | None:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def linux_available_bytes(read: Any = None) -> int | None:
+    """Available memory on Linux: ``MemAvailable``, capped by the cgroup limit when one is set.
+
+    ``MemAvailable`` counts the page cache that can be given back, which the free-page count of
+    ``sysconf`` leaves out. In a container the cgroup limit (minus what the cgroup already uses,
+    cache included, so the figure errs low) is the real ceiling. None when /proc/meminfo cannot be
+    read: the caller then uses the free pages as before.
+    """
+    reader = read or _read_text
+    text = reader(PROC_MEMINFO)
+    available = parse_meminfo(text) if text else None
+    if available is None:
+        return None
+    for limit_file, usage_file in CGROUP_LIMITS:
+        limit, usage = reader(limit_file), reader(usage_file)
+        if limit is None or usage is None:
+            continue
+        left = parse_cgroup_free(limit, usage)
+        if left is not None:
+            return min(available, left)
+        break  # this cgroup version exists and has no limit
+    return available
+
+
 def available_ram_bytes(platform: str | None = None) -> int | None:
-    """Free physical memory, or None if this OS does not say."""
+    """Available physical memory, or None if this OS does not say.
+
+    Windows: available physical memory (free plus standby). macOS: free plus inactive plus
+    speculative pages. Linux: ``MemAvailable`` capped by the cgroup limit; if /proc/meminfo cannot
+    be read, the free pages (which leave out the page cache).
+    """
     import os
     import sys
 
+    if (platform or sys.platform) == "darwin":
+        return macos_available_bytes()
+    if (platform or sys.platform).startswith("linux"):
+        found = linux_available_bytes()
+        if found is not None:
+            return found
     try:
         if (platform or sys.platform) == "win32":
             import ctypes
@@ -269,6 +425,83 @@ def available_ram_bytes(platform: str | None = None) -> int | None:
         return None
 
 
+@dataclass(frozen=True)
+class WorkerChoice:
+    """The pool size and the rule that chose it (logged at the start of every analysis)."""
+
+    workers: int
+    rule: str  # which limit decided: env, cpu, memory, unknown-memory
+    free_bytes: int | None
+    cpu_cap: int
+    memory_cap: int | None
+    jobs: int
+
+    def describe(self) -> str:
+        free = "unknown" if self.free_bytes is None else f"{self.free_bytes / 1024**3:.1f} GiB"
+        mem = "no memory limit" if self.memory_cap is None else f"memory allows {self.memory_cap}"
+        return (
+            f"part workers: {self.workers} ({self.rule}; free memory {free}; "
+            f"cpu allows {self.cpu_cap}; {mem}; jobs {self.jobs})"
+        )
+
+
+def memory_advice(choice: WorkerChoice) -> str | None:
+    """One plain sentence when free memory, not the CPU, holds the pool below what the CPU allows."""
+    if (
+        choice.rule not in ("free memory", "unknown free memory")
+        or choice.workers >= choice.cpu_cap
+    ):
+        return None
+    free = (
+        "not known on this computer"
+        if choice.free_bytes is None
+        else f"{choice.free_bytes / 1024**3:.1f} GiB now"
+    )
+    return (
+        f"Using {choice.workers} of {choice.cpu_cap} possible part workers because free memory "
+        f"({free}) is the limit; closing other programs frees memory and speeds this up."
+    )
+
+
+def worker_choice(
+    n_parts: int,
+    max_faces: int = 0,
+    available_bytes: int | None = _UNSET,
+    cpus: int | None = None,
+    jobs: int | None = None,
+) -> WorkerChoice:
+    """Processes to use for part analysis, with the rule that decided.
+
+    STEPSCRIBE_WORKERS wins. Otherwise CPUs - 1 (at most 8) shared between the jobs allowed to run
+    at once, and never more than the free memory allows (`estimate_worker_mb`, RAM_SHARE). When the
+    OS does not report free memory (macOS reads it from ``vm_stat``; if that fails too) the pool is
+    capped at UNKNOWN_RAM_MAX_WORKERS (4) processes shared between the jobs, not left unlimited.
+    """
+    import os
+
+    from stepscribe.limits import parallelism
+    from stepscribe.runner import RUNNER
+
+    n_jobs = max(1, jobs if jobs is not None else RUNNER.max_jobs)
+    free = available_ram_bytes() if available_bytes is _UNSET else available_bytes
+    cpu_cap = max(1, min(max(1, parallelism(cpus) // n_jobs), n_parts))
+    env = os.environ.get("STEPSCRIBE_WORKERS")
+    if env and env.isdigit():
+        n = max(1, min(int(env), n_parts))
+        return WorkerChoice(n, "STEPSCRIBE_WORKERS", free, cpu_cap, None, n_jobs)
+    n, rule, mem_cap = cpu_cap, "cpu", None
+    if free is None:  # the OS does not say: a conservative pool, shared between the jobs
+        mem_cap = max(1, UNKNOWN_RAM_MAX_WORKERS // n_jobs)
+        if mem_cap < n:
+            n, rule = mem_cap, "unknown free memory"
+    elif max_faces > 0:
+        per_worker = estimate_worker_mb(max_faces) * 1024**2
+        mem_cap = max(1, int(RAM_SHARE * free / (per_worker * n_jobs)))
+        if mem_cap < n:
+            n, rule = mem_cap, "free memory"
+    return WorkerChoice(n, rule, free, cpu_cap, mem_cap, n_jobs)
+
+
 def worker_count(
     n_parts: int,
     max_faces: int = 0,
@@ -276,27 +509,38 @@ def worker_count(
     cpus: int | None = None,
     jobs: int | None = None,
 ) -> int:
-    """Processes to use for part analysis.
+    """Processes to use for part analysis (see :func:`worker_choice` for the rule that decided)."""
+    return worker_choice(n_parts, max_faces, available_bytes, cpus, jobs).workers
 
-    STEPSCRIBE_WORKERS wins. Otherwise CPUs - 1 (at most 8) shared between the jobs allowed to run
-    at once, and never more than the free memory allows (`estimate_worker_mb`, RAM_SHARE).
+
+UNKNOWN_RAM_SPLIT_WORKERS = UNKNOWN_RAM_MAX_WORKERS  # the split rule uses the same limit
+
+
+def may_split_bores(
+    workers: int,
+    max_faces: int,
+    available_bytes: int | None = _UNSET,
+    jobs: int | None = None,
+) -> bool:
+    """Whether the ray casts of a big part may be spread over the whole pool.
+
+    Every worker that casts rays holds its own copy of the part, so the split puts the largest
+    part into all `workers` processes at once, not into one. That is allowed when the same memory
+    rule as `worker_count` (`estimate_worker_mb` for the largest part, RAM_SHARE of the free
+    memory, shared between the jobs) holds for all of them. When the OS does not report free
+    memory the split is used only on a pool of at most UNKNOWN_RAM_SPLIT_WORKERS processes. The
+    report is the same either way: no split just means the part's own worker does all the casts.
     """
-    import os
-
-    from stepscribe.limits import parallelism
     from stepscribe.runner import RUNNER
 
-    env = os.environ.get("STEPSCRIBE_WORKERS")
-    if env and env.isdigit():
-        return max(1, min(int(env), n_parts))
-    n_jobs = max(1, jobs if jobs is not None else RUNNER.max_jobs)
-    by_cpu = max(1, parallelism(cpus) // n_jobs)
-    n = max(1, min(by_cpu, n_parts))
+    if workers <= 1:
+        return False
     free = available_ram_bytes() if available_bytes is _UNSET else available_bytes
-    if free is not None and max_faces > 0:
-        per_worker = estimate_worker_mb(max_faces) * 1024**2
-        n = min(n, max(1, int(RAM_SHARE * free / (per_worker * n_jobs))))
-    return n
+    if free is None:
+        return workers <= UNKNOWN_RAM_SPLIT_WORKERS
+    n_jobs = max(1, jobs if jobs is not None else RUNNER.max_jobs)
+    per_worker = estimate_worker_mb(max_faces) * 1024**2
+    return workers * per_worker * n_jobs <= RAM_SHARE * free
 
 
 def assign_part_ids(parts: list[Part]) -> None:
@@ -310,8 +554,10 @@ __all__ = [
     "AnalyzeOptions",
     "AnalyzedPart",
     "analyze_brep_file",
+    "bore_chunk",
     "analyze_geom",
     "assign_part_ids",
+    "may_split_bores",
     "np",
     "split_bodies",
 ]

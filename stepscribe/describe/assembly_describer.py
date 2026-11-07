@@ -7,7 +7,9 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from stepscribe.assembly.file_frames import FRAME_WARNING, frame_hedge
 from stepscribe.describe.budget import rank_parts
+from stepscribe.describe.image_captions import caption_line
 from stepscribe.describe.part_describer import shape_label
 from stepscribe.describe.phrases import fmt, join_and, plural
 from stepscribe.models.schema import BBox, FastenerJoint, Part, Report
@@ -89,6 +91,14 @@ def level0_context(
     shopping = report.assembly.fastener_shopping_list if report.assembly else []
     return {
         "root_name": root_name,
+        "sources_sentence": (
+            f" It was combined from {len(report.sources)} files (listed with their hashes in "
+            "`00_READ_ME_FIRST.md`); each keeps its own coordinates."
+            if report.sources
+            else ""
+        ),
+        "hedge": frame_hedge(report.warnings),
+        "frame_warning": next((w for w in report.warnings if FRAME_WARNING in w), None),
         "n_parts": len(parts),
         "n_instances": sum(qty.values()),
         "n_fabricated": len(parts) - hardware,
@@ -108,13 +118,14 @@ def level0_context(
         ],
         "headline": headline_semantics(report),
         "summary": u.summary if u else "",
+        "kinematics": u.kinematics.statement if u else "",
         "top_spots": [
             f"{w.id} ({w.severity}): {w.message}" for w in (u.weak_spots[:3] if u else [])
         ],
         "fasteners": [f"{row['qty']} × {row['item']}" for row in shopping],
         "up": up,
         "front": front,
-        "images": images or [],
+        "images": [caption_line(i, report) for i in images] if images else [],
     }
 
 
@@ -134,6 +145,24 @@ def _joint_line(j: FastenerJoint) -> str:
     return f"{j.id}: Ø{fmt(j.common_diameter_mm)} {where}, grip {fmt(j.stack_thickness_mm)} mm, {fastener}"
 
 
+def _pivot_line(j: FastenerJoint) -> str:
+    """'J001: a Ø50 bore across 2 parts, 282 mm long: pivot candidate, not a fastener (confidence 0.50)'."""
+    return (
+        f"{j.id}: a Ø{fmt(j.common_diameter_mm)} bore across {len(j.instance_ids)} parts, "
+        f"{fmt(j.stack_thickness_mm)} mm long, no screw size: pivot candidate, not a fastener "
+        f"(confidence {j.confidence:.2f})"
+    )
+
+
+def _bore_pair_line(j: FastenerJoint) -> str:
+    """'J002: a Ø50 bore pair across 2 parts, 20 mm deep: large coaxial bore pair (...), not a fastener'."""
+    return (
+        f"{j.id}: a Ø{fmt(j.common_diameter_mm)} bore pair across {len(j.instance_ids)} parts, "
+        f"{fmt(j.stack_thickness_mm)} mm deep, no screw size: large coaxial bore pair (locating feature "
+        f"or bearing seat), not a fastener (confidence {j.confidence:.2f})"
+    )
+
+
 def assembly_core_context(report: Report) -> dict[str, Any]:
     """Relations, joints and shopping list that always appear in the single-file pack."""
     a = report.assembly
@@ -141,8 +170,11 @@ def assembly_core_context(report: Report) -> dict[str, Any]:
         return {"has_assembly": False}
     return {
         "has_assembly": True,
+        "hedge": frame_hedge(report.warnings),
         "relations": [f"{r.id}: {r.sentence}" for r in a.relations],
-        "joints": [_joint_line(j) for j in a.fastener_joints],
+        "joints": [_joint_line(j) for j in a.fasteners],
+        "pivots": [_pivot_line(j) for j in a.pivots],
+        "bore_pairs": [_bore_pair_line(j) for j in a.bore_pairs],
         "shopping": [f"{row['qty']} × {row['item']}" for row in a.fastener_shopping_list],
         "subassemblies": [f"{s.name}: {s.summary}" for s in a.subassemblies],
         "bom": [

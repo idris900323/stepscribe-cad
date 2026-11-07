@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 idris sadiq
+# mypy: disable-error-code=no-any-return
 """MCP server (``stepscribe mcp``): follow-up questions about a STEP file from an AI assistant.
 
-Needs the optional extra: ``pip install stepscribe[mcp]``. The analysis tools are read-only; submit_answer only changes the in-memory session.
+Needs the optional extra: ``pip install stepscribe-cad[mcp]``. The analysis tools are read-only; submit_answer only changes the in-memory session.
 """
 
 # No `from __future__ import annotations`: the SDK reads real annotations (Image is a local import).
@@ -24,7 +25,7 @@ INSTRUCTIONS = (
     "find_parts. For a big assembly call start_analysis first and poll get_job_status, then export_pack. To refine the analysis, call get_questions, ask the user, and send each reply "
     "with submit_answer. Statements starting with 'Likely:' are inferences with a confidence. All units "
     "are millimetres. The first call for a file analyses it (can take minutes for big "
-    "assemblies); later calls are cached."
+    "assemblies); later calls are cached. Several files: give a .zip as the path, or a folder with combine=true."
 )
 
 
@@ -33,72 +34,82 @@ def build_server() -> "MCPServer":
     try:
         from mcp.server.mcpserver import Image, MCPServer
     except ImportError as exc:  # pragma: no cover - depends on the optional extra
-        raise SystemExit("The MCP server needs the extra: pip install stepscribe[mcp]") from exc
+        raise SystemExit("The MCP server needs the extra: pip install stepscribe-cad[mcp]") from exc
 
     set_headless()
     server = MCPServer("stepscribe", instructions=INSTRUCTIONS)
 
     @server.tool()
-    def get_overview(path: str) -> str:
-        """Overview of the whole design: size, parts, mass, headline features, fasteners."""
-        return tools.get_overview(path)
+    def get_overview(path: str, combine: bool = False) -> str:
+        """Overview of the whole design: size, parts, mass, headline features, fasteners. A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        return tools.get_overview(path, combine=combine)
 
     @server.tool()
-    def get_part(path: str, part: str) -> str:
-        """Full detail for one part: dimensions, holes, patterns, features. `part` is an ID like PRT003 or a name."""
-        return tools.get_part(path, part)
+    def get_part(path: str, part: str, combine: bool = False) -> str:
+        """Full detail for one part: dimensions, holes, patterns, features. `part` is an ID like PRT003 or a name. A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        return tools.get_part(path, part, combine=combine)
 
     @server.tool()
     def list_holes(
-        path: str, part: str | None = None, min_d: float | None = None, max_d: float | None = None
+        path: str,
+        part: str | None = None,
+        min_d: float | None = None,
+        max_d: float | None = None,
+        combine: bool = False,
     ) -> str:
-        """Hole table with diameters, depth, edge distance and likely screw standard; optional part and diameter range in mm."""
-        return tools.list_holes(path, part, min_d, max_d)
+        """Hole table with diameters, depth, edge distance and likely screw standard; optional part and diameter range in mm. A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        return tools.list_holes(path, part, min_d, max_d, combine=combine)
 
     @server.tool()
-    def list_cutouts(path: str, part: str | None = None) -> str:
-        """Cut-outs, recesses, stepped openings and edge notches with every level's size, depth and position (mm); optional part."""
-        return tools.list_cutouts(path, part)
+    def list_cutouts(path: str, part: str | None = None, combine: bool = False) -> str:
+        """Cut-outs, recesses, stepped openings and edge notches with every level's size, depth and position (mm); optional part. A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        return tools.list_cutouts(path, part, combine=combine)
 
     @server.tool()
-    def get_relations(path: str, part: str | None = None) -> str:
-        """Plain-English relations between parts (bolted to, rests on, inserted into, ...)."""
-        return tools.get_relations(path, part)
+    def get_relations(path: str, part: str | None = None, combine: bool = False) -> str:
+        """Plain-English relations between parts (bolted to, rests on, inserted into, ...). A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        return tools.get_relations(path, part, combine=combine)
 
     @server.tool()
-    def measure_distance(path: str, a: str, b: str) -> str:
-        """Exact minimum distance in mm between two instances (instance ID, name, or a part ID used once)."""
-        return tools.measure_distance(path, a, b)
+    def measure_distance(path: str, a: str, b: str, combine: bool = False) -> str:
+        """Exact minimum distance in mm between two instances (instance ID, name, or a part ID used once). A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        return tools.measure_distance(path, a, b, combine=combine)
 
     @server.tool()
-    def section(path: str, plane: str, part: str | None = None) -> list[str | Image]:
-        """Cut the model with a plane like 'z=12.5': returns a text summary and a drawing (PNG, at most 1200 px)."""
-        text, png = tools.section_result(path, plane, part)
+    def section(
+        path: str, plane: str, part: str | None = None, combine: bool = False
+    ) -> list[str | Image]:
+        """Cut the model with a plane like 'z=12.5': returns a text summary and a drawing (PNG, at most 1200 px). A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        text, png = tools.section_result(path, plane, part, combine=combine)
         return [text, Image(data=png, format="png")] if png else [text]
 
     @server.tool()
     def render_view(
-        path: str, view: str = "iso", part: str | None = None, highlight: list[str] | None = None
+        path: str,
+        view: str = "iso",
+        part: str | None = None,
+        highlight: list[str] | None = None,
+        combine: bool = False,
     ) -> list[str | Image]:
-        """Labelled render (iso, front, top, right, exploded; PNG, at most 1200 px); optionally one part or highlighted IDs. For a part, the info panel contents come as text."""
-        text, png = tools.render_view_result(path, view, part, highlight)
+        """Labelled render (iso, front, top, right, exploded; PNG, at most 1200 px); optionally one part or highlighted IDs. For a part, the info panel contents come as text. A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        text, png = tools.render_view_result(path, view, part, highlight, combine=combine)
         return [text, Image(data=png, format="png")]
 
     @server.tool()
-    def find_parts(path: str, query: str) -> str:
-        """Find parts by name, shape class (plate, bracket, tube...) or semantic tag (motor mount, bearing seat...)."""
-        return tools.find_parts(path, query)
+    def find_parts(path: str, query: str, combine: bool = False) -> str:
+        """Find parts by name, shape class (plate, bracket, tube...) or semantic tag (motor mount, bearing seat...). A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        return tools.find_parts(path, query, combine=combine)
 
     @server.tool()
-    def get_questions(path: str) -> list[str | Image]:
-        """Open questions about the design (material, purpose, what drives a joint...), most valuable first, with a highlight image for the first one. Ask the user, then call submit_answer."""
-        text, png = tools.question_result(path)
+    def get_questions(path: str, combine: bool = False) -> list[str | Image]:
+        """Open questions about the design (material, purpose, what drives a joint...), most valuable first, with a highlight image for the first one. Ask the user, then call submit_answer. A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        text, png = tools.question_result(path, combine=combine)
         return [text, Image(data=png, format="png")] if png else [text]
 
     @server.tool()
-    def start_analysis(path: str, material: str | None = None) -> str:
-        """Start analysing a STEP file in the background; returns at once with a job_id, whether the result is already cached, and an ETA. Use it first for big assemblies (they take minutes), then poll get_job_status."""
-        return tools.start_analysis(path, material)
+    def start_analysis(path: str, material: str | None = None, combine: bool = False) -> str:
+        """Start analysing a STEP file in the background; returns at once with a job_id, whether the result is already cached, and an ETA. Use it first for big assemblies (they take minutes), then poll get_job_status. A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        return tools.start_analysis(path, material, combine=combine)
 
     @server.tool()
     def get_job_status(job_id: str) -> str:
@@ -114,8 +125,9 @@ def build_server() -> "MCPServer":
         chat_max_mb: float = 10.0,
         material: str | None = None,
         copy_to: str | None = None,
+        combine: bool = False,
     ) -> str:
-        """Write (or reuse from the cache) the portable export for a STEP path or a finished job_id: returns all file paths, token estimates and the text of the SMALL version. Pass copy_to (a folder, normally the one holding the STEP file) to also save a copy there."""
+        """Write (or reuse from the cache) the portable export for a STEP path or a finished job_id: returns all file paths, token estimates and the text of the SMALL version. Pass copy_to (a folder, normally the one holding the STEP file) to also save a copy there. A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
         return tools.export_pack(
             path_or_job_id,
             small_budget_tokens,
@@ -124,6 +136,7 @@ def build_server() -> "MCPServer":
             chat_max_mb,
             material,
             copy_to,
+            combine,
         )
 
     @server.tool()
@@ -133,14 +146,15 @@ def build_server() -> "MCPServer":
         status: str = "answered",
         value: str | None = None,
         note: str | None = None,
+        combine: bool = False,
     ) -> str:
-        """Record the user's answer to a question ID from get_questions. status: answered, skipped or not_sure. The analysis updates at once; answers live in memory for this session only."""
-        return tools.submit_answer(path, question_id, status, value, note)
+        """Record the user's answer to a question ID from get_questions. status: answered, skipped or not_sure. The analysis updates at once; answers live in memory for this session only. A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        return tools.submit_answer(path, question_id, status, value, note, combine=combine)
 
     @server.tool()
-    def get_shopping_list(path: str) -> str:
-        """Fasteners needed, derived from aligned holes across parts."""
-        return tools.get_shopping_list(path)
+    def get_shopping_list(path: str, combine: bool = False) -> str:
+        """Fasteners needed, derived from aligned holes across parts. A folder path needs combine=true (all its STEP files become one assembly; other files are ignored); a zip needs no flag."""
+        return tools.get_shopping_list(path, combine=combine)
 
     @server.tool()
     def diff(path_a: str, path_b: str) -> str:

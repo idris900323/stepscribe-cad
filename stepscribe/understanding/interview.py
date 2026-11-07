@@ -15,6 +15,7 @@ from typing import Any
 from rich.console import Console
 
 from stepscribe.models.schema import Question
+from stepscribe.understanding.answers import AnswerError
 from stepscribe.understanding.session import Session
 
 HELP = "number = choose | Enter = accept the guess | s = skip | ? = not sure | b = back | d = done"
@@ -117,7 +118,11 @@ def run_interview(
             change = session.answer(q.id, "not_sure")
         else:
             assert isinstance(parsed, tuple)
-            change = session.answer(q.id, "answered", parsed[1])
+            try:
+                change = session.answer(q.id, "answered", parsed[1])
+            except AnswerError as exc:
+                console.print(f"  {exc}", markup=False)
+                continue
         count += 1
         console.print(f"  {change.text}", markup=False)
     if context_file is not None and session.answers:

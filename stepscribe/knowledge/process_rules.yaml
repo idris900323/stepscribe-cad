@@ -4,6 +4,16 @@
 # Rule 7: every domain number carries a `source`; values without one are left out (TODO: verify).
 
 confidence_k: 2.0        # larger = slower to become confident
+
+# Complex or free-form geometry: no process is guessed. Cast housings and sculpted skins only
+# *look* printed or moulded, and the rules below would answer with confidence. A part qualifies when
+# it has at least min_faces faces and EITHER it is not a closed solid OR at least min_freeform_share
+# of its faces are B-spline. Measured on a real robot's cast housings (up to 56 % B-spline, three
+# of them open solids); a thin or ribbed part made of planes and cylinders does not qualify.
+# Heuristic limits chosen for this tool, not domain data.
+complex_geometry:
+  min_faces: 100            # simpler parts keep their guess however curved they are
+  min_freeform_share: 0.15  # inclusive
 fallback_floor: 0.5      # weak evidence that a complex shape is printed when nothing else fires
 
 # Signals and the weight each adds to a process. Comments say why the weight is what it is.

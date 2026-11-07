@@ -109,6 +109,13 @@ Cut-out patterns:
 - {{ i }}
 {% endfor %}
 {% endif %}
+{% if c.step %}
+
+## From the STEP file
+{% for t in c.step %}
+- {{ t }}
+{% endfor %}
+{% endif %}
 {% if c.warnings %}
 
 ## Warnings

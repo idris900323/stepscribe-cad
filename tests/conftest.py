@@ -15,8 +15,10 @@ sys.path.insert(0, str(ROOT / "fixtures" / "understanding"))
 from assembly_fixtures import generate_assemblies  # noqa: E402
 from assembly_fixtures_u import generate_kinematic  # noqa: E402
 from cutout_fixtures import generate_cutouts  # noqa: E402
+from flat_fixtures import generate_flat  # noqa: E402
 from generate_fixtures import generate_all  # noqa: E402
 from mechanism_fixtures import generate_mechanisms  # noqa: E402
+from multi_fixtures import generate_multi  # noqa: E402
 from pack_issue_fixtures import generate_pack_issue_fixtures  # noqa: E402
 from part_fixtures import generate_parts  # noqa: E402
 from risk_fixtures import generate_risks  # noqa: E402
@@ -25,6 +27,11 @@ from stepscribe.analysis import AnalyzeOptions  # noqa: E402
 from stepscribe.api import Analysis, analyze_full  # noqa: E402
 
 GOLDEN_DIR = ROOT / "golden"
+
+
+def _slow_ids() -> set[str]:
+    listed = (ROOT / "slow_tests.txt").read_text(encoding="utf-8").splitlines()
+    return {line.strip() for line in listed if line.strip() and not line.startswith("#")}
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -60,6 +67,8 @@ def step_files() -> dict[str, Path]:
     paths.update(generate_mechanisms())
     paths.update(generate_risks())
     paths.update(generate_pack_issue_fixtures())
+    paths.update(generate_multi())
+    paths.update(generate_flat())
     return paths
 
 
@@ -93,6 +102,19 @@ def golden(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def]
 
 
 RENDER_FILES = {
+    "test_image_contacts.py",
+    "test_image_counterbore_flat.py",
+    "test_image_features.py",
+    "test_image_hole_map.py",
+    "test_image_kinematic.py",
+    "test_image_links.py",
+    "test_image_ranges.py",
+    "test_image_section.py",
+    "test_image_sets.py",
+    "test_image_three_view.py",
+    "test_image_walls.py",
+    "test_image_no_names.py",
+    "test_image_weak_spots.py",
     "test_render.py",
     "test_no_clipping.py",
     "test_export.py",
@@ -102,14 +124,21 @@ RENDER_TESTS = {
     "test_image_tools_return_small_pngs_and_panel_text",
     "test_section_and_render_return_png",
     "test_page_and_upload_flow",
+    "test_the_image_set_decides_which_images_the_page_lists[basic-False]",
+    "test_the_image_set_decides_which_images_the_page_lists[standard-True]",
     "test_interview_over_http",
 }
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Skip the image tests on machines where off-screen OpenGL does not work (bare CI VMs)."""
+    """Mark the slowest tests `slow` (``pytest -m "not slow"`` is the fast local run); skip the
+    image tests on machines where off-screen OpenGL does not work (bare CI VMs)."""
     from stepscribe.render.raster import rendering_available
 
+    slow = _slow_ids()
+    for item in items:
+        if item.nodeid in slow:
+            item.add_marker(pytest.mark.slow)
     if rendering_available():
         return
     skip = pytest.mark.skip(reason="off-screen rendering is not available on this machine")

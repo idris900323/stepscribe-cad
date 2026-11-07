@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 idris sadiq
-"""Optional, opt-in LLM adapter (``pip install stepscribe[llm]``).
+"""Optional, opt-in LLM adapter (``pip install stepscribe-cad[llm]``).
 
 Speaks Ollama's native API and any OpenAI-compatible chat endpoint over plain HTTP (httpx only,
 no vendor SDKs). There is no default endpoint and no key is ever written to disk: everything

@@ -39,11 +39,108 @@ class Effects:
     roles: dict[str, str] = field(default_factory=dict)  # part id -> label
     drives: dict[str, str] = field(default_factory=dict)  # joint id -> "designer:motor"
     ranges: dict[str, tuple[float, float]] = field(default_factory=dict)
+    directions: dict[str, str] = field(default_factory=dict)  # joint id -> ccw|cw|+|-
+    axes: dict[str, tuple[float, float, float]] = field(default_factory=dict)
+    base: str | None = None  # link id
+    axis_confirmed: set[str] = field(default_factory=set)  # joint ids the designer said are right
     suppress_floating: set[str] = field(default_factory=set)  # instance ids
     fasteners_missing: list[tuple[str, str]] = field(default_factory=list)
     text: dict[str, str] = field(default_factory=dict)  # purpose / load / environment
     unconfirmed: list[str] = field(default_factory=list)  # question ids skipped
     unsure: list[str] = field(default_factory=list)
+
+
+def parse_ranges(text: str, joint_ids: list[str]) -> list[tuple[str, float, float]]:
+    """'KJ1: -170 to 170' lines to (joint, lower, upper); lines for unknown joints are ignored."""
+    out = []
+    for line in re.split(r"[\n;]+", text):
+        m = re.match(r"\s*(KJ\d+)\b\D*?(-?\d+(?:\.\d+)?)\D+?(-?\d+(?:\.\d+)?)", line)
+        if m and m.group(1) in joint_ids:
+            lo, hi = sorted((float(m.group(2)), float(m.group(3))))
+            out.append((m.group(1), lo, hi))
+    return out
+
+
+_DIRECTION_WORDS = (
+    (r"counter[- ]?clockwise|anti[- ]?clockwise|ccw", "ccw"),
+    (r"clockwise|cw", "cw"),
+    (r"\+", "+"),
+    (r"-", "-"),
+)
+
+
+class AnswerError(ValueError):
+    """An answer that cannot be used; the message says what to type instead."""
+
+
+DIRECTION_HELP = (
+    "Give one line per joint, for example 'KJ1: ccw' (counter-clockwise, right-hand rule) or "
+    "'KJ1: cw' (clockwise); for a slide '+' or '-'."
+)
+RANGE_HELP = "Give one line per joint, for example 'KJ1: -170 to 170' (degrees; mm for a slide)."
+
+
+def check_direction_answer(text: str, joint_ids: list[str]) -> dict[str, str]:
+    """The directions in *text*, or an AnswerError naming the first line that cannot be read."""
+    out: dict[str, str] = {}
+    lines = [ln for ln in re.split(r"[\n;]+", text) if ln.strip()]
+    if not lines:
+        raise AnswerError("No joint lines found. " + DIRECTION_HELP)
+    for line in lines:
+        m = re.match(r"\s*(KJ\d+)\b", line)
+        if m is None:
+            raise AnswerError(f"Could not read '{line.strip()}'. " + DIRECTION_HELP)
+        if m.group(1) not in joint_ids:
+            raise AnswerError(
+                f"{m.group(1)} is not one of {', '.join(joint_ids)}. " + DIRECTION_HELP
+            )
+        got = parse_directions(line, joint_ids)
+        if m.group(1) not in got:
+            raise AnswerError(f"Could not read '{line.strip()}'. " + DIRECTION_HELP)
+        out.update(got)
+    return out
+
+
+def check_range_answer(text: str, joint_ids: list[str]) -> list[tuple[str, float, float]]:
+    """The ranges in *text*, or an AnswerError naming the first line that cannot be read."""
+    out: list[tuple[str, float, float]] = []
+    lines = [ln for ln in re.split(r"[\n;]+", text) if ln.strip()]
+    if not lines:
+        raise AnswerError("No joint lines found. " + RANGE_HELP)
+    for line in lines:
+        m = re.match(r"\s*(KJ\d+)\b", line)
+        if m is None:
+            raise AnswerError(f"Could not read '{line.strip()}'. " + RANGE_HELP)
+        if m.group(1) not in joint_ids:
+            raise AnswerError(f"{m.group(1)} is not one of {', '.join(joint_ids)}. " + RANGE_HELP)
+        got = parse_ranges(line, joint_ids)
+        if not got:
+            raise AnswerError(f"Could not read '{line.strip()}'. " + RANGE_HELP)
+        out += got
+    return out
+
+
+def validate_answer(q: Question, value: Any) -> None:
+    """Raise AnswerError when an answer to a free-text robot question cannot be read."""
+    if q.kind == "joint_directions":
+        check_direction_answer(str(value or ""), q.refs)
+    elif q.kind == "joint_ranges":
+        check_range_answer(str(value or ""), q.refs)
+
+
+def parse_directions(text: str, joint_ids: list[str]) -> dict[str, str]:
+    """'KJ1: ccw' lines to {joint: ccw | cw | + | -}; unknown joints and unreadable lines are ignored."""
+    out: dict[str, str] = {}
+    for line in re.split(r"[\n;]+", text):
+        m = re.match(r"\s*(KJ\d+)\b[\s:=,]*(\S.*)$", line)
+        if not m or m.group(1) not in joint_ids:
+            continue
+        word = m.group(2).strip().lower()
+        for pattern, value in _DIRECTION_WORDS:
+            if re.fullmatch(pattern + r"[\s.,;]*", word):
+                out[m.group(1)] = value
+                break
+    return out
 
 
 def answers_from_context(raw: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
@@ -98,6 +195,21 @@ def collect_effects(answers: dict[str, dict[str, Any]], questions: dict[str, Que
             if len(nums) >= 2:
                 lo, hi = sorted(float(n) for n in nums[:2])
                 fx.ranges[q.refs[0]] = (lo, hi)
+        elif q.kind == "joint_directions":
+            fx.directions.update(parse_directions(str(v), q.refs))
+        elif q.kind == "joint_ranges":
+            for jid, lo, hi in parse_ranges(str(v), q.refs):
+                fx.ranges[jid] = (lo, hi)
+        elif q.kind == "joint_direction" and q.refs and v in ("ccw", "cw", "+", "-"):
+            fx.directions[q.refs[0]] = str(v)
+        elif q.kind == "joint_axis" and q.refs and v == "yes":
+            fx.axis_confirmed.add(q.refs[0])
+        elif q.kind == "joint_axis" and q.refs and isinstance(v, str) and v in ("X", "Y", "Z"):
+            unit = [0.0, 0.0, 0.0]
+            unit["XYZ".index(v)] = 1.0
+            fx.axes[q.refs[0]] = (unit[0], unit[1], unit[2])
+        elif q.kind == "kin_base" and isinstance(v, str) and v:
+            fx.base = v
         elif q.kind == "missing_part" and v in ("missing", "purchased", "loose"):
             fx.suppress_floating.update(q.refs)
         elif q.kind == "connection_type" and v == "fasteners_missing" and len(q.refs) == 2:

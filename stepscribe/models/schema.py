@@ -4,11 +4,12 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
-SCHEMA_VERSION = "0.5.0"
+SCHEMA_VERSION = "0.6.0"
 
 AxisLabel = Literal["+X", "-X", "+Y", "-Y", "+Z", "-Z"]
 
@@ -57,7 +58,7 @@ class MassProperties(_M):
     density_g_cm3: float | None = None
     mass_g: float | None = None
     material_assumed: str | None = None
-    material_source: Literal["user", "name_guess", "none"] = "none"
+    material_source: Literal["user", "step_file", "name_guess", "none"] = "none"
     inertia_tensor_g_mm2: list[list[float]] | None = None
 
 
@@ -88,6 +89,21 @@ class HoleSegment(_M):
     face_ids: list[str]
 
 
+class CounterboreFlat(_M):
+    """A flat cut into the wall of a round counterbore (a D-shaped bore), measured on the flat's own face."""
+
+    face_ids: list[str]
+    normal: Vec3  # unit vector from the bore axis towards the flat
+    distance_from_axis_mm: float
+    across_flats_mm: (
+        float  # flat to the opposite round wall: distance from the axis + the bore radius
+    )
+    chord_length_mm: float  # length of the flat across the bore
+    depth_mm: float  # length of the flat along the bore axis
+    hole_wall_to_flat_mm: float  # wall of the hole in the counterbore floor to the flat
+    hole_wall_to_round_wall_mm: float  # the same hole's wall to the round counterbore wall opposite
+
+
 class Hole(_M):
     id: str
     axis: Axis
@@ -106,6 +122,15 @@ class Hole(_M):
     entry_face_id: str | None = None
     edge_distance_mm: float | None = None
     warnings: list[str] = Field(default_factory=list)
+    counterbore_flat: CounterboreFlat | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_flat(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``counterbore_flat`` only for a counterbore that has a flat."""
+        data: dict[str, Any] = handler(self)
+        if data.get("counterbore_flat") is None:
+            data.pop("counterbore_flat", None)
+        return data
 
 
 class HolePattern(_M):
@@ -347,6 +372,9 @@ class KinJoint(_M):
     range_deg_or_mm: tuple[float, float] | None = None
     blocked_by: list[str] = Field(default_factory=list)
     description: str = ""
+    declared_by_designer: bool = False  # from the `kinematics:` section: replaces the detection
+    range_source: Literal["designer", "motion_check"] | None = None  # who set range_deg_or_mm
+    positive_direction: Literal["ccw", "cw", "+", "-"] | None = None  # sign of positive motion
 
 
 class Mechanism(_M):
@@ -387,6 +415,26 @@ class KinematicModel(_M):
     floating_groups: list[str] = Field(default_factory=list)
     description: str = ""
     mermaid: str = ""
+    headline: str = ""  # "Likely: 6-axis serial arm (confidence X; evidence ...)"; empty for others
+    headline_confidence: float | None = None
+    headline_evidence: list[str] = Field(default_factory=list)
+    statement: str = ""  # the headline plus chain facts and the axis-pattern result
+    axis_pattern: list[str] = Field(default_factory=list)  # OK:/DIFFERS: lines (six-axis arms)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_headline(self, handler: Any) -> dict[str, Any]:
+        """The headline fields appear in report.json only when there is a headline to carry."""
+        data: dict[str, Any] = handler(self)
+        if not self.headline and not self.statement:
+            for key in (
+                "headline",
+                "headline_confidence",
+                "headline_evidence",
+                "statement",
+                "axis_pattern",
+            ):
+                data.pop(key, None)
+        return data
 
 
 class LoadPath(_M):
@@ -460,6 +508,12 @@ class Question(_M):
         "connection_type",
         "joint_drive",
         "joint_range",
+        "joint_ranges",
+        "joint_directions",
+        "joint_direction",
+        "joint_axis",
+        "kin_base",
+        "files_frame",
         "payload",
         "purpose",
         "load",
@@ -490,9 +544,63 @@ class Answer(_M):
     question: str | None = None  # the question text, so the pack can print a Q&A list
 
 
+class KinContactDebug(_M):
+    """One contact between two instances and what the kinematic model did with its pair."""
+
+    id: str
+    instance_a: str
+    instance_b: str
+    name_a: str
+    name_b: str
+    kind: str
+    area_mm2: float | None = None
+    normal: Vec3 | None = None
+    centroid: Vec3 | None = None
+    distance_mm: float
+    connection: str  # how the pair was classified: fixed, soft, revolute, ... or none
+    link_a: str
+    link_b: str
+    decision: Literal["merged", "separate"]
+    reason: str
+
+
+class KinHolePairDebug(_M):
+    """A stack of coaxial holes across instances, and whether it became a fastener."""
+
+    joint_id: str
+    instance_ids: list[str]
+    instance_names: list[str]
+    links: list[str]
+    hole_refs: list[tuple[str, str]]
+    diameters_mm: list[float]
+    stack_thickness_mm: float
+    axis: Axis
+    became_fastener: bool
+    reason: str
+    kinematic_effect: str
+
+
+class KinematicsDebug(_M):
+    contacts: list[KinContactDebug] = Field(default_factory=list)
+    hole_pairs: list[KinHolePairDebug] = Field(default_factory=list)
+
+
 class Understanding(_M):
     kinematics: KinematicModel
+    kinematics_debug: KinematicsDebug | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_debug(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``kinematics_debug`` only when --debug-kinematics asked for it."""
+        data: dict[str, Any] = handler(self)
+        if data.get("kinematics_debug") is None:
+            data.pop("kinematics_debug", None)
+        if not data.get("load_path_note"):
+            data.pop("load_path_note", None)
+        return data
+
     load_paths: list[LoadPath] = Field(default_factory=list)
+    load_path_note: str = ""  # the tracing rule and the parts it left out; empty without load paths
     weak_spots: list[WeakSpot] = Field(default_factory=list)
     stability: StabilityInfo | None = None
     subassembly_roles: list[SubassemblyRole] = Field(default_factory=list)
@@ -500,6 +608,42 @@ class Understanding(_M):
     conflicts: list[str] = Field(default_factory=list)
     answers: list[Answer] = Field(default_factory=list)
     summary: str = ""
+
+
+class StepMaterial(_M):
+    """A material the STEP file assigns to a part (names are cleaned; they are labels)."""
+
+    name: str
+    description: str | None = None
+    density_stated: float | None = None  # the number in the file (its unit is not trusted)
+    density_g_cm3: float | None = None  # that number as g/cm3 when it is plausible (see step_apply)
+    density_used: bool = False  # True when it set the part's mass
+
+
+class PmiDimension(_M):
+    """A dimension the STEP file states, with the cross-check against the geometry where one exists."""
+
+    id: str  # "PMI001"
+    kind: str  # "linear_distance", "diameter", "radius", ... (the file's dimension type)
+    stated: float  # mm, or degrees for an angle
+    unit: Literal["mm", "deg"] = "mm"
+    plus: float | None = None
+    minus: float | None = None
+    face_ids: list[str] = Field(default_factory=list)
+    measured: float | None = None
+    status: Literal["within_tolerance", "outside_tolerance", "not_checked"] = "not_checked"
+    note: str = ""
+
+
+class StepData(_M):
+    """What the STEP file itself states about a part. Absent when it states none of this."""
+
+    product_name: str | None = None
+    description: str | None = None
+    color_rgb: list[float] | None = None
+    material: StepMaterial | None = None
+    layers: list[str] = Field(default_factory=list)
+    dimensions: list[PmiDimension] = Field(default_factory=list)
 
 
 class Part(_M):
@@ -531,6 +675,15 @@ class Part(_M):
     warnings: list[str] = Field(default_factory=list)
     understanding: PartUnderstanding | None = None
     name_cleaned: bool = False  # the name in the file was changed by cleaning; its text is not kept
+    from_step: StepData | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_step_data(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``from_step`` only for a part whose STEP file states something."""
+        data: dict[str, Any] = handler(self)
+        if data.get("from_step") is None:
+            data.pop("from_step", None)
+        return data
 
 
 # ---------- assembly ----------
@@ -544,6 +697,15 @@ class Instance(_M):
     rotation_axis_angle: tuple[Vec3, float]
     global_bbox: BBox
     subassembly: str | None = None
+    source_file: str | None = None  # the input file, when several files are combined
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_source(self, handler: Any) -> dict[str, Any]:
+        """A single-file report has no ``source_file`` on its instances."""
+        data: dict[str, Any] = handler(self)
+        if data.get("source_file") is None:
+            data.pop("source_file", None)
+        return data
 
 
 class BOMLine(_M):
@@ -554,16 +716,25 @@ class BOMLine(_M):
     category: Literal["fabricated", "purchased_hardware", "unknown"]
 
 
+_OLD_TOUCH = re.compile(r"touches (?:at a point|along a line)")
+
+
 class Contact(_M):
     id: str
     instance_a: str
     instance_b: str
-    kind: Literal["planar_face", "cylindrical_fit", "line", "point", "near_miss"]
+    kind: Literal["planar_face", "cylindrical_fit", "edge_or_point", "near_miss"]
     min_distance_mm: float
     contact_area_mm2: float | None = None
     normal: Vec3 | None = None
     fit: Literal["clearance", "line_to_line", "interference"] | None = None
     fit_value_mm: float | None = None
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _old_kinds(cls, value: Any) -> Any:
+        """Reports and cache entries written before 3571f9a say "point" or "line"."""
+        return "edge_or_point" if value in ("point", "line") else value
 
 
 class FastenerJoint(Inference):
@@ -576,6 +747,10 @@ class FastenerJoint(Inference):
     suggested_fastener: str | None = None
     has_threaded_end: bool = False
     existing_fastener_instance_id: str | None = None
+    pivot_candidate: bool = False  # a wide, long bore with no screw size: more likely a pivot
+    bore_pair: bool = (
+        False  # a wide but short coaxial bore pair: a locating feature or bearing seat
+    )
 
 
 class Relation(_M):
@@ -594,6 +769,14 @@ class Relation(_M):
     via: list[str]
     sentence: str
     confidence: float
+
+    @field_validator("sentence", mode="before")
+    @classmethod
+    def _old_wording(cls, value: Any) -> Any:
+        """The sentence the older reports carry for a touch that is now one kind."""
+        if isinstance(value, str):
+            return _OLD_TOUCH.sub("touches at an edge or point", value)
+        return value
 
 
 class SpatialFact(_M):
@@ -631,6 +814,21 @@ class AssemblyInfo(_M):
     interferences: list[dict[str, Any]] = Field(default_factory=list)
     fastener_shopping_list: list[dict[str, Any]] = Field(default_factory=list)
 
+    @property
+    def fasteners(self) -> list[FastenerJoint]:
+        """Fastener joints proper: not a pivot candidate and not a large bore pair."""
+        return [j for j in self.fastener_joints if not j.pivot_candidate and not j.bore_pair]
+
+    @property
+    def pivots(self) -> list[FastenerJoint]:
+        """Wide, long bores with no screw size: more likely a pivot or press fit than a screw."""
+        return [j for j in self.fastener_joints if j.pivot_candidate]
+
+    @property
+    def bore_pairs(self) -> list[FastenerJoint]:
+        """Large coaxial bore pairs too short to be a pivot: a locating feature or bearing seat."""
+        return [j for j in self.fastener_joints if j.bore_pair]
+
 
 class Meta(_M):
     schema_version: str
@@ -642,6 +840,17 @@ class Meta(_M):
     options: dict[str, Any]
 
 
+class SourceFile(_M):
+    """One input file of a combined run."""
+
+    name: str  # cleaned file name, unique within the run
+    sha256: str
+    size_bytes: int
+    placement: Literal["as in file", "designer-supplied"] = "as in file"
+    offset_mm: list[float] | None = None  # designer-supplied only
+    rotation_deg: list[float] | None = None
+
+
 class Report(_M):
     meta: Meta
     parts: list[Part]
@@ -649,6 +858,15 @@ class Report(_M):
     understanding: Understanding | None = None
     warnings: list[str] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
+    sources: list[SourceFile] = Field(default_factory=list)  # empty (and absent) for one file
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_sources(self, handler: Any) -> dict[str, Any]:
+        """``sources`` appears only when several files were combined."""
+        data: dict[str, Any] = handler(self)
+        if not data.get("sources"):
+            data.pop("sources", None)
+        return data
 
 
 def json_schema() -> dict[str, Any]:

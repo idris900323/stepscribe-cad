@@ -114,7 +114,8 @@ def test_worker_count_is_capped_by_available_ram() -> None:
     tight = int(analysis_mod.estimate_worker_mb(20000) * 1024**2 * 2.5 / analysis_mod.RAM_SHARE)
     assert free(40, max_faces=20000, available_bytes=tight, cpus=16) == 2
     assert free(40, max_faces=20000, available_bytes=1, cpus=16) == 1, "never below one worker"
-    assert free(40, max_faces=20000, available_bytes=None, cpus=16) == 8, "unknown RAM: CPU rule"
+    # unknown RAM is capped (it used to follow the CPU rule alone, up to 8 big workers at once)
+    assert free(40, max_faces=20000, available_bytes=None, cpus=16) == 4, "unknown RAM: capped"
 
 
 def test_worker_estimate_grows_with_faces_and_is_documented() -> None:
@@ -135,7 +136,9 @@ def test_available_ram_is_known_on_this_machine() -> None:
     assert ram is None or ram > 100 * 1024**2
 
 
-def test_available_ram_reads_posix_sysconf(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_available_ram_falls_back_to_posix_sysconf(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no readable /proc/meminfo (the new first choice on Linux) the free pages are used as before."""
+    monkeypatch.setattr(analysis_mod, "linux_available_bytes", lambda read=None: None)
     monkeypatch.setattr(
         os,
         "sysconf",

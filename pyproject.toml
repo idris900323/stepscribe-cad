@@ -28,9 +28,14 @@ dependencies = [
 Repository = "https://github.com/idris900323/stepscribe-cad"
 
 [project.optional-dependencies]
-dev = ["build", "build123d", "packaging", "psutil", "pytest", "pytest-cov", "ruff", "mypy", "pip-audit", "types-PyYAML"]
+dev = ["build", "hatchling==1.32.4", "build123d", "packaging", "psutil", "pytest", "pytest-cov", "ruff", "mypy", "pip-audit", "types-PyYAML"]
 mcp = ["mcp>=2,<3"]
 llm = ["httpx"]
+# Layer 2 of validate-robot: MuJoCo, for the kinematics cross-check and for simulator readiness.
+# MuJoCo has no macOS Intel wheel, so the extra installs nothing there; see docs/robot_validation.md.
+robot = [
+    "mujoco==3.17.0; sys_platform != 'darwin' or platform_machine == 'arm64'",
+]
 
 [project.scripts]
 stepscribe = "stepscribe.cli:app"
@@ -40,6 +45,10 @@ path = "stepscribe/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["stepscribe"]
+
+# The JSON Schema of report.json ships inside the package (same bytes as schema/report.schema.json).
+[tool.hatch.build.targets.wheel.force-include]
+"schema/report.schema.json" = "stepscribe/schema/report.schema.json"
 
 [tool.hatch.build.targets.sdist]
 exclude = [
@@ -76,4 +85,5 @@ follow_imports = "skip"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["slow: the slowest tests, listed in tests/slow_tests.txt; skip them with -m 'not slow'"]
 filterwarnings = ["ignore:Setting the shape on a NumPy array:DeprecationWarning"]

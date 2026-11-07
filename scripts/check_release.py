@@ -79,6 +79,8 @@ def check_dist(dist: Path) -> list[str]:
             names = zf.namelist()
             if not any(n.endswith("/licenses/LICENSE") or n.endswith("LICENSE") for n in names):
                 problems.append(f"{w.name} has no LICENSE")
+            if "stepscribe/schema/report.schema.json" not in names:
+                problems.append(f"{w.name} has no stepscribe/schema/report.schema.json")
             meta = next((n for n in names if n.endswith("METADATA")), None)
             if meta is None or LICENSE_ID not in zf.read(meta).decode("utf-8"):
                 problems.append(f"{w.name} metadata does not say {LICENSE_ID}")

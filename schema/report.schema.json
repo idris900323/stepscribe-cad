@@ -462,8 +462,7 @@
           "enum": [
             "planar_face",
             "cylindrical_fit",
-            "line",
-            "point",
+            "edge_or_point",
             "near_miss"
           ],
           "title": "Kind",
@@ -534,6 +533,58 @@
         "min_distance_mm"
       ],
       "title": "Contact",
+      "type": "object"
+    },
+    "CounterboreFlat": {
+      "additionalProperties": false,
+      "description": "A flat cut into the wall of a round counterbore (a D-shaped bore), measured on the flat's own face.",
+      "properties": {
+        "face_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Face Ids",
+          "type": "array"
+        },
+        "normal": {
+          "$ref": "#/$defs/Vec3"
+        },
+        "distance_from_axis_mm": {
+          "title": "Distance From Axis Mm",
+          "type": "number"
+        },
+        "across_flats_mm": {
+          "title": "Across Flats Mm",
+          "type": "number"
+        },
+        "chord_length_mm": {
+          "title": "Chord Length Mm",
+          "type": "number"
+        },
+        "depth_mm": {
+          "title": "Depth Mm",
+          "type": "number"
+        },
+        "hole_wall_to_flat_mm": {
+          "title": "Hole Wall To Flat Mm",
+          "type": "number"
+        },
+        "hole_wall_to_round_wall_mm": {
+          "title": "Hole Wall To Round Wall Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "face_ids",
+        "normal",
+        "distance_from_axis_mm",
+        "across_flats_mm",
+        "chord_length_mm",
+        "depth_mm",
+        "hole_wall_to_flat_mm",
+        "hole_wall_to_round_wall_mm"
+      ],
+      "title": "CounterboreFlat",
       "type": "object"
     },
     "Cutout": {
@@ -1001,6 +1052,16 @@
           ],
           "default": null,
           "title": "Existing Fastener Instance Id"
+        },
+        "pivot_candidate": {
+          "default": false,
+          "title": "Pivot Candidate",
+          "type": "boolean"
+        },
+        "bore_pair": {
+          "default": false,
+          "title": "Bore Pair",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1199,6 +1260,17 @@
           },
           "title": "Warnings",
           "type": "array"
+        },
+        "counterbore_flat": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CounterboreFlat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1519,6 +1591,18 @@
           ],
           "default": null,
           "title": "Subassembly"
+        },
+        "source_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source File"
         }
       },
       "required": [
@@ -1532,6 +1616,203 @@
         "global_bbox"
       ],
       "title": "Instance",
+      "type": "object"
+    },
+    "KinContactDebug": {
+      "additionalProperties": false,
+      "description": "One contact between two instances and what the kinematic model did with its pair.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "instance_a": {
+          "title": "Instance A",
+          "type": "string"
+        },
+        "instance_b": {
+          "title": "Instance B",
+          "type": "string"
+        },
+        "name_a": {
+          "title": "Name A",
+          "type": "string"
+        },
+        "name_b": {
+          "title": "Name B",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "area_mm2": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area Mm2"
+        },
+        "normal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "centroid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "distance_mm": {
+          "title": "Distance Mm",
+          "type": "number"
+        },
+        "connection": {
+          "title": "Connection",
+          "type": "string"
+        },
+        "link_a": {
+          "title": "Link A",
+          "type": "string"
+        },
+        "link_b": {
+          "title": "Link B",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "merged",
+            "separate"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "instance_a",
+        "instance_b",
+        "name_a",
+        "name_b",
+        "kind",
+        "distance_mm",
+        "connection",
+        "link_a",
+        "link_b",
+        "decision",
+        "reason"
+      ],
+      "title": "KinContactDebug",
+      "type": "object"
+    },
+    "KinHolePairDebug": {
+      "additionalProperties": false,
+      "description": "A stack of coaxial holes across instances, and whether it became a fastener.",
+      "properties": {
+        "joint_id": {
+          "title": "Joint Id",
+          "type": "string"
+        },
+        "instance_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Instance Ids",
+          "type": "array"
+        },
+        "instance_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Instance Names",
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Links",
+          "type": "array"
+        },
+        "hole_refs": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Hole Refs",
+          "type": "array"
+        },
+        "diameters_mm": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Diameters Mm",
+          "type": "array"
+        },
+        "stack_thickness_mm": {
+          "title": "Stack Thickness Mm",
+          "type": "number"
+        },
+        "axis": {
+          "$ref": "#/$defs/Axis"
+        },
+        "became_fastener": {
+          "title": "Became Fastener",
+          "type": "boolean"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "kinematic_effect": {
+          "title": "Kinematic Effect",
+          "type": "string"
+        }
+      },
+      "required": [
+        "joint_id",
+        "instance_ids",
+        "instance_names",
+        "links",
+        "hole_refs",
+        "diameters_mm",
+        "stack_thickness_mm",
+        "axis",
+        "became_fastener",
+        "reason",
+        "kinematic_effect"
+      ],
+      "title": "KinHolePairDebug",
       "type": "object"
     },
     "KinJoint": {
@@ -1618,6 +1899,45 @@
           "default": "",
           "title": "Description",
           "type": "string"
+        },
+        "declared_by_designer": {
+          "default": false,
+          "title": "Declared By Designer",
+          "type": "boolean"
+        },
+        "range_source": {
+          "anyOf": [
+            {
+              "enum": [
+                "designer",
+                "motion_check"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Range Source"
+        },
+        "positive_direction": {
+          "anyOf": [
+            {
+              "enum": [
+                "ccw",
+                "cw",
+                "+",
+                "-"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Positive Direction"
         }
       },
       "required": [
@@ -1690,6 +2010,42 @@
           "default": "",
           "title": "Mermaid",
           "type": "string"
+        },
+        "headline": {
+          "default": "",
+          "title": "Headline",
+          "type": "string"
+        },
+        "headline_confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Headline Confidence"
+        },
+        "headline_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Headline Evidence",
+          "type": "array"
+        },
+        "statement": {
+          "default": "",
+          "title": "Statement",
+          "type": "string"
+        },
+        "axis_pattern": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Axis Pattern",
+          "type": "array"
         }
       },
       "required": [
@@ -1697,6 +2053,27 @@
         "joints"
       ],
       "title": "KinematicModel",
+      "type": "object"
+    },
+    "KinematicsDebug": {
+      "additionalProperties": false,
+      "properties": {
+        "contacts": {
+          "items": {
+            "$ref": "#/$defs/KinContactDebug"
+          },
+          "title": "Contacts",
+          "type": "array"
+        },
+        "hole_pairs": {
+          "items": {
+            "$ref": "#/$defs/KinHolePairDebug"
+          },
+          "title": "Hole Pairs",
+          "type": "array"
+        }
+      },
+      "title": "KinematicsDebug",
       "type": "object"
     },
     "LoadPath": {
@@ -1809,6 +2186,7 @@
           "default": "none",
           "enum": [
             "user",
+            "step_file",
             "name_guess",
             "none"
           ],
@@ -2208,6 +2586,17 @@
           "default": false,
           "title": "Name Cleaned",
           "type": "boolean"
+        },
+        "from_step": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -2270,6 +2659,98 @@
         "process"
       ],
       "title": "PartUnderstanding",
+      "type": "object"
+    },
+    "PmiDimension": {
+      "additionalProperties": false,
+      "description": "A dimension the STEP file states, with the cross-check against the geometry where one exists.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "stated": {
+          "title": "Stated",
+          "type": "number"
+        },
+        "unit": {
+          "default": "mm",
+          "enum": [
+            "mm",
+            "deg"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "plus": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plus"
+        },
+        "minus": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minus"
+        },
+        "face_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Face Ids",
+          "type": "array"
+        },
+        "measured": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured"
+        },
+        "status": {
+          "default": "not_checked",
+          "enum": [
+            "within_tolerance",
+            "outside_tolerance",
+            "not_checked"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "stated"
+      ],
+      "title": "PmiDimension",
       "type": "object"
     },
     "Pocket": {
@@ -2377,6 +2858,12 @@
             "connection_type",
             "joint_drive",
             "joint_range",
+            "joint_ranges",
+            "joint_directions",
+            "joint_direction",
+            "joint_axis",
+            "kin_base",
+            "files_frame",
             "payload",
             "purpose",
             "load",
@@ -2787,6 +3274,70 @@
       "title": "Slot",
       "type": "object"
     },
+    "SourceFile": {
+      "additionalProperties": false,
+      "description": "One input file of a combined run.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "placement": {
+          "default": "as in file",
+          "enum": [
+            "as in file",
+            "designer-supplied"
+          ],
+          "title": "Placement",
+          "type": "string"
+        },
+        "offset_mm": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Offset Mm"
+        },
+        "rotation_deg": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rotation Deg"
+        }
+      },
+      "required": [
+        "name",
+        "sha256",
+        "size_bytes"
+      ],
+      "title": "SourceFile",
+      "type": "object"
+    },
     "SpatialFact": {
       "additionalProperties": false,
       "properties": {
@@ -2999,6 +3550,134 @@
         "deviation_mm"
       ],
       "title": "StandardMatch",
+      "type": "object"
+    },
+    "StepData": {
+      "additionalProperties": false,
+      "description": "What the STEP file itself states about a part. Absent when it states none of this.",
+      "properties": {
+        "product_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "color_rgb": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color Rgb"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepMaterial"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "layers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Layers",
+          "type": "array"
+        },
+        "dimensions": {
+          "items": {
+            "$ref": "#/$defs/PmiDimension"
+          },
+          "title": "Dimensions",
+          "type": "array"
+        }
+      },
+      "title": "StepData",
+      "type": "object"
+    },
+    "StepMaterial": {
+      "additionalProperties": false,
+      "description": "A material the STEP file assigns to a part (names are cleaned; they are labels).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "density_stated": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Density Stated"
+        },
+        "density_g_cm3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Density G Cm3"
+        },
+        "density_used": {
+          "default": false,
+          "title": "Density Used",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "StepMaterial",
       "type": "object"
     },
     "StructuralFeature": {
@@ -3256,12 +3935,28 @@
         "kinematics": {
           "$ref": "#/$defs/KinematicModel"
         },
+        "kinematics_debug": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KinematicsDebug"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "load_paths": {
           "items": {
             "$ref": "#/$defs/LoadPath"
           },
           "title": "Load Paths",
           "type": "array"
+        },
+        "load_path_note": {
+          "default": "",
+          "title": "Load Path Note",
+          "type": "string"
         },
         "weak_spots": {
           "items": {
@@ -3511,6 +4206,13 @@
         "type": "object"
       },
       "title": "Errors",
+      "type": "array"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceFile"
+      },
+      "title": "Sources",
       "type": "array"
     }
   },

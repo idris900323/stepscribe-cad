@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -15,13 +16,14 @@ from rich.markup import escape
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from stepscribe import __version__, config, envcheck, limits
+from stepscribe import __version__, config, envcheck, limits, timings
 from stepscribe import cache as cache_mod
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.batch import Job, options_dict, run_jobs, write_index
 from stepscribe.errors import FriendlyGroup
 from stepscribe.geometry.occ_utils import occt_version
 from stepscribe.io.discovery import find_step_files
+from stepscribe.io.multi import InputError, InputLimits, expand_inputs
 from stepscribe.progress import Progress as Progress_
 from stepscribe.progress import format_eta
 
@@ -33,14 +35,30 @@ app = typer.Typer(
 )
 
 
+def _print_version(value: bool) -> None:
+    if value:
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
 @app.callback()
 def _main(
     ctx: typer.Context,
+    version_flag: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            help="Print the stepscribe version and exit.",
+            callback=_print_version,
+            is_eager=True,
+        ),
+    ] = False,
     debug: Annotated[
         bool, typer.Option("--debug", help="Show the full traceback when something fails.")
     ] = False,
 ) -> None:
     ctx.meta["stepscribe.debug"] = debug
+    del version_flag  # handled by its eager callback
 
 
 console = Console()
@@ -73,6 +91,9 @@ def _options(
     check_motion: bool = False,
     motion_budget_s: int = 120,
     debug_graphs: bool = False,
+    debug_kinematics: bool = False,
+    pivot_min_diameter: float | None = None,
+    pivot_min_length_ratio: float | None = None,
 ) -> AnalyzeOptions:
     return AnalyzeOptions(
         density=density,
@@ -87,18 +108,36 @@ def _options(
         check_motion=check_motion,
         motion_budget_s=motion_budget_s,
         debug_graphs=debug_graphs,
+        debug_kinematics=debug_kinematics,
+        pivot_min_diameter_mm=pivot_min_diameter,
+        pivot_min_length_ratio=pivot_min_length_ratio,
     )
 
 
 def _run(
-    files: list[Path], jobs_tpl: dict[str, Any], jobs: int, timeout_s: int
+    files: list[Path],
+    jobs_tpl: dict[str, Any],
+    jobs: int,
+    timeout_s: int,
+    combine: str | None = None,
 ) -> list[dict[str, Any]]:
     envcheck.check_occt()  # one clear line if OpenCASCADE is the wrong version
     for f in files:
         warning = limits.large_file_warning(f.stat().st_size)
         if warning:
             typer.echo(f"warning: {f.name}: {warning}", err=True)
-    todo = [Job(path=str(f), **jobs_tpl) for f in files]
+    if combine is not None:  # one job for all the files: they become one assembly
+        todo = [
+            Job(
+                path=str(files[0].parent / f"{combine or 'combined'} ({len(files)} files)"),
+                paths=[str(f) for f in files],
+                name=combine or None,
+                **jobs_tpl,
+            )
+        ]
+        timeout_s *= len(files)
+    else:
+        todo = [Job(path=str(f), **jobs_tpl) for f in files]
     results: list[dict[str, Any]] = []
     if len(todo) > 1:
         with Progress(
@@ -153,9 +192,37 @@ def _summary(results: list[dict[str, Any]]) -> None:
             console.print(f"[red]{Path(r['file']).name}:[/red] {e}")
 
 
+def _image_params(images: str, max_side: int, no_images: bool) -> tuple[bool, dict[str, Any]]:
+    """(render images at all, the export() parameters for --images); basic adds nothing."""
+    from stepscribe.render.extra_images import IMAGE_SETS
+
+    if images not in IMAGE_SETS:
+        raise typer.BadParameter(f"must be one of {', '.join(IMAGE_SETS)}", param_hint="--images")
+    on = not no_images and images != "none"
+    if on and images in ("standard", "full"):
+        return on, {"image_set": images, "image_max_side": max_side}
+    return on, {}
+
+
+def _mesh_params(meshes: bool, max_triangles: int, visual_cap: int | None) -> dict[str, Any]:
+    """The export() parameters for --meshes (empty when off, so default runs are unchanged)."""
+    if not meshes:
+        return {}
+    out: dict[str, Any] = {"meshes": True, "mesh_max_triangles": max_triangles}
+    if visual_cap is not None:
+        out["mesh_visual_max_triangles"] = visual_cap
+    return out
+
+
 @app.command()
 def pack(
-    path: Path_,
+    paths: Annotated[
+        list[Path],
+        typer.Argument(
+            exists=True,
+            help="STEP files, folders or zips of them. Several files are combined into one pack.",
+        ),
+    ],
     out: Out = Path("out"),
     context: Annotated[Path | None, typer.Option("--context", help="design_context.yaml")] = None,
     material: Annotated[
@@ -172,6 +239,21 @@ def pack(
     no_images: Annotated[
         bool, typer.Option("--no-images", help="Skip rendering (fast mode).")
     ] = False,
+    images: Annotated[
+        str,
+        typer.Option(
+            "--images",
+            help="Image set: none, basic (the default: today's views), standard (adds a hole map, a three-view drawing and a weak-spot overlay per part) or full.",
+        ),
+    ] = "basic",
+    image_max_side: Annotated[
+        int,
+        typer.Option(
+            "--image-max-side",
+            min=400,
+            help="Longest side in pixels of the extra images of the standard and full sets.",
+        ),
+    ] = limits.IMAGE_MAX_SIDE,
     check_interference: Annotated[bool, typer.Option("--check-interference")] = False,
     understanding: Annotated[
         bool,
@@ -184,9 +266,53 @@ def pack(
         bool, typer.Option("--check-motion", help="Move each joint and test collisions (slow).")
     ] = False,
     motion_budget_s: Annotated[int, typer.Option(help="Time budget for --check-motion.")] = 120,
+    meshes: Annotated[
+        bool,
+        typer.Option(
+            "--meshes",
+            help="Also write meshes/ (one visual and one collision STL per robot link, metres, link frame) and reference them in robot.urdf. Robots only.",
+        ),
+    ] = False,
+    mesh_max_triangles: Annotated[
+        int,
+        typer.Option(
+            "--mesh-max-triangles",
+            min=12,
+            help="Most triangles in one link's collision mesh (see --visual-triangle-cap for the visual ones).",
+        ),
+    ] = limits.LINK_MESH_MAX_TRIANGLES,
+    visual_triangle_cap: Annotated[
+        int | None,
+        typer.Option(
+            "--visual-triangle-cap",
+            min=12,
+            help="Most triangles in one link's visual mesh, by coarser tessellation. Default: no cap.",
+        ),
+    ] = None,
     debug_graphs: Annotated[
         bool, typer.Option("--debug-graphs", help="Also write data/aag_<part>.json.")
     ] = False,
+    debug_kinematics: Annotated[
+        bool,
+        typer.Option(
+            "--debug-kinematics",
+            help="Also write data/kinematics_debug.md: why each contact was merged or kept apart.",
+        ),
+    ] = False,
+    pivot_min_diameter: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-diameter",
+            help="Smallest hole stack (mm) with no screw size that counts as a pivot. Default 20.",
+        ),
+    ] = None,
+    pivot_min_length_ratio: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-length-ratio",
+            help="Shortest such stack, in diameters, that counts as a pivot. Default 1.",
+        ),
+    ] = None,
     jobs: Annotated[int, typer.Option(help="Parallel workers for folders.")] = 1,
     timeout_s: Annotated[
         int, typer.Option(help="Per-file timeout in seconds.")
@@ -194,44 +320,85 @@ def pack(
     precision: Annotated[
         int, typer.Option(help="Decimals in report.json")
     ] = config.FLOAT_PRECISION,
+    combine: Annotated[
+        bool,
+        typer.Option(
+            "--combine",
+            help="Combine the STEP files of a folder into one pack (one pack per file otherwise).",
+        ),
+    ] = False,
     no_timestamp: Annotated[bool, typer.Option("--no-timestamp")] = False,
     verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
 ) -> None:
-    """Build a context pack for a STEP file or a folder of STEP files."""
-    files = find_step_files(path)
+    """Build a context pack for a STEP file, a folder of them, or several files combined.
+
+    Several files, or a zip, become one assembly in one pack; each file keeps its own coordinates.
+    A folder alone gives one pack per file unless --combine is given.
+    """
+    work = tempfile.TemporaryDirectory(prefix="stepscribe_in_")
+    try:
+        files, combined, folder_alone = _pack_inputs(paths, combine, Path(work.name))
+        opts = _options(
+            material,
+            density,
+            up,
+            front,
+            check_interference,
+            precision,
+            no_timestamp,
+            understanding=understanding,
+            check_motion=check_motion,
+            motion_budget_s=motion_budget_s,
+            debug_graphs=debug_graphs,
+            debug_kinematics=debug_kinematics,
+            pivot_min_diameter=pivot_min_diameter,
+            pivot_min_length_ratio=pivot_min_length_ratio,
+        )
+        images_on, image_export = _image_params(images, image_max_side, no_images)
+        tpl = {
+            "out_dir": str(out),
+            "mode": "pack",
+            "options": options_dict(opts),
+            "context_file": str(context) if context else None,
+            "budget_tokens": budget_tokens,
+            "images": images_on,
+            "export": {
+                **_mesh_params(meshes, mesh_max_triangles, visual_triangle_cap),
+                **image_export,
+            },
+        }
+        results = _run(files, tpl, jobs, timeout_s, combined)
+        if folder_alone:
+            write_index(results, out)
+        _summary(results)
+        for r in results:
+            if r["pack"] and verbose or (r["pack"] and len(results) == 1):
+                console.print(f"Pack written to {r['pack']}")
+        if any(r["status"] != "ok" for r in results):
+            raise typer.Exit(1)
+    finally:
+        work.cleanup()
+
+
+def _pack_inputs(
+    paths: list[Path], combine: bool, work: Path
+) -> tuple[list[Path], str | None, bool]:
+    """The STEP files to process, the name of the combined model (None: one pack per file) and
+    whether the input was a single folder of independent files."""
+    folder_alone = len(paths) == 1 and paths[0].is_dir() and not combine
+    try:
+        files = (
+            find_step_files(paths[0]) if folder_alone else expand_inputs(paths, InputLimits(), work)
+        )
+    except InputError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(1) from exc
     if not files:
         console.print("[red]No .step/.stp files found.[/red]")
         raise typer.Exit(1)
-    opts = _options(
-        material,
-        density,
-        up,
-        front,
-        check_interference,
-        precision,
-        no_timestamp,
-        understanding=understanding,
-        check_motion=check_motion,
-        motion_budget_s=motion_budget_s,
-        debug_graphs=debug_graphs,
-    )
-    tpl = {
-        "out_dir": str(out),
-        "mode": "pack",
-        "options": options_dict(opts),
-        "context_file": str(context) if context else None,
-        "budget_tokens": budget_tokens,
-        "images": not no_images,
-    }
-    results = _run(files, tpl, jobs, timeout_s)
-    if path.is_dir():
-        write_index(results, out)
-    _summary(results)
-    for r in results:
-        if r["pack"] and verbose or (r["pack"] and len(results) == 1):
-            console.print(f"Pack written to {r['pack']}")
-    if any(r["status"] != "ok" for r in results):
-        raise typer.Exit(1)
+    if folder_alone or len(files) == 1:
+        return files, None, folder_alone
+    return files, (paths[0].stem if len(paths) == 1 else ""), False
 
 
 @app.command()
@@ -253,6 +420,21 @@ def export(
     ] = False,
     no_zip: Annotated[bool, typer.Option("--no-zip")] = False,
     no_images: Annotated[bool, typer.Option("--no-images", help="Skip rendering.")] = False,
+    images: Annotated[
+        str,
+        typer.Option(
+            "--images",
+            help="Image set: none, basic (the default: today's views), standard (adds a hole map, a three-view drawing and a weak-spot overlay per part) or full.",
+        ),
+    ] = "basic",
+    image_max_side: Annotated[
+        int,
+        typer.Option(
+            "--image-max-side",
+            min=400,
+            help="Longest side in pixels of the extra images of the standard and full sets.",
+        ),
+    ] = limits.IMAGE_MAX_SIDE,
     context: Annotated[Path | None, typer.Option("--context", help="design_context.yaml")] = None,
     material: Annotated[str | None, typer.Option(help="Material keyword, e.g. alu.")] = None,
     density: Annotated[float | None, typer.Option(help="Density in g/cm3.")] = None,
@@ -261,6 +443,57 @@ def export(
     check_interference: Annotated[bool, typer.Option("--check-interference")] = False,
     understanding: Annotated[bool, typer.Option("--understanding/--no-understanding")] = True,
     check_motion: Annotated[bool, typer.Option("--check-motion")] = False,
+    debug_kinematics: Annotated[
+        bool,
+        typer.Option(
+            "--debug-kinematics",
+            help="Also write data/kinematics_debug.md: why each contact was merged or kept apart.",
+        ),
+    ] = False,
+    pivot_min_diameter: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-diameter",
+            help="Smallest hole stack (mm) with no screw size that counts as a pivot. Default 20.",
+        ),
+    ] = None,
+    pivot_min_length_ratio: Annotated[
+        float | None,
+        typer.Option(
+            "--pivot-min-length-ratio",
+            help="Shortest such stack, in diameters, that counts as a pivot. Default 1.",
+        ),
+    ] = None,
+    meshes: Annotated[
+        bool,
+        typer.Option(
+            "--meshes",
+            help="Also write meshes/ (one visual and one collision STL per robot link, metres, link frame) and reference them in robot.urdf. Robots only.",
+        ),
+    ] = False,
+    mesh_max_triangles: Annotated[
+        int,
+        typer.Option(
+            "--mesh-max-triangles",
+            min=12,
+            help="Most triangles in one link's collision mesh (see --visual-triangle-cap for the visual ones).",
+        ),
+    ] = limits.LINK_MESH_MAX_TRIANGLES,
+    visual_triangle_cap: Annotated[
+        int | None,
+        typer.Option(
+            "--visual-triangle-cap",
+            min=12,
+            help="Most triangles in one link's visual mesh, by coarser tessellation. Default: no cap.",
+        ),
+    ] = None,
+    timings_flag: Annotated[
+        bool,
+        typer.Option(
+            "--timings",
+            help="Also write data/timings.json: time per stage and per part (not when the export is reused). Results are unchanged.",
+        ),
+    ] = False,
     jobs: Annotated[int, typer.Option(help="Parallel workers for folders.")] = 1,
     timeout_s: Annotated[
         int, typer.Option(help="Per-file timeout in seconds.")
@@ -272,6 +505,8 @@ def export(
     from stepscribe.exporter import load_result
     from stepscribe.exporter import write_index as write_export_index
 
+    if timings_flag:
+        timings.enable()
     files = find_step_files(path)
     if not files:
         console.print("[red]No .step/.stp files found.[/red]")
@@ -286,14 +521,18 @@ def export(
         no_timestamp,
         understanding=understanding,
         check_motion=check_motion,
+        debug_kinematics=debug_kinematics,
+        pivot_min_diameter=pivot_min_diameter,
+        pivot_min_length_ratio=pivot_min_length_ratio,
     )
+    images_on, image_export = _image_params(images, image_max_side, no_images)
     tpl = {
         "out_dir": str(out),
         "mode": "export",
         "options": options_dict(opts),
         "context_file": str(context) if context else None,
         "budget_tokens": 0,
-        "images": not no_images,
+        "images": images_on,
         "export": {
             "small_budget_tokens": small_budget_tokens,
             "compact_budget_tokens": compact_budget_tokens,
@@ -301,6 +540,8 @@ def export(
             "chat_max_mb": chat_max_mb,
             "embed_images": embed_images,
             "make_zip": not no_zip,
+            **_mesh_params(meshes, mesh_max_triangles, visual_triangle_cap),
+            **image_export,
         },
     }
     results = _run(files, tpl, jobs, timeout_s)
@@ -377,6 +618,12 @@ def schema(out: Annotated[Path | None, typer.Option("--out", "-o")] = None) -> N
 @app.command()
 def doctor(
     json_out: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+    robot: Annotated[
+        bool,
+        typer.Option(
+            "--robot", help="Also say what is available for robot validation (see validate-robot)."
+        ),
+    ] = False,
 ) -> None:
     """Check this computer: versions, rendering, cache, memory; with a fix for each problem."""
     import dataclasses
@@ -384,12 +631,68 @@ def doctor(
     from stepscribe import doctor as doctor_mod
 
     checks = doctor_mod.run_checks()
+    if robot:
+        checks += doctor_mod.robot_checks()
     if json_out:
         typer.echo(json.dumps([dataclasses.asdict(c) for c in checks], indent=2))
     else:
         typer.echo(doctor_mod.format_report(checks))
     if any(c.level == "fail" for c in checks):
         raise typer.Exit(1)
+
+
+@app.command("validate-robot")
+def validate_robot(
+    path: Annotated[
+        Path,
+        typer.Argument(exists=True, help="A robot.urdf, or a pack or export folder holding one."),
+    ],
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend", help="Library adapter for the cross-check (default: the first installed)."
+        ),
+    ] = None,
+    poses: Annotated[
+        int, typer.Option(min=0, max=50, help="Fixed random poses besides the zero pose.")
+    ] = 4,
+    json_out: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+    require_ready: Annotated[
+        bool,
+        typer.Option(
+            "--require-ready", help="Also exit with 2 when the file is not simulator ready."
+        ),
+    ] = False,
+) -> None:
+    """Check a robot URDF: structural validity, simulator readiness, and (if a library is installed) forward kinematics.
+
+    Validity and readiness are reported separately. Exit 1 when the file is not valid.
+    """
+    import dataclasses
+
+    from stepscribe import robot_check
+
+    try:
+        result = robot_check.validate(path, backend, poses)
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    **dataclasses.asdict(result),
+                    "structurally_valid": result.structurally_valid,
+                    "simulator_ready": result.simulator_ready,
+                },
+                indent=2,
+            )
+        )
+    else:
+        typer.echo(robot_check.format_report(result))
+    if not result.structurally_valid or result.layer2.status in ("failed", "error"):
+        raise typer.Exit(1)
+    if require_ready and not result.simulator_ready:
+        raise typer.Exit(2)
 
 
 @app.command()
@@ -612,7 +915,13 @@ def answer(
     parsed: Any = value
     if status == "answered" and q.answer_type == "multi_choice" and value is not None:
         parsed = [v.strip() for v in value.split(",") if v.strip()]
-    change = session.answer(question_id, status, parsed if status == "answered" else None, note)
+    from stepscribe.understanding.answers import AnswerError
+
+    try:
+        change = session.answer(question_id, status, parsed if status == "answered" else None, note)
+    except AnswerError as exc:
+        console.print(f"Not saved. {exc}", markup=False)
+        raise typer.Exit(2) from exc
     session.save(context)
     console.print(f"{question_id}: {status}. {change.text}", markup=False)
     if session.questions:
@@ -744,7 +1053,7 @@ def mcp(
         float, typer.Option(help="Size the result cache is trimmed to, in GB.")
     ] = cache_mod.DEFAULT_MAX_GB,
 ) -> None:
-    """Run the read-only MCP server over stdio (needs: pip install stepscribe[mcp])."""
+    """Run the read-only MCP server over stdio (needs: pip install stepscribe-cad[mcp])."""
     from stepscribe.mcp.server import main
     from stepscribe.runner import RUNNER
 

@@ -158,7 +158,7 @@
   <div class="card" id="inputCard">
     <h2><span class="step">1</span>Choose a STEP file</h2>
     <div id="chip"><span class="tick">✓</span><div style="flex:1"><div class="nm" id="chipName"></div><div class="mute" id="chipSub"></div></div><button id="change">Change file</button></div>
-    <div id="pickers"><div id="drop">Drop a .step or .stp file here, or click to browse<input id="file" type="file" accept=".step,.stp,.STEP,.STP" hidden>
+    <div id="pickers"><div id="drop">Drop one or several .step / .stp files (or a .zip of them) here, or click to browse<input id="file" type="file" accept=".step,.stp,.STEP,.STP,.zip,.ZIP" multiple hidden>
       <div class="hint">Read on this computer only. Large assemblies take a few minutes; a time estimate is shown.</div></div>
     <div class="row fields two">
       <label>Path on this computer<input type="text" id="path" placeholder="C:/path/to/robot.step">
@@ -167,7 +167,7 @@
         <span class="hint">STEP files in the robot_steps folder next to the project.</span></label>
     </div></div>
     <h2 class="step2"><span class="step">2</span>Options <span class="mute">all optional</span></h2>
-    <p class="lead">Images with dimensions and the collision check are always included.</p>
+    <p class="lead">Images with dimensions and the collision check are always included; the image set decides how many.</p>
     <div class="row fields opts">
       <label>Material<input type="text" id="material" placeholder="alu, steel, pla, petg...">
         <span class="hint">Gives each part a mass. Empty: mass unknown.</span></label>
@@ -175,6 +175,8 @@
         <span class="hint">Instead of a material, e.g. 2.70 for aluminium.</span></label>
       <label>Up axis<select id="up"><option>+Z</option><option>-Z</option><option>+Y</option><option>-Y</option><option>+X</option><option>-X</option></select>
         <span class="hint">The model axis that points up.</span></label>
+      <label>Image set<select id="imageset"><option value="basic">basic</option><option value="standard" selected>standard</option><option value="full">full</option></select>
+        <span class="hint">basic: quick views. standard: for an AI in chat. full: for a human review (slower).</span></label>
       <label>Front axis<select id="front"><option>-Y</option><option>+Y</option><option>+X</option><option>-X</option><option>+Z</option><option>-Z</option></select>
         <span class="hint">The axis that faces you. Not the up axis.</span></label>
     </div>
@@ -229,7 +231,7 @@
 </div>
 <script>
 const $ = id => document.getElementById(id);
-let chosenFile = null, chosenSample = null, jobId = null, timer = null, result = null;
+let chosenFile = null, chosenFiles = [], chosenSample = null, jobId = null, timer = null, result = null;
 const reveal = el => el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const TOKEN = document.querySelector('meta[name=stepscribe-token]').content;
@@ -245,16 +247,24 @@ const fmtT = s => s < 60 ? `${s.toFixed(0)} s` : `${Math.floor(s/60)} min ${Stri
 $('drop').onclick = () => $('file').click();
 $('drop').ondragover = e => { e.preventDefault(); $('drop').classList.add('over'); };
 $('drop').ondragleave = () => $('drop').classList.remove('over');
-$('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('over'); pick(e.dataTransfer.files[0]); };
-$('file').onchange = e => pick(e.target.files[0]);
+$('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('over'); pickMany(e.dataTransfer.files); };
+$('file').onchange = e => pickMany(e.target.files);
 function chip(name, sub) { $('chipName').textContent = name; $('chipSub').textContent = sub; $('chip').style.display = 'flex'; $('pickers').style.display = 'none'; $('picked').textContent = ''; }
 async function precheck(query) {
   try { const r = await (await api('/api/precheck?' + query)).json(); $('picked').textContent = r.warning || ''; } catch (e) { $('picked').textContent = ''; }
 }
-function pick(f) { if (!f) return; chosenFile = f; chosenSample = null; $('path').value = ''; chip(f.name, `${(f.size/1e6).toFixed(1)} MB, loaded in the browser. It is sent to this computer's local server when you press Analyse.`); precheck('size_mb=' + (f.size / 1048576)); }
-$('change').onclick = () => { chosenFile = null; chosenSample = null; $('path').value = ''; $('samples').value = ''; $('file').value = ''; $('chip').style.display = 'none'; $('pickers').style.display = ''; };
-$('path').onchange = () => { const v = $('path').value.trim(); if (v) { chosenFile = null; chosenSample = null; chip(v.split(/[\/]/).pop(), 'Read in place from ' + v + ' (nothing is copied).'); precheck('path=' + encodeURIComponent(v)); } };
-$('samples').onchange = () => { const v = $('samples').value; if (v !== '') { $('path').value = ''; chosenFile = null; chosenSample = Number(v); chip($('samples').selectedOptions[0].dataset.name, 'Sample file, read in place on this computer.'); precheck('sample=' + v); } };
+function pickMany(list) {
+  const arr = Array.from(list || []); if (!arr.length) return;
+  if (arr.length === 1 && !/\.zip$/i.test(arr[0].name)) { pick(arr[0]); return; }
+  chosenFile = null; chosenFiles = arr; chosenSample = null; $('path').value = '';
+  const mb = arr.reduce((a, f) => a + f.size, 0) / 1e6;
+  chip(arr.length === 1 ? arr[0].name : `${arr.length} files`, `${mb.toFixed(1)} MB. They are combined into one assembly; each file keeps its own coordinates. Sent to this computer's local server when you press Analyse.`);
+  $('picked').textContent = '';
+}
+function pick(f) { if (!f) return; chosenFile = f; chosenFiles = []; chosenSample = null; $('path').value = ''; chip(f.name, `${(f.size/1e6).toFixed(1)} MB, loaded in the browser. It is sent to this computer's local server when you press Analyse.`); precheck('size_mb=' + (f.size / 1048576)); }
+$('change').onclick = () => { chosenFile = null; chosenFiles = []; chosenSample = null; $('path').value = ''; $('samples').value = ''; $('file').value = ''; $('chip').style.display = 'none'; $('pickers').style.display = ''; };
+$('path').onchange = () => { const v = $('path').value.trim(); if (v) { chosenFile = null; chosenFiles = []; chosenSample = null; chip(v.split(/[\/]/).pop(), 'Read in place from ' + v + ' (nothing is copied).'); precheck('path=' + encodeURIComponent(v)); } };
+$('samples').onchange = () => { const v = $('samples').value; if (v !== '') { $('path').value = ''; chosenFile = null; chosenFiles = []; chosenSample = Number(v); chip($('samples').selectedOptions[0].dataset.name, 'Sample file, read in place on this computer.'); precheck('sample=' + v); } };
 api('/api/environment').then(r => r.json()).then(e => { if (e.message) { $('envnote').textContent = e.message; $('envnote').style.display = ''; } }).catch(() => {});
 api('/api/samples').then(r => r.json()).then(list => {
   if (!list.length) return;
@@ -263,14 +273,23 @@ api('/api/samples').then(r => r.json()).then(list => {
 
 function params() {
   return { material: $('material').value, density: $('density').value, up: $('up').value, front: $('front').value,
-           images: true, interference: true };
+           images: true, image_set: $('imageset').value, interference: true };
 }
 $('go').onclick = async () => {
   $('err').textContent = ''; $('resCard').style.display = 'none';
   let res;
   const p = params();
   const qs = new URLSearchParams({ ...p, name: chosenFile ? chosenFile.name : '' });
-  if (chosenFile) res = await api('/api/upload?' + qs, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: chosenFile });
+  if (chosenFiles.length) {
+    let batch = '';
+    for (const f of chosenFiles) {
+      const r = await api('/api/stage?' + new URLSearchParams({ name: f.name, ...(batch ? { batch } : {}) }), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: f });
+      const staged = await r.json();
+      if (staged.error) { $('progCard').style.display = ''; $('err').textContent = staged.error; return; }
+      batch = staged.batch;
+    }
+    res = await api('/api/start_files', JSON_POST({ ...p, batch }));
+  } else if (chosenFile) res = await api('/api/upload?' + qs, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: chosenFile });
   else if (chosenSample !== null) res = await api('/api/start_path', JSON_POST({ ...p, sample: chosenSample }));
   else if ($('path').value.trim()) res = await api('/api/start_path', JSON_POST({ ...p, path: $('path').value.trim() }));
   else { alert('Choose a file or enter a path first.'); return; }
@@ -315,7 +334,8 @@ function show(s) {
   const holes = r.parts.reduce((a, p) => a + p.holes, 0);
   $('stats').innerHTML = [['Different parts', r.parts.length], ['Total parts', r.instances], ['Holes', holes], ['Relations', r.relations.length],
     ['Mass', r.total_mass_g == null ? 'unknown' : r.total_mass_g.toFixed(1) + ' g'], ['Unit in file', r.unit]]
-    .map(([k, v]) => `<div class="stat"><span class="mute">${k}</span><b>${esc(v)}</b></div>`).join('');
+    .map(([k, v]) => `<div class="stat"><span class="mute">${k}</span><b>${esc(v)}</b></div>`).join('')
+    + (r.frame_hedge ? `<div role="alert" style="flex-basis:100%;border:1px solid #c0392b;padding:8px 10px;border-radius:6px"><b>Warning:</b> ${esc(r.frame_hedge)} See the Warnings tab.</div>` : '');
   const tabs = {
     'Context pack': ['Everything an AI model needs, in one text. Copy it into any chat.', () => codebox(r.context_pack)],
     'Understanding': ['How the design works: motion, drives, part roles and risks.', understandingTab],

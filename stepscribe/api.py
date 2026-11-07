@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,23 +13,33 @@ from typing import Any
 from OCP.TopAbs import TopAbs_FACE
 from OCP.TopoDS import TopoDS_Shape
 
-from stepscribe import __version__, config
+from stepscribe import __version__, config, timings
 from stepscribe.analysis import (
     AnalyzedPart,
     AnalyzeOptions,
     analyze_brep_file,
     assign_part_ids,
+    bore_chunk,
+    may_split_bores,
+    memory_advice,
     split_bodies,
-    worker_count,
+    worker_choice,
 )
+from stepscribe.features.holes import assemble_bores
 from stepscribe.geometry.occ_utils import unique_subshapes
 from stepscribe.geometry.part_geom import PartGeom
+from stepscribe.io.step_apply import step_data
 from stepscribe.io.step_reader import StepModel, StepReadError, read_step
-from stepscribe.models.schema import SCHEMA_VERSION, Meta, Part, Report
+from stepscribe.models.schema import SCHEMA_VERSION, Meta, Part, Report, SourceFile
 from stepscribe.progress import Tracker
+from stepscribe.text_safety import clean_name
 
 PARALLEL_MIN_PARTS = 3
 PARALLEL_MIN_FACES = 300  # below this, starting processes costs more than it saves
+HEAVY_BORE_FACES = (
+    300  # a part with this many faces has its hole-detection ray casts split over the pool
+)
+MIN_CHUNK_FACES = 40  # faces per ray-cast task, at least
 
 
 @dataclass
@@ -67,6 +78,7 @@ def _meta(files: list[str], unit: str, opts: AnalyzeOptions) -> Meta:
             "understanding": opts.understanding,
             "check_motion": opts.check_motion,
             "debug_graphs": opts.debug_graphs,
+            **({"debug_kinematics": True} if opts.debug_kinematics else {}),
         },
     )
 
@@ -78,6 +90,7 @@ def _analyse_bodies(
     opts: AnalyzeOptions,
     tracker: Tracker,
     errors: list[dict[str, object]],
+    source_of: dict[str, str] | None = None,
 ) -> list[tuple[str, PartGeom, Part]]:
     """Analyse every body, on a process pool for large assemblies.
 
@@ -87,19 +100,36 @@ def _analyse_bodies(
     """
     import multiprocessing as mp
     import tempfile
-    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
     from concurrent.futures.process import BrokenProcessPool
 
     from OCP.BRepTools import BRepTools
 
-    workers = worker_count(len(bodies), max(faces.values(), default=0))
+    choice = worker_choice(len(bodies), max(faces.values(), default=0))
+    workers = choice.workers
+    text = choice.describe()
     if len(bodies) < PARALLEL_MIN_PARTS or sum(faces.values()) < PARALLEL_MIN_FACES:
         workers = 1
+        text = (
+            f"part workers: 1 (small model: fewer than {PARALLEL_MIN_PARTS} parts or {PARALLEL_MIN_FACES} faces); "
+            + text
+        )
+    timings.note("part_workers", text)
+    timings.count("part_workers", workers)
+    tracker.emit(text)
+    advice = memory_advice(choice) if workers == choice.workers else None
+    if advice:
+        timings.note("part_workers_advice", advice)
+        tracker.emit(advice)
     results: dict[int, Part] = {}
+    bores: dict[int, list[Any] | None] = {}
+
+    def src(i: int) -> str:
+        return (source_of or {}).get(bodies[i][0], source_file)
 
     def failed(i: int, exc: Exception) -> None:
         name = bodies[i][1]
-        errors.append({"file": source_file, "part": name, "error": f"{type(exc).__name__}: {exc}"})
+        errors.append({"file": src(i), "part": name, "error": f"{type(exc).__name__}: {exc}"})
         tracker.part_done(name, faces[id(bodies[i][2])], 0.0)
 
     with tempfile.TemporaryDirectory(prefix="stepscribe_") as tmp:
@@ -111,36 +141,85 @@ def _analyse_bodies(
             paths.append(f)
 
         def args(i: int) -> tuple[str, str, str, AnalyzeOptions, list[float] | None]:
-            return paths[i], bodies[i][1], source_file, opts, bodies[i][3]
+            return paths[i], bodies[i][1], src(i), opts, bodies[i][3]
+
+        def n_faces(i: int) -> int:
+            return faces[id(bodies[i][2])]
 
         if workers == 1:
             for i in range(len(bodies)):
                 try:
-                    results[i], secs = analyze_brep_file(*args(i))
+                    results[i], secs, bores[i] = analyze_brep_file(*args(i))
                 except Exception as exc:  # noqa: BLE001
                     failed(i, exc)
                     continue
+                timings.add_part(bodies[i][1], faces[id(bodies[i][2])], secs)
                 tracker.part_done(bodies[i][1], faces[id(bodies[i][2])], secs)
         else:
             order = sorted(range(len(bodies)), key=lambda i: -faces[id(bodies[i][2])])  # big first
             tracker.stage("parts", f"analysing {len(bodies)} parts on {workers} processes")
             retry: list[int] = []
+            split = may_split_bores(workers, max(faces.values(), default=0))  # memory rule
             try:
                 with ProcessPoolExecutor(workers, mp_context=mp.get_context("spawn")) as pool:
-                    futures = {pool.submit(analyze_brep_file, *args(i)): i for i in order}
-                    for fut in as_completed(futures):
-                        i = futures[fut]
-                        try:
-                            part, secs = fut.result()
-                        except BrokenProcessPool:
-                            retry.append(i)  # e.g. the caller is a script without a main guard
-                            continue
-                        except Exception as exc:  # noqa: BLE001
-                            failed(i, exc)
-                            continue
-                        results[i] = part
-                        # wall-clock share, so the ETA (faces per second) reflects the parallel speed
-                        tracker.part_done(bodies[i][1], faces[id(bodies[i][2])], secs / workers)
+                    pending: dict[Future[Any], tuple[str, int]] = {}
+                    chunks: dict[int, list[Future[Any]]] = {}
+                    left: dict[int, int] = {}
+                    # The ray casts of hole detection are independent per face. For a big part they
+                    # go to the pool first, in chunks, so the whole pool works on the part that
+                    # would otherwise be the slowest; its analysis then starts with the bores found.
+                    for i in (i for i in order if split and n_faces(i) >= HEAVY_BORE_FACES):
+                        total = n_faces(i)
+                        step = max(MIN_CHUNK_FACES, -(-total // (workers * 3)))
+                        futs = [
+                            pool.submit(
+                                bore_chunk, paths[i], bodies[i][1], lo, min(lo + step, total)
+                            )
+                            for lo in range(0, total, step)
+                        ]
+                        chunks[i], left[i] = futs, len(futs)
+                        pending.update({f: ("chunk", i) for f in futs})
+                        timings.count("bore_chunks", len(futs))
+                        tracker.stage(
+                            "parts",
+                            f"hole detection of {bodies[i][1]} split into {len(futs)} tasks",
+                        )
+                    for i in order:
+                        if i not in chunks:
+                            pending[pool.submit(analyze_brep_file, *args(i))] = ("part", i)
+                    while pending:
+                        done, _not_done = wait(pending, return_when=FIRST_COMPLETED)
+                        for fut in done:
+                            kind, i = pending.pop(fut)
+                            if kind == "chunk":
+                                left[i] -= 1
+                                if left[i] == 0:
+                                    try:
+                                        found = assemble_bores(
+                                            r for f in chunks[i] for r in f.result()
+                                        )
+                                    except BrokenProcessPool:
+                                        raise
+                                    except Exception:  # noqa: BLE001
+                                        found = None  # the part's own worker finds its bores
+                                    pending[pool.submit(analyze_brep_file, *args(i), found)] = (
+                                        "part",
+                                        i,
+                                    )
+                                continue
+                            try:
+                                part, secs, bores_found = fut.result()
+                            except BrokenProcessPool:
+                                retry.append(i)  # e.g. the caller is a script without a main guard
+                                continue
+                            except Exception as exc:  # noqa: BLE001
+                                failed(i, exc)
+                                continue
+                            results[i] = part
+                            bores[i] = bores_found
+                            timings.add_part(bodies[i][1], n_faces(i), secs)
+                            # wall-clock share, so the ETA (faces per second) reflects the parallel speed
+                            tracker.part_done(bodies[i][1], n_faces(i), secs / workers)
             except (BrokenProcessPool, RuntimeError, OSError):
                 retry = [i for i in order if i not in results]
             if retry:
@@ -152,32 +231,80 @@ def _analyse_bodies(
                 if i in results:
                     continue
                 try:
-                    results[i], secs = analyze_brep_file(*args(i))
+                    results[i], secs, bores[i] = analyze_brep_file(*args(i))
                 except Exception as exc:  # noqa: BLE001
                     failed(i, exc)
                     continue
+                timings.add_part(bodies[i][1], faces[id(bodies[i][2])], secs)
                 tracker.part_done(bodies[i][1], faces[id(bodies[i][2])], secs)
-    return [
-        (bodies[i][0], PartGeom(bodies[i][1], bodies[i][2]), results[i]) for i in sorted(results)
-    ]
+    out = []
+    for i in sorted(results):
+        geom = PartGeom(bodies[i][1], bodies[i][2])
+        geom.bores_cache = bores.get(i)  # already found by the part analysis
+        out.append((bodies[i][0], geom, results[i]))
+    return out
 
 
 def analyze_full(
-    path: str | Path, options: AnalyzeOptions | None = None, tracker: Tracker | None = None
+    path: str | Path | Sequence[str | Path],
+    options: AnalyzeOptions | None = None,
+    tracker: Tracker | None = None,
+    name: str | None = None,
 ) -> Analysis:
-    """Analyse one STEP file; unreadable files yield a report with an ``errors`` entry."""
+    """Analyse one STEP file, or several combined into one assembly (a list of paths).
+
+    Unreadable files yield a report with an ``errors`` entry naming the file; with several files
+    one bad file means no parts at all, never a partial result.  A list of one file is the same
+    as the file.
+    """
     from stepscribe import envcheck
 
     envcheck.check_occt()  # a clear one-liner instead of a crash deep inside OCCT calls
     opts = options or AnalyzeOptions()
-    p = Path(path)
+    paths = [Path(path)] if isinstance(path, (str, Path)) else [Path(q) for q in path]
+    given = paths
+    work = None
+    if any(q.suffix.lower() == ".zip" for q in paths):
+        # a zip is expanded like on the command line (checked first: no path escapes, size limits)
+        import tempfile
+
+        from stepscribe.io.multi import InputError, InputLimits, expand_inputs
+
+        work = tempfile.TemporaryDirectory(prefix="stepscribe_zip_")
+        try:
+            paths = expand_inputs(paths, InputLimits(), Path(work.name))
+        except InputError as exc:
+            work.cleanup()
+            shown = sorted(clean_name(q.name) or "model" for q in given)
+            report = Report(
+                meta=_meta(shown, "mm", opts),
+                parts=[],
+                errors=[{"file": shown[0], "error": str(exc)}],
+            )
+            return Analysis(report, None)
+        if len(given) == 1 and len(paths) > 1 and name is None:
+            name = given[0].stem  # the zip's name is the name of the combined model
+    p = paths[0]
+    combined = len(paths) > 1
     try:
-        model = read_step(p)
+        with timings.stage("load"):
+            if combined:
+                from stepscribe.io.multi import read_step_files
+
+                files = opts.extra.get("context", {}).get("files") or None
+                model = read_step_files(paths, files, name)
+            else:
+                model = read_step(p)
     except StepReadError as exc:
+        shown = sorted(clean_name(q.name) or "model" for q in paths)
+        bad = next((n for n in shown if str(exc).startswith(f"{n}:")), shown[0])
         report = Report(
-            meta=_meta([p.name], "mm", opts), parts=[], errors=[{"file": p.name, "error": str(exc)}]
+            meta=_meta(shown, "mm", opts), parts=[], errors=[{"file": bad, "error": str(exc)}]
         )
         return Analysis(report, None)
+    finally:
+        if work is not None:
+            work.cleanup()  # the shapes are in memory now
 
     tracker = tracker or Tracker()
     bodies = [
@@ -195,19 +322,32 @@ def analyze_full(
     proto_parts: dict[str, list[AnalyzedPart]] = {}
     warnings = list(model.warnings)
     errors: list[dict[str, object]] = []
-    done_parts = _analyse_bodies(bodies, faces, p.name, opts, tracker, errors)
+    source_of = {k: pr.source_file for k, pr in model.protos.items() if pr.source_file}
+    with timings.stage("parts"):
+        done_parts = _analyse_bodies(bodies, faces, p.name, opts, tracker, errors, source_of)
     for key, geom, part in done_parts:
         part.name_cleaned = model.protos[key].name_cleaned
+        proto = model.protos[key]
+        part.from_step = step_data(
+            part,
+            geom,
+            proto.product_name,
+            proto.meta,
+            [d for d in model.dimensions if d.owner_key == key],
+            model.original_unit,
+            opts,
+        )
         ap = AnalyzedPart(part, geom)
         parts.append(ap)
         proto_parts.setdefault(key, []).append(ap)
     assign_part_ids([ap.part for ap in parts])
     parts.sort(key=lambda ap: ap.part.id)
     report = Report(
-        meta=_meta([p.name], model.original_unit, opts),
+        meta=_meta([s.name for s in model.sources] or [p.name], model.original_unit, opts),
         parts=[ap.part for ap in parts],
         warnings=warnings,
         errors=errors,
+        sources=[SourceFile(**asdict(s)) for s in model.sources],
     )
     analysis = Analysis(
         report, model, parts, {k: [ap.part.id for ap in v] for k, v in proto_parts.items()}
@@ -215,15 +355,33 @@ def analyze_full(
     from stepscribe.assembly import build_assembly
 
     tracker.stage("assembly", "building assembly relationships")
-    report.assembly = build_assembly(analysis, opts, tracker)
+    with timings.stage("assembly"):
+        report.assembly = build_assembly(analysis, opts, tracker)
+    if combined and report.assembly is not None:
+        _mark_sources(report)
     if opts.understanding:
         from stepscribe.understanding import build_understanding
 
         try:
-            report.understanding = build_understanding(analysis, opts, tracker)
+            with timings.stage("understanding"):
+                report.understanding = build_understanding(analysis, opts, tracker)
         except Exception as exc:  # noqa: BLE001 - the measured report must survive
             report.warnings.append(f"understanding layer failed: {type(exc).__name__}: {exc}")
     return analysis
+
+
+def _mark_sources(report: Report) -> None:
+    """Tag each instance with its file and say so when the files do not share a frame."""
+    from stepscribe.assembly.file_frames import check_shared_frame
+
+    assert report.assembly is not None
+    file_of = {p.id: p.source_file for p in report.parts}
+    for inst in report.assembly.instances:
+        inst.source_file = file_of.get(inst.part_id)
+    placed = all(s.placement == "designer-supplied" for s in report.sources)
+    problem = None if placed else check_shared_frame(report.assembly)
+    if problem:
+        report.warnings.append(problem[0].upper() + problem[1:])
 
 
 def restore_analysis(

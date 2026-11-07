@@ -92,7 +92,7 @@ def test_single_part_roles(analyses) -> None:  # type: ignore[no-untyped-def]
     assert p.understanding is not None and p.understanding.roles
     assert p.understanding.roles[0].label in ("motor_mount", "base_plate")
     u = analyses("nema17_plate").report.understanding
-    assert u is not None and u.summary.startswith("Likely a single")
+    assert u is not None and u.summary.startswith("Likely: a single")
 
 
 @pytest.mark.parametrize("name", ["two_link_arm", "mini_mobile_manipulator"])

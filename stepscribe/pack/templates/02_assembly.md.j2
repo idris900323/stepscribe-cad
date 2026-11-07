@@ -16,6 +16,9 @@ This file contains a single part, so there are no assembly relationships.
 {% endfor %}
 
 ## Relations
+{% if a.hedge %}
+_{{ a.hedge }}_
+{% endif %}
 {% for r in a.relations %}
 - {{ r }}
 {% else %}
@@ -23,12 +26,29 @@ This file contains a single part, so there are no assembly relationships.
 {% endfor %}
 
 ## Fastener joints
+{% if a.hedge %}
+_{{ a.hedge }}_
+{% endif %}
 {% for j in a.joints %}
 - {{ j }}
 {% else %}
 - none found
 {% endfor %}
 
+{% if a.pivots %}
+## Pivot candidates (not fasteners)
+{% for j in a.pivots %}
+- {{ j }}
+{% endfor %}
+
+{% endif %}
+{% if a.bore_pairs %}
+## Large coaxial bore pairs (locating feature or bearing seat, not fasteners)
+{% for j in a.bore_pairs %}
+- {{ j }}
+{% endfor %}
+
+{% endif %}
 ## Fastener shopping list
 {% for s in a.shopping %}
 - {{ s }}
@@ -52,6 +72,9 @@ This file contains a single part, so there are no assembly relationships.
 {% if a.interferences %}
 
 ## Interferences
+{% if a.hedge %}
+_{{ a.hedge }}_
+{% endif %}
 {% for i in a.interferences %}
 - {{ i }}
 {% endfor %}

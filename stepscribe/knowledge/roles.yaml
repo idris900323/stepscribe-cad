@@ -12,6 +12,14 @@ ground:
   lowest_plane_tolerance_mm: 1.0
   keywords: [base, chassis, frame, stand, foundation, bracket_base, baseplate, base_plate, mount, body]
 
+# The role phrase in a single part's headline follows the role's confidence (rounded to the two
+# decimals that are shown): at or above probably_min it reads "probably a <role>", from possibly_min
+# up to that "possibly a <role>", below possibly_min the phrase is left out. Heuristic limits.
+role_phrase:
+  source: "heuristic limits chosen for this tool (not domain data)"
+  probably_min: 0.60
+  possibly_min: 0.30
+
 kinematics:
   source: "heuristic thresholds chosen for this tool (not domain data)"
   coaxial_tol_mm: 0.1            # axes closer than this are the same axis
@@ -27,6 +35,31 @@ kinematics:
     clearance_pin: 0.6
     loose_pin: 0.4
     parallel_rods: 0.6
+  pivot:
+    # a coaxial hole stack that matches no screw size is a pivot candidate when it is wide and long
+    min_diameter_mm: 20.0          # configurable: smaller unmatched holes stay fastener joints
+    min_length_over_diameter: 1.0  # stack length at least this many diameters
+    confidence_named: 0.7          # spans two different named link groups
+    confidence_unnamed: 0.4        # no usable link names: "pivot or press fit candidate"
+    flange_min_area_mm2: 500.0     # a planar contact between two link groups at least this big
+    confidence_flange: 0.55        # a flange alone (no bore on the same pair)
+    disagree_factor: 0.7           # bore and flange normal disagree: the bore wins at this factor
+  arm_headline:
+    # "Likely: 6-axis serial arm (confidence X)": a base confidence, plus or minus per axis check
+    tolerance_deg: 5.0             # axes this close to parallel / perpendicular / vertical match
+    base_confidence: 0.5
+    per_match: 0.065               # six matching checks give 0.89
+    per_mismatch: 0.08             # each mismatch lowers it, and is written out in words
+    min_confidence: 0.1
+    max_confidence: 0.95
+    other_axis_count_confidence: 0.55   # an arm with a number of axes other than six: not checked
+    weakest_joint_headroom: 0.15   # the headline is never above (weakest joint confidence + this)
+    robot_min_joints: 3            # an arm with fewer joints is asked the ordinary questions
+    static_confidence: 0.6         # HEURISTIC CONSTANT, not derived from evidence: "Likely: a static structure" claims that
+                                   # no joint was found, an absence there is nothing to average over
+  name_groups:
+    min_numbered_groups: 3         # BASE does not count; LINK1..LINK3 or more
+    confidence: 0.8
   wheel:
     min_wheels: 2
     horizontal_axis_max_dot_with_up: 0.2
