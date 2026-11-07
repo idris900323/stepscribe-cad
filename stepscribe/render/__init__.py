@@ -21,7 +21,9 @@ from stepscribe.render.dimensions import annotate, size_caption, view_spans
 from stepscribe.render.features import (
     cutout_size_dimensions,
     draw_cutout_outlines,
+    draw_flat_dimensions,
     feature_marks,
+    flat_dimensions,
     ordinate_dimensions,
     panel_lines,
     visible_labels,
@@ -253,7 +255,13 @@ def render_part_images(
             )
             rendered = render_scene([item], cam)
             outlines = draw_cutout_outlines(rendered, part)
-            rendered.image = draw_labels(rendered.image, visible_labels(rendered, marks))
+            flat_dims = flat_dimensions(rendered, part, d)
+            rendered.image = draw_labels(
+                rendered.image,
+                visible_labels(rendered, marks),
+                avoid=[box for fd in flat_dims for box in fd.keep_clear],
+            )
+            draw_flat_dimensions(rendered.image, flat_dims)
             annotate(
                 rendered,
                 cam,
