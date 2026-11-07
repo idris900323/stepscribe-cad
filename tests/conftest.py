@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "fixtures" / "understanding"))
 from assembly_fixtures import generate_assemblies  # noqa: E402
 from assembly_fixtures_u import generate_kinematic  # noqa: E402
 from cutout_fixtures import generate_cutouts  # noqa: E402
+from flat_fixtures import generate_flat  # noqa: E402
 from generate_fixtures import generate_all  # noqa: E402
 from mechanism_fixtures import generate_mechanisms  # noqa: E402
 from multi_fixtures import generate_multi  # noqa: E402
@@ -67,6 +68,7 @@ def step_files() -> dict[str, Path]:
     paths.update(generate_risks())
     paths.update(generate_pack_issue_fixtures())
     paths.update(generate_multi())
+    paths.update(generate_flat())
     return paths
 
 
@@ -101,6 +103,7 @@ def golden(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def]
 
 RENDER_FILES = {
     "test_image_contacts.py",
+    "test_image_counterbore_flat.py",
     "test_image_features.py",
     "test_image_hole_map.py",
     "test_image_kinematic.py",

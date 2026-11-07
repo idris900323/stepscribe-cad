@@ -14,7 +14,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from stepscribe import config
-from stepscribe.describe.phrases import fmt
+from stepscribe.describe.phrases import flat_phrase, fmt
 from stepscribe.features.cutouts import ascii_text
 from stepscribe.geometry.part_geom import PartGeom
 from stepscribe.models.schema import Cutout, CutoutLevel, Hole, Part
@@ -51,6 +51,10 @@ def hole_text(h: Hole, with_id: bool = True) -> str:
         s += f", cbore dia {fmt(h.counterbore_diameter_mm)}"
         if h.counterbore_depth_mm:
             s += f" x {fmt(h.counterbore_depth_mm)}"
+        if h.counterbore_flat is not None:
+            s += " " + flat_phrase(
+                h.counterbore_flat.across_flats_mm, h.counterbore_flat.distance_from_axis_mm
+            )
     if h.countersink_diameter_mm:
         s += f", csink dia {fmt(h.countersink_diameter_mm)}"
         if h.countersink_angle_deg:
@@ -293,6 +297,93 @@ def draw_cutout_outlines(
                     draw.line(seg, fill=color, width=4)
     rendered.image = img
     return first
+
+
+@dataclass
+class FlatDimension:
+    """The across-flats dimension of one counterbore flat, in pixels of the axis view."""
+
+    ticks: list[tuple[float, float, float, float]]  # extension lines and the two end ticks
+    line: tuple[float, float, float, float]  # the dimension line, flat to the opposite round wall
+    text: str
+    text_xy: tuple[float, float]
+    text_size: tuple[float, float]
+    keep_clear: list[tuple[float, float, float, float]]  # boxes the hole labels must stay out of
+
+
+def flat_dimensions(rendered: Rendered, part: Part, view_dir: np.ndarray) -> list[FlatDimension]:
+    """One dimension per counterbore flat whose hole is seen end on (its axis along *view_dir*).
+
+    The dimension line runs from the flat to the opposite round wall, shifted sideways out of the
+    bore so it does not cross the hole's own label anchor, with the across-flats value beside it."""
+    probe = ImageDraw.Draw(rendered.image.convert("RGB"))
+    font = _font(16)
+    width, height = rendered.image.size
+    out: list[FlatDimension] = []
+    for h in part.holes:
+        flat = h.counterbore_flat
+        if flat is None or h.counterbore_diameter_mm is None:
+            continue
+        axis = np.array([h.axis.direction.x, h.axis.direction.y, h.axis.direction.z])
+        axis = axis / np.linalg.norm(axis)
+        if abs(float(np.dot(axis, view_dir))) < 0.99:
+            continue
+        o = np.array([h.axis.origin.x, h.axis.origin.y, h.axis.origin.z])
+        n = np.array([flat.normal.x, flat.normal.y, flat.normal.z])
+        along = np.cross(axis, n)
+        r = h.counterbore_diameter_mm / 2
+        shift = 1.3 * r
+        flat_pt = o + n * flat.distance_from_axis_mm
+        wall_pt = o - n * r
+        pts = [
+            flat_pt + along * flat.chord_length_mm / 2,  # where the extension line leaves the flat
+            flat_pt + along * shift,
+            wall_pt,
+            wall_pt + along * shift,
+        ]
+        a, b, c, d = (rendered.project(p) for p in pts)
+        (xa, ya), (xb, yb) = (b[0], b[1]), (d[0], d[1])
+        length = math.hypot(xb - xa, yb - ya)
+        if length < 8:
+            continue
+        ux, uy = (xb - xa) / length, (yb - ya) / length
+        nx, ny = -uy * 6, ux * 6  # tick half-length, across the dimension line
+        ticks = [
+            (a[0], a[1], xa, ya),
+            (c[0], c[1], xb, yb),
+            (xa - nx, ya - ny, xa + nx, ya + ny),
+            (xb - nx, yb - ny, xb + nx, yb + ny),
+        ]
+        text = f"{fmt(flat.across_flats_mm)} across flats"
+        tw, th = text_size(probe, text, font)
+        side = rendered.project(flat_pt + along * (shift + 1.0))
+        right = side[0] >= (xa + xb) / 2
+        bx = (max(xa, xb) + 10) if right else (min(xa, xb) - 10 - tw)
+        by = (ya + yb) / 2 - th / 2
+        bx = min(max(bx, 4), width - tw - 4)
+        by = min(max(by, 4), height - th - 4)
+        clear = [
+            (bx - 4, by - 4, bx + tw + 4, by + th + 4),
+            (min(xa, xb) - 8, min(ya, yb) - 8, max(xa, xb) + 8, max(ya, yb) + 8),
+        ]
+        out.append(FlatDimension(ticks, (xa, ya, xb, yb), text, (bx, by), (tw, th), clear))
+    return out
+
+
+def draw_flat_dimensions(image: Image.Image, dims: list[FlatDimension]) -> None:
+    """Draw the dimensions made by :func:`flat_dimensions` on *image* (in place)."""
+    if not dims:
+        return
+    draw = ImageDraw.Draw(image)
+    font = _font(16)
+    for dim in dims:
+        draw.line(dim.line, fill=INK, width=2)
+        for tick in dim.ticks:
+            draw.line(tick, fill=INK, width=2)
+        bx, by = dim.text_xy
+        tw, th = dim.text_size
+        draw.rectangle([bx - 2, by - 2, bx + tw + 2, by + th + 2], fill=(255, 255, 255))
+        draw_text(draw, (bx, by), dim.text, font, INK)
 
 
 def cutout_size_dimensions(

@@ -89,6 +89,21 @@ class HoleSegment(_M):
     face_ids: list[str]
 
 
+class CounterboreFlat(_M):
+    """A flat cut into the wall of a round counterbore (a D-shaped bore), measured on the flat's own face."""
+
+    face_ids: list[str]
+    normal: Vec3  # unit vector from the bore axis towards the flat
+    distance_from_axis_mm: float
+    across_flats_mm: (
+        float  # flat to the opposite round wall: distance from the axis + the bore radius
+    )
+    chord_length_mm: float  # length of the flat across the bore
+    depth_mm: float  # length of the flat along the bore axis
+    hole_wall_to_flat_mm: float  # wall of the hole in the counterbore floor to the flat
+    hole_wall_to_round_wall_mm: float  # the same hole's wall to the round counterbore wall opposite
+
+
 class Hole(_M):
     id: str
     axis: Axis
@@ -107,6 +122,15 @@ class Hole(_M):
     entry_face_id: str | None = None
     edge_distance_mm: float | None = None
     warnings: list[str] = Field(default_factory=list)
+    counterbore_flat: CounterboreFlat | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_flat(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``counterbore_flat`` only for a counterbore that has a flat."""
+        data: dict[str, Any] = handler(self)
+        if data.get("counterbore_flat") is None:
+            data.pop("counterbore_flat", None)
+        return data
 
 
 class HolePattern(_M):
